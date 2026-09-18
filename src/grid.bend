@@ -18,6 +18,25 @@ def iz(i: U32) -> U32:
 def iy(i: U32) -> U32:
   ((i >> 12n) .&. 63 : U32)
 
+def to_list_go(a: Array<U32>, acc: List<U32>) -> List<U32>:
+  match a:
+    case ALeaf{x}:
+      x <> acc
+    case ANode{xs, ys}:
+      to_list_go(xs, to_list_go(ys, acc))
+
+def to_list(a: Array<U32>) -> List<U32>:
+  to_list_go(a, Nil{})
+
+def pack(p: Array<U32> & U32) -> U32:
+  match p:
+    case (a, v):
+      v
+
+def value_at(world: Array<U32>, i: U32) -> U32:
+  p = Array.get(U32, world, i)
+  pack(p)
+
 def neighbor(+i: U32, dx: U32, dy: U32, dz: U32) -> U32:
   x = U32.and(U32.add(ix(i), dx), 63)
   z = U32.and(U32.add(iz(i), dz), 63)

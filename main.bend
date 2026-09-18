@@ -1,5 +1,5 @@
 import Base
-import ./app/tests.bend as Tests
+import ./app/ascii.bend as Ascii
 
 def main() -> IO(Unit):
-  Tests.main()
+  Ascii.main()

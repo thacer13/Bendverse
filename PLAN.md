@@ -236,3 +236,27 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 - §7 "Parallel Array reads across split regions" → added insight: the §2.5 scan-order tie-break can be made conflict-free for parallel folds by having each mover locally compute whether it outranks every other candidate targeting the same cell (comparison radius ≤2), so determinism need not be sacrificed for parallelism.
 
 **Recommended next:** commit M1, then either start M1.5 (`src/bits.bend` lemma library → prove `index_roundtrip`/`cell_roundtrip`) or proceed to M2 (worldgen + ASCII), where the Array read-sugar spike is the next unknown.
+
+### A.2 — M2 complete: worldgen + ASCII slice
+
+**Status:** M2 complete. Chosen order was M2 before M1.5: it unblocks everything and gives the first visible artifact; the bit-lemma work stays queued.
+
+**Deliverables**
+- `src/worldgen.bend` — `seed()=42`; `hash(x,y,z,s)` (the §2.10 mix, using the formula's decimal constants `2654435761 / 40503 / 2246822519`, since the parenthetical hex note in §2.10 is inconsistent with the formula); `corner` (top 8 bits); `noise2` (bilinear F32 interpolation at period 16); `height = 8 + floor(norm*24)`; `gen` (bedrock shell, then Empty/Sand/Rock by height); `build`/`build_go` filling the 2^18 `Array<U32>`.
+- `src/grid.bend` — added `to_list`/`to_list_go` (array→list over `ALeaf`/`ANode`) and `value_at`/`pack` (single-cell read).
+- `app/ascii.bend` — builds the world, renders the `z=32` x–y cross-section top-down (y=63 at top) via a single-pass `frame` + `finish_row`/`join_rows`; `main.bend` now delegates here.
+- Golden tests added to `app/tests.bend`: **T6** gen determinism (4096 samples), **T7** terrain structure (at `height` = Sand, `height+1` = Empty, deep = Rock, `x=0` = Bedrock), **T8** built array matches `gen` at a spot. All PASS; full suite ~0.7s (JS), native `main` ~20ms.
+
+**Verified acceptance:** `bend main.bend` prints recognizable terrain (bedrock shell, noise mountains, sand surface, rock core); gate green; native builds and runs.
+
+**Bend sharp edges discovered in M2 (workarounds are in `src/`)**
+- `Array.to_list` in Base is **broken in bend 2.0.5** (`expected a defined name, observed Array.to_list.go` when the template inlines). Workaround: `Grid.to_list_go` reimplements it directly over `ALeaf`/`ANode`.
+- `Array.get` and the `a[i]` read sugar both return an `Array<T> & value` pair; **destructuring lets only accept parameters**, not computed values or local binders. Workaround: consume pairs via non-recursive helper defs (`Grid.pack`, `Grid.value_at`); for loops, restructure so no intermediate pair must be split.
+- A `match` cannot be a let RHS or a term ("a match heads a def body, not a term") — route through a helper def.
+- Mutual recursion is rejected ("no mutual recursion"), so fetch/consume two-phase helpers are out; the rendering uses a single recursive `frame` with two scrutinees (`cells`, `rows`).
+- Nat literals like `262144n` expand to a 262144-deep term and overflow the checker; use `U32.to_nat(262144)` instead.
+- Affine `+` annotations are needed on any local/param used more than once in a path (lots of these in hash/noise/render).
+
+**Note for `src/bits.bend` (M1.5):** M2 did not add laws (nothing cheap: worldgen is numeric, not inductive). Still recommend M1.5 before M5.
+
+**Recommended next:** proceed to M3 (movement: 8-phase tick, swap-only) — it needs the world `Array` threaded through rules and will exercise the pair/helper patterns hardest; or do M1.5 first if laws are wanted green sooner.
