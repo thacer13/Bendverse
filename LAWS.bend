@@ -12,6 +12,7 @@ import ./src/ops.bend as Ops
 import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
+import ./src/count.bend as Count
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -228,3 +229,42 @@ law deactivate_preserves_pot:
   for +w: U32
   for +i: U32
   {Settle.pot_at(U32.and(w, 4294965247), i) == Settle.pot_at(w, i) : Nat}
+
+law array_point_write_preserves_count:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +v: U32
+  for +h: {Count.nempty(v) == Count.nempty(Tick.tget(t, n, i)) : Nat}
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, v)))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+
+law array_support_write_preserves_count:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +s: U32
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Ops.set_support(Tick.tget(t, n, i), s))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+
+law array_fall_write_preserves_count:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Ops.set_fall0(Tick.tget(t, n, i)))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+
+law array_mov_write_preserves_count:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Rules.mov(Tick.tget(t, n, i)))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+
+law array_wake_write_preserves_count:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, U32.or(Tick.tget(t, n, i), 2048))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+
+law array_deactivate_write_preserves_count:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, U32.and(Tick.tget(t, n, i), 4294965247))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}

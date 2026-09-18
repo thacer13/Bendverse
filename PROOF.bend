@@ -14,6 +14,7 @@ import ./src/ops.bend as Ops
 import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
+import ./src/count.bend as Count
 
 def Laws.sanity():
   {==}
@@ -144,3 +145,21 @@ def Laws.wake_preserves_pot(w, i):
 
 def Laws.deactivate_preserves_pot(w, i):
   WP.pot_and_hi(w, i)
+
+def Laws.array_point_write_preserves_count(t, n, i, v, h):
+  Count.array_point_write_preserves_count(t, n, i, v, h)
+
+def Laws.array_support_write_preserves_count(t, n, i, s):
+  Count.array_support_write_preserves_count(t, n, i, s)
+
+def Laws.array_fall_write_preserves_count(t, n, i):
+  Count.array_fall_write_preserves_count(t, n, i)
+
+def Laws.array_mov_write_preserves_count(t, n, i):
+  Count.array_mov_write_preserves_count(t, n, i)
+
+def Laws.array_wake_write_preserves_count(t, n, i):
+  Count.array_wake_write_preserves_count(t, n, i)
+
+def Laws.array_deactivate_write_preserves_count(t, n, i):
+  Count.array_deactivate_write_preserves_count(t, n, i)

@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 40 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 46 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -294,7 +294,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-40 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+46 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -319,12 +319,13 @@ mul-wrap spikes; T6 gen determinism; T7 terrain structure; T8 build = gen over
 all cells; T10 parity/neighbor-x; T11 low6 add + ∓1 cancel; T12 dir φ
 cancellation; T13 neighbor index cancellation; T14 scan-order totality; T15
 `List.set` split + sum; T16 chunk key/local roundtrip + gen; T17 chunk store
-set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`).
+set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4).
 
 Simulation, native-recommended (`app/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
 settles and far cells are untouched; T4b a settled world is a fixed point; T9
-pull-base collapses rock; T18 chunk-store tick equivalence.
+pull-base collapses rock; T18 chunk-store tick equivalence; T20 evict → assemble
+→ tick equivalence.
 
 ### 3.6 Proof-development loop
 
@@ -345,7 +346,7 @@ an oversight to hide.
 | Rule | Constraint | Laws | Tests | Modules |
 |---|---|---|---|---|
 | `R1` | Locality: neighbor-only reads, bounded radius | `dir_phi_cancel` `neighbor_cancel` `low6_add_independent` `parity_flip_succ` `parity_flip_pred` | T11 T12 T13 T14 | parity mod priority order |
-| `R2` | Conservation: swap/transform only | — | T2 | rules ops |
+| `R2` | Conservation: swap/transform only | `array_point_write_preserves_count` `array_support_write_preserves_count` `array_fall_write_preserves_count` `array_mov_write_preserves_count` `array_wake_write_preserves_count` `array_deactivate_write_preserves_count` | T2 T21 | count rules ops |
 | `R3` | Single-writer, deterministic tie-break | `scan_order_total` `neighbor_cancel` | T14 | order priority |
 | `R4` | Phase separation: no same-color neighbors | `neighbor_x_parity` `neighbor_y_parity` `neighbor_z_parity` `parity_flip_succ` `parity_flip_pred` | T10 | parity sim |
 | `R5` | Falling is universal (density rule) | `fall_decreases` `fall_lowers_potential` `sand_sinks_in_water` | T9 | rules potential |
@@ -387,6 +388,7 @@ R10 and R11 hold by construction and are witnessed by tests.
 | `V2b-iii` | write→Φ bridge complete (word and `Array.swap.go` level): material field, support/fall/mov/wake/deactivate preserve pot, crumble lowers pot, point-write composition | A.28–A.29 |
 | `V3a` | parity model + all-axis neighbor parity | A.13–A.14 |
 | `V3b` | packed-index neighbor cancel + total scan order | A.15–A.17 |
+| `V4` | conservation (rule 2): non-empty count preserved by every material-preserving write, T21 | A.31 |
 | `—` | pi tooling: proof loop, lemma index, audit | A.24–A.25 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
@@ -413,6 +415,10 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   eviction to all sleeping chunks needs the sleep-invariance proof (`G10`).
 - [ ] **M7d** Parallel phase folds (CPU) — gated on V3c.
 - [ ] **M7b** / **M7e** GPU worldgen / phases — blocked on a CUDA host (`G4`).
+- [ ] **V4 (conservation)** — the count layer landed (A.31) for material-preserving
+  writes. To finish the *swap* half of rule 2: mirror `array_swap_decreases` with
+  counts (`array_point_write_count_balance`: `count_new + old = count_old + new`),
+  then compose the two movement writes to show the exchange preserves the count.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -438,7 +444,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven) |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); remaining instance is the write-site enumeration (`G10`) |
-| `G6` | accepted | conservation (rule 2) and support (rule 7) are test-witnessed only | accepted | — | a count-invariant law over swap/transform ops |
+| `G6` | accepted | conservation (rule 2): the movement *swap* composition; support (rule 7) | accepted | — | movement: every material-preserving write's count preservation is proven (V4/A.31); add the count-balance primitive and compose the two movement writes. support: a recompute law |
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 | a decision procedure / refined match on `U32`; runtime-witnessed by T19 |
@@ -471,6 +477,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `src/refine.bend` | array↔model refinement: `PT` model, pack/unpack, `Array.swap.go` correspondence, Φ decrease |
 | `src/writepot.bend` | write→Φ bridge: `Cell.encode` material field, write effects on `pot_at`, point-write composition |
 | `src/tick.bend` | array-level (`Array.swap.go` via `PT`) write effects: `tget`, support-write preservation, rock-crumble decrease |
+| `src/count.bend` | rule 2 conservation: non-empty indicator, material-preserving write effects, array-level count preservation |
 | `src/parity.bend` | rule 4/1: parity model, neighbor parity |
 | `src/mod.bend` | rule 1: modular-add independence, ∓1 cancel |
 | `src/priority.bend` | rule 1/3: `Dir` model, φ cancellation, neighbor cancel |

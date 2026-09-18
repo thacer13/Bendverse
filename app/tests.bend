@@ -8,6 +8,8 @@ import ../src/settle.bend as Settle
 import ../src/chunk.bend as Chunk
 import ../src/store.bend as Store
 import ../src/ops.bend as Ops
+import ../src/rules.bend as Rules
+import ../src/count.bend as Count
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -464,6 +466,29 @@ def ev_pred_bad() -> U32:
   ge2 = Store.gen_eq_cells(U32.to_nat(4096), mod_first(Store.chunk_list(k2)), Store.chunk_list(k2), True{})
   inc_if_false(Bool.not(sl2), inc_if_false(Bool.not(ge2), bad1))
 
+# T21 conservation witness: every material-preserving write keeps the non-empty
+# indicator, and a rock crush keeps it (3 -> 4, both non-empty); non-rock crush
+# is the identity (G9 witness).
+def cnt_check(+w: U32, bad: U32) -> U32:
+  b0 = inc_if_false(Nat.is_eq(Count.nempty(Ops.set_support(w, 21)), Count.nempty(w)), bad)
+  b1 = inc_if_false(Nat.is_eq(Count.nempty(Ops.set_fall0(w)), Count.nempty(w)), b0)
+  b2 = inc_if_false(Nat.is_eq(Count.nempty(Rules.mov(w)), Count.nempty(w)), b1)
+  b3 = inc_if_false(Nat.is_eq(Count.nempty(U32.or(w, 2048)), Count.nempty(w)), b2)
+  b4 = inc_if_false(Nat.is_eq(Count.nempty(U32.and(w, 4294965247)), Count.nempty(w)), b3)
+  +z = U32.is_eq(Cell.material(w), 3)
+  rok = Nat.is_eq(Count.nempty(Ops.crush_word(w)), 1n)
+  non = Nat.is_eq(Count.nempty(Ops.crush_word(w)), Count.nempty(w))
+  inc_if_false(Bool.pick(Bool, z, rok, non), b4)
+
+def cnt_bad() -> U32:
+  cnt_check(Cell.encode(0, 5, 1, 7, 3),
+    cnt_check(Cell.encode(1, 63, 0, 31, 63),
+      cnt_check(Cell.encode(2, 0, 1, 0, 0),
+        cnt_check(Cell.encode(3, 48, 1, 15, 9),
+          cnt_check(Cell.encode(4, 0, 0, 4, 2),
+            cnt_check(Cell.encode(5, 10, 1, 2, 17),
+              cnt_check(0, cnt_check(8388607, 0))))))))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -487,3 +512,4 @@ def main() -> IO(Unit):
     report("T20b all-gen store evicts to worldgen", ev_full_bad())
     report("T20c evict preserves world (one resident chunk)", ev_mod_bad())
     report("T20d sleeping/gen-eq predicates", ev_pred_bad())
+    report("T21 conservation of non-Empty writes", cnt_bad())

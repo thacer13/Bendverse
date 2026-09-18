@@ -808,3 +808,54 @@ claim.
 - `bend PROOF.bend` → `All terms check.` (40 laws; unchanged).
 - `bend app/tests.bend` (JS, tick-free) → 21/21 (incl. T20a–d).
 - Native `bend app/simtests.bend -o bin && ./bin` → 8/8 (incl. T20).
+
+### A.31 — V4 conservation: the non-empty count layer; R2 gains laws
+
+**Status:** conservation layer **landed**; **6 new laws** (46 total); one new test
+(T21). Engine untouched; gate green; fast (22/22) and simulation (8/8) suites
+pass. This is the natural companion to the V2 settling layer: same `PT`/array
+machinery, but an *equality* (the count is conserved) instead of a decrease.
+
+**What landed.**
+- `src/count.bend` (new): `nempty(w)` — the non-empty indicator (1 for any
+  material other than Empty, 0 for Empty). Material-preserving write facts:
+  `nempty_set_support`, `nempty_set_fall0`, `nempty_mov`, `nempty_wake`,
+  `nempty_deactivate`, each reduced to `mat_encode`/`mat_or_hi`/`mat_and_hi` plus
+  `and31_absorb` (the same facts the pot layer uses). Count folds `to_counts(a)`
+  and `cnts_m(t)` with `to_counts_pack`; the swap congruence `cnts_same`
+  (a point write changes one leaf; if the written cell's non-emptiness matches the
+  displaced one, the whole count list is *equal*); and the array-level
+  `array_point_write_preserves_count`, plus the five concrete instances.
+- `LAWS.bend`: `array_point_write_preserves_count` (generic, with the leaf-count
+  hypothesis) and `array_support_write_preserves_count`,
+  `array_fall_write_preserves_count`, `array_mov_write_preserves_count`,
+  `array_wake_write_preserves_count`, `array_deactivate_write_preserves_count`.
+- `app/tests.bend` **T21**: sampled words — every material-preserving write keeps
+  the non-empty indicator; rock crush keeps it (3 → 4, both non-empty); non-rock
+  crush is the identity (`G9`).
+
+**Interpretation (scope, honestly).** These are *world-level* conservation laws
+for the transform ops: `array_support_write_preserves_count` says a support write
+anywhere leaves `suml(to_counts(...))` unchanged, and likewise for fall/mov/wake/
+deactivate. They rest on `Array.swap.go` refinement, exactly as the pot laws do.
+The rule-2 **swap** case (a movement exchanges two cells) is *not* yet a theorem:
+it needs the count *balance* primitive — `count_new + nempty(old) == count_old +
+nempty(new)`, the mirror of `array_swap_decreases` — and then a two-write
+composition whose `+`-terms telescope. That is left as the open V4 item; `G6`
+stays open for it (and for rule 7 support).
+
+**Bend findings (V4).**
+- **The count layer is simpler than the pot layer.** `nempty` has no positional
+  (y-level) dependence, so `to_counts`/`cnts_m` take no `base` and every induction
+  loses the index arithmetic; `cnts_same` is a plain structural equality rather
+  than a decrease.
+- **Congruence under an equality hypothesis reduces cleanly.** `Equal.cong(U32,
+  Nat, m => nempty_m(m), material(f(w)), material(w), mat_encode(...))` turns any
+  material-preserving write into a count fact with no order lemmas.
+- **`Equal.cong` accepts `+List<Nat>` as the target type** (as in the V2b code),
+  so list equalities lift to `suml` equalities directly.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (46 laws).
+- `bend app/tests.bend` (JS, tick-free) → 22/22 (incl. T20, T21).
+- Native `bend app/simtests.bend -o bin && ./bin` → 8/8.
