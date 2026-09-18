@@ -425,6 +425,45 @@ def wp_bad() -> U32:
               wp_check(0, Grid.index(7, 33, 8),
                 wp_check(8388607, Grid.index(8, 5, 6), 0))))))))
 
+# T20 chunk sleeping/eviction: a gen-equal chunk is sleeping and regenerable, so
+# eviction drops it and `assemble` rebuilds it from worldgen exactly.
+def mod_first(+cells: List<&2, U32>) -> List<&2, U32>:
+  match cells:
+    case Nil{}:
+      Nil{}
+    case Con{h, t}:
+      +m = Cell.encode(Cell.material(h), Cell.cohesion(h), 1, Cell.support(h), Cell.fall(h))
+      m <> t
+
+def ev_empty_bad() -> U32:
+  a = Store.assemble(Store.empty())
+  b = Worldgen.build()
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), 0)
+
+def ev_full_bad() -> U32:
+  s = Store.build_all()
+  a = Store.assemble(Store.evict(s))
+  b = Worldgen.build()
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), 0)
+
+def ev_mod_bad() -> U32:
+  +k = Chunk.key(1, 2, 3)
+  +s = Store.set(Store.build_all(), k, mod_first(Store.chunk_list(k)))
+  a = Store.assemble(s)
+  b = Store.assemble(Store.evict(s))
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), 0)
+
+def ev_pred_bad() -> U32:
+  +k = Chunk.key(0, 0, 0)
+  sl = Store.sleeping_cells(U32.to_nat(4096), Store.chunk_list(k), False{})
+  ge = Store.gen_eq_cells(U32.to_nat(4096), Store.chunk_list(k), Store.chunk_list(k), True{})
+  bad0 = inc_if_false(sl, 0)
+  bad1 = inc_if_false(ge, bad0)
+  +k2 = Chunk.key(0, 0, 1)
+  sl2 = Store.sleeping_cells(U32.to_nat(4096), mod_first(Store.chunk_list(k2)), False{})
+  ge2 = Store.gen_eq_cells(U32.to_nat(4096), mod_first(Store.chunk_list(k2)), Store.chunk_list(k2), True{})
+  inc_if_false(Bool.not(sl2), inc_if_false(Bool.not(ge2), bad1))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -444,3 +483,7 @@ def main() -> IO(Unit):
     report("T17 chunk store set/get/overwrite", store_bad())
     report("T18 store assemble == worldgen", assemble_bad())
     report("T19 write->pot bridge", wp_bad())
+    report("T20a empty store regenerates worldgen", ev_empty_bad())
+    report("T20b all-gen store evicts to worldgen", ev_full_bad())
+    report("T20c evict preserves world (one resident chunk)", ev_mod_bad())
+    report("T20d sleeping/gen-eq predicates", ev_pred_bad())

@@ -380,6 +380,7 @@ R10 and R11 hold by construction and are witnessed by tests.
 | `M8a` | chunk key/index + pure per-chunk gen | A.21 |
 | `M8b` | `U32`-keyed radix-tree chunk store | A.22 |
 | `M8c` | chunk-store assemble + tick equivalence, T18 | A.23 |
+| `M8d` | chunk sleeping + store eviction (conservative, gen-equal), T20 | A.30 |
 | `V1` | Nat arithmetic + Φ-decrease / settling kernel | A.7 |
 | `V2b-i` | `List.set` split and sum lemmas | A.20 |
 | `V2b-ii` | array/model swap refinement + Φ-decrease under a point update | A.27 |
@@ -402,14 +403,18 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   wake/deactivate preserve pot, rock crumble lowers it, swaps lower it — and
   `point_write_lowers` is the composition step. Closes `G2`; the two residuals are
   `G9` (non-rock crush) and `G10` (write-site enumeration).
-- [x] **V2 Global settling** — complete (ii and iii landed); `M8d` is ungated.
+- [x] **V2 Global settling** — complete (ii and iii landed); `M8d` landed (A.30).
 - [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
   fold. Large and stall-prone; the fallback is V3a+V3b proven with `G3` kept open.
-- [ ] **M8d** Chunk sleeping/eviction — ungated (V2 complete).
+- [x] **M8d** Chunk sleeping/eviction — landed (A.30): `assemble` regenerates
+  missing chunks from pure gen, so the store is a sparse overlay; `Store.evict`
+  drops sleeping chunks that are bit-equal to gen (a checkable, conservative
+  regenerability test), and eviction is lossless. Test-witnessed (T20); widening
+  eviction to all sleeping chunks needs the sleep-invariance proof (`G10`).
 - [ ] **M7d** Parallel phase folds (CPU) — gated on V3c.
 - [ ] **M7b** / **M7e** GPU worldgen / phases — blocked on a CUDA host (`G4`).
 
-Suggested order: `V2b-ii → V2b-iii → V3c → M8d → M7d → (M7b/M7e on CUDA)`.
+Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
 Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the
 settling guarantee.
@@ -437,7 +442,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 | a decision procedure / refined match on `U32`; runtime-witnessed by T19 |
-| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 M8d | mirror the control flow on `PT` (large, mechanical) |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 | mirror the control flow on `PT` (large, mechanical); would widen `M8d` eviction from gen-equal chunks to every sleeping chunk |
 
 ---
 
@@ -471,7 +476,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `src/priority.bend` | rule 1/3: `Dir` model, φ cancellation, neighbor cancel |
 | `src/order.bend` | rule 3: total scan order |
 | `src/chunk.bend` | chunk key/index, pure per-chunk gen |
-| `src/store.bend` | `U32`-keyed radix-tree chunk store, assemble |
+| `src/store.bend` | `U32`-keyed radix-tree chunk store, assemble (gen fallback on evicted chunks), eviction |
 | `app/ascii.bend` | fueled ASCII runner |
 | `app/window.bend` | `App.run` windowed runner |
 | `app/tests.bend` | fast golden tests (tick-free) |

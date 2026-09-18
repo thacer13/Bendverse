@@ -743,3 +743,68 @@ Wave 2 adds four tools:
 - `bend PROOF.bend` → `All terms check.` (40 laws).
 - `bend app/tests.bend` (JS, tick-free) → 17/17 (incl. T19).
 - Native `bend app/simtests.bend -o bin && ./bin` → 7/7.
+
+### A.30 — M8d complete: chunk sleeping + lossless store eviction (conservative)
+
+**Status:** M8d **complete** (§5 box checked). **No new laws** — test-witnessed
+(T20), like M8a–M8c. Engine (`rules`/`support`/`sim`) untouched; gate green; fast
+(21/21) and simulation (8/8) suites pass.
+
+**Interpretation (scope, honestly).** "Sleeping/eviction" is implemented at the
+**chunk-store** level, not as a changed tick. Sleeping chunks are already the
+engine's activity semantics (rule 9 / §2.9: an inactive cell is never written by
+its own evaluation); M8d adds the *eviction* half: the store is a sparse overlay
+on worldgen, and a chunk that is **sleeping and bit-equal to its pure gen** is
+dropped, then regenerated exactly by `assemble`. The regenerability test is
+conservative and checkable: gen-equality implies all-inactive, so every evicted
+chunk is genuinely sleeping, but a chunk that has settled to a *modified*
+inactive state is (correctly) kept. Widening eviction from gen-equal chunks to
+every sleeping chunk is exactly the unproven sleep-invariance argument recorded as
+`G10`; it does not affect the soundness of what landed.
+
+**Deliverables (`src/store.bend`).**
+- `assemble_cells` now **regenerates a missing chunk from `chunk_list(k)`** instead
+  of leaving it zero. The store becomes a sparse overlay on pure worldgen (rule
+  11); `assemble(empty()) == Worldgen.build()` and, with a full store, T18 is
+  unchanged.
+- `sleeping_cells(cells)` — no active bit in a stored chunk list.
+- `gen_eq_cells(cells, gen)` — bit-equality with the pure gen list (both local
+  order, as produced by `chunk_list`).
+- `keep_cells` / `evict_key` / `evict` — walk the 64 keys, drop a chunk iff
+  `sleeping && gen_eq`, else keep its exact cells. `evict_key` recurses on the
+  key index (no mutual recursion), reading the source store with `+s` (Store is
+  `Data`, so `get` does not disturb it) and accumulating residents.
+
+**Tests**
+- `app/tests.bend` **T20**: (a) `assemble(empty()) == Worldgen.build()`;
+  (b) an all-gen store evicts to nothing and re-assembles to worldgen;
+  (c) a store with one modified chunk keeps exactly that chunk and assembles
+  identically before/after eviction; (d) `sleeping`/`gen_eq` are true of a fresh
+  chunk and false of a modified (activated) one.
+- `app/simtests.bend` **T20** (native): `pass_all(assemble(evict(build_all())))`
+  equals `Sim.build()`, and `spawn` + 10 ticks from both worlds is bit-for-bit
+  identical — the evict → assemble → tick pipeline matches the fixed world.
+
+**Bend findings (M8d).**
+- **`Array.get` owns, it does not borrow.** `Array.get(T, a, i)` consumes `a` and
+  returns `Array<T> & T`; a read-scan must thread that pair and re-read, and a
+  read-only predicate cannot keep the array without returning the pair. Working
+  on `List<&2, U32>` (chunk cell lists) avoids the whole problem — `&2` lists are
+  `Data` and freely reusable.
+- **Matches scrutinize parameters, in binder order.** A match cannot scrutinize a
+  local binder (`give it its own def`), cannot follow a `let` in a def body, and
+  nested matches must follow the signature's binder order. This is why
+  `evict_key` carries the `Maybe` as its second parameter and recurses on itself.
+- **Tuple-destructuring `let` must be the last binding** before the tail term;
+  it cannot be followed by another `let`.
+
+**Where the scale track now stands.** M8a–M8d are all landed. The remaining
+gated/risky pieces are unchanged: **V3c** (schedule invariance, gates M7d) and
+the accepted gaps `G9` (non-rock crush, runtime-witnessed) and `G10` (write-site
+enumeration, which would widen eviction). Nothing landed rests on an unproven
+claim.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (40 laws; unchanged).
+- `bend app/tests.bend` (JS, tick-free) → 21/21 (incl. T20a–d).
+- Native `bend app/simtests.bend -o bin && ./bin` → 8/8 (incl. T20).

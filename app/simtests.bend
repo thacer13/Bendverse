@@ -188,6 +188,17 @@ def t18() -> U32:
   b = Sim.ticks(U32.to_nat(10), Sim.spawn(Sim.build()))
   U32.add(init_bad, is_bad(list_eq(Grid.to_list(a), Grid.to_list(b))))
 
+def t20() -> U32:
+  # Every chunk of a fresh store is sleeping and gen-equal, so eviction drops
+  # them all and `assemble` regenerates the world; the tick pipeline from that
+  # evicted-then-regenerated world matches the fixed world bit-for-bit.
+  a0 = Support.pass_all(Store.assemble(Store.evict(Store.build_all())))
+  b0 = Sim.build()
+  init_bad = is_bad(list_eq(Grid.to_list(a0), Grid.to_list(b0)))
+  a = Sim.ticks(U32.to_nat(10), Sim.spawn(Support.pass_all(Store.assemble(Store.evict(Store.build_all())))))
+  b = Sim.ticks(U32.to_nat(10), Sim.spawn(Sim.build()))
+  U32.add(init_bad, is_bad(list_eq(Grid.to_list(a), Grid.to_list(b))))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -197,3 +208,4 @@ def main() -> IO(Unit):
     report("T4b settled world is a fixed point", t4b())
     report("T9 pull-base collapses rock", t9())
     report("T18 chunk store tick equivalence", t18())
+    report("T20 evict -> assemble -> tick equivalence", t20())
