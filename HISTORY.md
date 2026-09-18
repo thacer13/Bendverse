@@ -901,3 +901,30 @@ support); the balance primitive is landed and reusable.
 - `bend PROOF.bend` → `All terms check.` (47 laws).
 - `bend app/tests.bend` (JS, tick-free) → 22/22.
 - Native `bend app/simtests.bend -o bin && ./bin` → 8/8.
+
+### A.33 — V4 correction: the movement composition's obstacle (recorded, not landed)
+
+**Status:** no code change; a correction to A.32's "remaining" note. Gate green;
+suites unchanged. Appended per the downgrade protocol (never rewrite an entry).
+
+A.32 said the two-write movement composition "needs a read-after-write/valid-index
+lemma". That is one route, but the first attempt at it hit a **Bend-specific**
+obstacle worth recording before the next try:
+
+- A `match` only reduces when it scrutinizes a **parameter** (or field), in
+  signature binder order. The composition's goal contains `T.tget(t, n, i)` and
+  `R.swap_m(t, n, j, …)`, whose internal `U32.is_lt(i, U32.shr n)` decisions are
+  *not* parameters, so matching the decision does not reduce the goal.
+- `swap_ref_if`/`swap_if` solve this for **one** swap by threading the decision
+  (`z`) as a parameter and phrasing the goal with `Bool.pick(…, z, …)`. A **nested**
+  swap (`swap_m(swap_m(t, n, j, v1), n, i, v2)`) needs the same treatment for both
+  decisions *and* the written values (`w = tget`, `gv = tget`), i.e. a
+  decision-parameterized double swap. That is real plumbing, not a lemma.
+- The alternative (read-after-write: `tget(swap_m(t, n, j, v), n, i)` is untouched
+  for a distinct valid `i`) needs a carried validity invariant and U32 subtraction
+  injectivity, which `src/` does not have.
+
+Either route is viable; both are larger than the balance primitive. The balance
+law (`array_point_write_count_balance`, A.32) is landed and is the reusable
+primitive; `G6` stays open for the composition. The unfinished attempt was
+reverted so the gate stays green.

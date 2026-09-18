@@ -418,10 +418,14 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 - [ ] **V4 (conservation)** — the count layer landed (A.31–A.32): every
   material-preserving write preserves the count, and `array_point_write_count_balance`
   gives the exact displacement identity (`count_new + nempty(old) == count_old +
-  nempty(new)`) for any point write. Remaining: the two-write movement composition
-  — the two balances telescope once `nempty(tget(swap_m(t,n,j,v),n,i)) ==
-  nempty(tget(t,n,i))` (a read-after-write/valid-index lemma; needs U32
-  subtraction injectivity, which is not yet built).
+  nempty(new)`) for any point write. Remaining: the two-write movement composition.
+  The two balances telescope (each write contributes `nempty(written) - nempty(displaced)`,
+  and `mov` preserves the count) but the composition needs the index decisions
+  (`U32.is_lt`) exposed as `Bool.pick` parameters — Bend only reduces a match on a
+  parameter — and a *nested* swap needs a decision-parameterized swap built for
+  both writes (as `swap_ref_if`/`swap_if` does for one). Two routes: that
+  plumbing, or a read-after-write lemma (`tget` at a valid `i ≠ j` is untouched by
+  a swap at `j`), which itself needs U32 subtraction injectivity.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -447,7 +451,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven) |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); remaining instance is the write-site enumeration (`G10`) |
-| `G6` | accepted | conservation (rule 2): the two-write movement composition; support (rule 7) | accepted | — | movement: the point-write count balance is proven (A.32); compose the two movement writes (needs a read-after-write/valid-index lemma). support: a recompute law |
+| `G6` | accepted | conservation (rule 2): the two-write movement composition; support (rule 7) | accepted | — | movement: the point-write count balance is proven (A.32); the two balances telescope, but the composition needs the index decisions threaded through a nested swap (or a read-after-write lemma). support: a recompute law |
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 | a decision procedure / refined match on `U32`; runtime-witnessed by T19 |
