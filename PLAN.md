@@ -173,7 +173,8 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 ## 5. Milestones (check off; each must leave gate green + repo runnable)
 
 - [x] **M0** Plan + scaffold + sanity law proven + gate green + native build verified. (this commit)
-- [ ] **M1** Cell word + index math. Spike: bit-31 roundtrip (decides whether bits 24–31 are usable; layout above already safe without them). Laws: `index_roundtrip`, `cell_roundtrip`. Accept: gate green, T5 passes.
+- [x] **M1** Cell word + index math. Spike: bit-31 roundtrip (decides whether bits 24–31 are usable; layout above already safe without them). Laws: `index_roundtrip`, `cell_roundtrip`. Accept: gate green, T5 passes.
+- [x] **M1.5** Bit-lemma library (`src/bits.bend`) + Word-level index/cell model + refinement to `U32`. Upgrades `index_roundtrip`/`cell_roundtrip` from golden tests back to proven laws. Accept: gate green, T5 still passes. (See A.6.)
 - [ ] **M2** Worldgen + ASCII slice. Accept: `bend main.bend` prints recognizable terrain; T1-style determinism holds for gen (same seed → same world).
 - [ ] **M3** Movement: empty/sand/bedrock world; 8-phase tick; swap-only. Accept: T1, T2, T3 pass; before/after ASCII shows plausible falling.
 - [ ] **M4** Activity: skip inactive, propagate on writes, settle. Accept: T4 passes; a tick over a fully-settled world does (near) zero writes.
@@ -332,3 +333,32 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 - Fast JS suite `app/tests.bend` (T5–T8) still passes in ~0.7s; `bend main.bend` = native pull-base collapse demo (before/after cross-section shows the column turn to rubble and fall into the hole). Gate green.
 
 **Recommended next:** M6 (windowed `App.run` app: cross-section view + mouse/keyboard editing, painting wakes the 26-neighbourhood). Then M7 (parallelism), M8 (chunks). M1.5 bit-lemmas still queued.
+
+### A.6 — M1.5 complete: bits lemma library + proven index/cell roundtrips
+
+**Status:** M1.5 complete. The two laws downgraded in A.1 (`index_roundtrip`, `cell_roundtrip`) are **proven laws again**; the gate is green with six laws total.
+
+**Deliverables**
+- `src/bits.bend` — a self-contained proven lemma library over `Base.Word` plus Word-level index/cell models:
+  - Bool: `b_and_idem/true/false/comm/absorb/or`, `b_or_idem/comm/false`, `b_not_not`, `b_and_or`.
+  - Word pointwise: `w_and_zero`, `w_or_zero`, `w_and_comm/or_comm/and_idem/or_idem`, `w_and_absorb`, `w_and_or`, `w_or_and`.
+  - Shifts/masks: `mask`, `shl_n`, `shr_n` (iterated, defined to match `U32.shln`/`U32.shrn` definitionally), `shl_put_or/and`, `shr_pad_or`, `shl_or`, `shr_or`, `shl_and`, `shl_put_shrpad(_alt)`, `shl_shrpad_alt`, `and_shrpad_alt`, `shl_after_shr`, `and_shl`, `and_shl_n`.
+  - Models: `ixm/izm/iym`, `model_index`, `cmat/ccoh/cact/csup/cfl`, `model_cell`; with `t0/t1/t2` and `tcmat/tccoh/tcact/tcsup/tcfl` field helpers, `and_factor`, `and_factor_l`, `factor5`, `mask_index(_l)`, `mask_cell`, and the two capstones `model_index_rt` / `model_cell_rt` (at width 32).
+- `LAWS.bend` (appended, existing laws untouched):
+  `index_roundtrip` — `Grid.index(Grid.ix(i), Grid.iy(i), Grid.iz(i)) == U32.and(i, 262143)`;
+  `cell_roundtrip` — `Cell.reencode(w) == U32.and(w, 8388607)`.
+- `PROOF.bend` — `Laws.index_roundtrip` / `Laws.cell_roundtrip` by `Equal.cong` over the `U32` wrapper, delegating to `Bits.model_index_rt` / `Bits.model_cell_rt`.
+- `app/tests.bend` T5 kept unchanged as the runtime twin (exhaustive index roundtrip over 2^18, cell words over 4096).
+
+**Design decisions / deviations**
+- **Law statements use a mask RHS.** `reencode(w) == w` is false whenever bits 23–31 are set, and the flat index roundtrip is false above 2^18. The unconditional true statements are `... == and(i, 2^18-1)` and `... == and(w, 2^23-1)`; in-range roundtrips follow by specializing `and` with the domain mask. This is the honest formulation of the A.1 downgrade: not weakened to a special case, but made total.
+- **Left-association matters.** `Grid.index`/`Cell.encode` use left-associative `. | .`. `model_index`/`model_cell` were written left-associated to match, so the refinement is definitional (right-associated `or` is not definitionally equal to left-associated).
+- **Refinement is definitional, not axiomatic.** `U32` is a transparent wrapper `U32{data: Word(32n)}` and every `U32` bit op is its `Word` op on `.data`; `mask(32, k)` reduces to the literal masks (31/63/1/…) and `shl_n`/`shr_n` reduce to `U32.shln`/`U32.shrn`. So `Equal.cong(Word(32n), U32, x => U32{x}, ...)` closes the gap with no extra lemmas. Verified: `bend PROOF.bend` → `All terms check.`
+- **Proof style.** Rewrite annotations (`%e : P`, which replaces `b` with `a` at the `_`-marked occurrence) were used for tail recursion, and `Equal.trans`/`Equal.cong` for multi-step algebra where rewrite orientation was fragile. Affine lets (`+x = …`) were needed wherever a proof term mentions the same value more than once; `Nat`/word match binders that are reused get `+` in constructor patterns.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (6 laws).
+- `bend app/tests.bend` (JS, tick-free) → all PASS, ~0.7s.
+- `bend app/simtests.bend -o bin && ./bin` (native) → T1, T2, T3, T4, T4b, T9 all PASS. No simulation code changed, so no behavioural or performance change to the engine.
+
+**Recommended next:** M6 (windowed `App.run` app). M1.5 debt is now paid; no bit-level laws remain queued.

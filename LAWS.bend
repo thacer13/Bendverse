@@ -13,3 +13,11 @@ law cell_full_mask:
 
 law cell_reserved_bits:
   {U32.and(Cell.encode(31, 63, 1, 31, 63), 4286578688) == 0 : U32}
+
+law index_roundtrip:
+  for i: U32
+  {Grid.index(Grid.ix(i), Grid.iy(i), Grid.iz(i)) == U32.and(i, 262143) : U32}
+
+law cell_roundtrip:
+  for w: U32
+  {Cell.reencode(w) == U32.and(w, 8388607) : U32}
