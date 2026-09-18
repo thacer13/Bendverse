@@ -191,7 +191,7 @@ These carry the properties the engine claims and touch no runtime code; they are
 
 - [x] **V1** Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Formalizes the settling assumption M4/M8 rest on. See A.7.
 - [ ] **V2 Global settling** (in progress — list measure + composition landed (A.9); array-level Φ via `to_pots` landed (A.10); the `Array.set`/`to_pots` refinement is the remaining wall): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle. The remaining refinement shards as:
-  - [ ] **V2b-i** `List.set` split/sum lemma — self-contained.
+  - [x] **V2b-i** `List.set` split/sum lemma — self-contained. (See A.20.)
   - [ ] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — the tree induction; the risky one.
   - [ ] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` instances — including "support writes preserve Φ" and "the bedrock floor keeps every crumble at `L ≥ 1`".
 - [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test. Sharded:
@@ -208,7 +208,7 @@ These carry the properties the engine claims and touch no runtime code; they are
 - [ ] **M7 Parallel track**: parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Pair with **V3**. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed). Sharded, easiest → hardest:
   - [x] **M7a Parallel worldgen** (`build`) — pure, no shared linear state; smallest real speedup, zero semantic risk. (See A.18.)
   - [ ] **M7b GPU worldgen** (`!` on `hash`/`noise2`/`gen`) — same semantics, needs CUDA.
-  - [ ] **M7c Parallel render** (`view`) — per-pixel, but shares the world `Array` → clone-per-region; independent of movement.
+  - [ ] **M7c Parallel render** (`view`) — **dropped**: measured ~1.2 ms/frame vs ~20 ms for a collapsing tick, so clone-per-region cannot pay for itself on a 256×256 render. See A.19. (Independent of movement; nothing else depends on it.)
   - [ ] **M7d Parallel phase folds (CPU)** — region splits + clone + the §2.5 tie-break; gated on **V3c**.
   - [ ] **M7e GPU phases** — last and most optional.
 - [ ] **M8 Chunks / "infinite" world** (stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Requires **V2**. Accept: chunk gen + tick identical to fixed-world behavior on the same region. Sharded:
@@ -710,3 +710,45 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - `bend main.bend -o bin && ./bin` prints the before/after ASCII collapse as before.
 
 **Recommended next:** **M7c** (parallel render, clone-per-region; independent of movement) per the A.12 interleave, or **V2b-i** (`List.set` split/sum) if the scale track is paused. **M7b** (`!` GPU worldgen) still needs CUDA, which this machine lacks.
+
+### A.19 — M7c dropped: render measured not worth parallelizing
+
+**Status:** M7c **not implemented**, by explicit decision after measurement (human chose "Skip M7c, go to V2b-i"). §5 now records the drop. No code change for this entry.
+
+**Measurement.** On native (`--threads 6`), a `view` (256×256 = 65536 pixels, reading the `z=32` cross-section from the 2^18 world) is **~1.2 ms**; 100 views + `build` + image hash run in 0.147 s. For context, a tick over an active collapse is **~20 ms** (20 spawn+ticks + hash in 0.43 s). Render is therefore ~6% of a frame while collapsing and near-zero once settled.
+
+**Why this contradicts the A.12 expectation.** A.12 guessed "near-term wins from CPU forks (M7a/M7c)". M7a did give a real ~1.7× on `build`; M7c does not, because the render is already tiny relative to the tick and the only Bend-legal sharing strategy is clone-per-region, whose O(array) copy exceeds the ~1 ms it would hide. A slice-then-parallel variant was considered (extract the 4096-cell cross-section once, split, parallel-fill) but the ceiling is <1 ms saved for non-trivial plumbing and risk, so it was not built.
+
+**Consequence.** Nothing depends on M7c: `view` is pure and does not touch world state, so dropping it weakens no claim and changes no output. M7b/M7e still need CUDA; M7d (parallel phase folds) is gated on V3c and is where the frame time actually is.
+
+**Recommended next:** **V2b-i** (`List.set` split/sum), per the human decision.
+
+### A.20 — V2b-i complete: `List.set` split and sum lemmas
+
+**Status:** V2b-i **complete** (§5 box checked). **2 new laws** (27 total). Engine untouched; gate green; fast and simulation suites pass.
+
+**Deliverables**
+- `src/settle.bend`:
+  - `pick_cons(h, a, b, c)` — `Bool.pick(c, h<>a, h<>b) == h <> Bool.pick(c, a, b)` (the congruence the split proof needs once the pick is stuck on a symbolic condition).
+  - `set_append(l, r, n, v)` — **the split lemma**, stated *piecewise* so it is total and needs no hypothesis: `List.set(app(l,r), n, v)` equals `app(List.set(l,n,v), r)` when `n < len l`, else `app(l, List.set(r, n-len l, v))`, as a single `Bool.pick` over `Nat.is_lt(n, len l)`. Proved by induction on `l` with `n` matched in lockstep (`match l n` in binder order); both "runs off the end" cases are handled directly, and the recursive case is one `Equal.cong` under `h <> _` plus `pick_cons`. This is why no `i < len l` hypothesis (and no impossible-case elimination) is required.
+  - `suml_cons_mid(l, x, r)` — `suml(app(l, x<>r)) == suml(l) + (x + suml(r))`, from `suml_mid(l,[x],r)` and `n_add_zero_right`.
+  - `set_sum(l, x, r, v)` — **the sum lemma**: `(suml(app(l, v<>r)) + x) == (suml(app(l, x<>r)) + v)`, i.e. a point update changes the sum by exactly `x - v` (in `+`-form, so it feeds `replace_decreases` in V2b-iii). Reduces to the arithmetic `n_add_mid_swap` under `suml_cons_mid`.
+- `src/nat.bend`: `n_add_mid_swap(L, x, v, R)` — `((L+(v+R))+x) == ((L+(x+R))+v)`, the pure-`Nat` reordering, proved with `n_add_assoc`/`n_add_comm`.
+- `LAWS.bend` (appended): `list_set_split` (the piecewise `Set`/`Bool.pick` identity) and `list_set_sum`.
+- `PROOF.bend`: both delegate to the module lemmas.
+- `app/tests.bend`: **T15** runtime twin — the split formula over `n = 0..6` on `[10,20,30,40] ++ [50,60]` (including indices past both halves, exercising the "unchanged" out-of-range behaviour) and the sum identity on a sample.
+
+**Bend findings (V2b-i)**
+- **Prove the piecewise form, not a conditional.** The natural statement `i < len l ⇒ set(app(l,r),i,v) = app(set(l,i,v),r)` needs the impossible `l = Nil` case eliminated; stating it as `Bool.pick(is_lt(i,len l), left, right)` makes every case reachable and the proof a clean lockstep induction. Bound discharge moves to V2b-ii (where `U32.is_lt(i,h)` is known).
+- **Binder order for multi-scrutinee induction.** A nested `match l` inside `match n` is rejected ("match scrutinees in binder order"); use one `match l n:` with combined patterns. The first matched binder is the termination measure, so the recursive call passes the structural tail.
+- **The `+` in list literals.** A local `+xs = [...]` cannot infer the list quantifier; route literals through helper defs with a declared `+List<Nat>` return type. `+v = 99n` similarly needs `{99n : Nat}`.
+- A recurring transcription hazard: `List<&2, Nat>` vs `List<&2, Nat)` (a stray `)` for `>`) yields a misleading "expected a term, observed ')'". Verified against a working scratch before porting.
+
+**Why this unblocks V2b-ii.** The remaining `Array.set`/`to_pots` wall (A.10) at an `ANode` halves the list as `app(to_pots(xs,…), to_pots(ys,…))`; the RHS `List.set(P, i-base, v)` then needs exactly this split, and the matching index/length facts (`len(to_pots(xs,…)) = h`, `Nat.is_lt(·,·) ↔ U32.is_lt(·,·)`) are the "bound reasoning" V2b-ii owns.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (27 laws); `bend src/settle.bend` and `bend src/nat.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T15.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
+
+**Recommended next:** **V2b-ii** (`Array.swap.go` ↔ `to_pots`), the risky tree induction; the split lemma plus a `len(to_pots) = n` and a `Nat`/`U32` comparison correspondence are its dependencies.

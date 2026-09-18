@@ -90,6 +90,38 @@ def n_mul_succ_right(a: Nat, +b: Nat) -> {a * (1n + b) == (a * b) + a : Nat}:
               Nat.add(1n, Nat.add(Nat.add(b, Nat.mul(q, b)), q)),
               n_add_succ_right(Nat.add(b, Nat.mul(q, b)), q)))))
 
+def n_add_mid_swap(+L: Nat, +x: Nat, +v: Nat, +R: Nat) -> {Nat.add(Nat.add(L, Nat.add(v, R)), x) == Nat.add(Nat.add(L, Nat.add(x, R)), v) : Nat}:
+  Equal.trans(Nat,
+    Nat.add(Nat.add(L, Nat.add(v, R)), x),
+    Nat.add(L, Nat.add(Nat.add(v, R), x)),
+    Nat.add(Nat.add(L, Nat.add(x, R)), v),
+    n_add_assoc(L, Nat.add(v, R), x),
+    Equal.trans(Nat,
+      Nat.add(L, Nat.add(Nat.add(v, R), x)),
+      Nat.add(L, Nat.add(v, Nat.add(x, R))),
+      Nat.add(Nat.add(L, Nat.add(x, R)), v),
+      Equal.cong(Nat, Nat, y => Nat.add(L, y),
+        Nat.add(Nat.add(v, R), x),
+        Nat.add(v, Nat.add(x, R)),
+        Equal.trans(Nat,
+          Nat.add(Nat.add(v, R), x),
+          Nat.add(v, Nat.add(R, x)),
+          Nat.add(v, Nat.add(x, R)),
+          n_add_assoc(v, R, x),
+          Equal.cong(Nat, Nat, y => Nat.add(v, y), Nat.add(R, x), Nat.add(x, R), n_add_comm(R, x)))),
+      Equal.trans(Nat,
+        Nat.add(L, Nat.add(v, Nat.add(x, R))),
+        Nat.add(L, Nat.add(Nat.add(x, R), v)),
+        Nat.add(Nat.add(L, Nat.add(x, R)), v),
+        Equal.cong(Nat, Nat, y => Nat.add(L, y),
+          Nat.add(v, Nat.add(x, R)),
+          Nat.add(Nat.add(x, R), v),
+          n_add_comm(v, Nat.add(x, R))),
+        Equal.sym(Nat,
+          Nat.add(Nat.add(L, Nat.add(x, R)), v),
+          Nat.add(L, Nat.add(Nat.add(x, R), v)),
+          n_add_assoc(L, Nat.add(x, R), v)))))
+
 def n_sub_zero(a: Nat) -> {Nat.sub(a, 0n) == a : Nat}:
   match a:
     case 0n:

@@ -79,6 +79,20 @@ law settling_budget:
   for p: Nat
   {Settle.burn(p, p) == 0n : Nat}
 
+law list_set_split:
+  for +l: +List<Nat>
+  for +r: +List<Nat>
+  for n: Nat
+  for v: Nat
+  {List.set(&2, Nat, Settle.app(l, r), n, v) == Bool.pick(List<&2, Nat>, Nat.is_lt(n, Settle.len(l)), Settle.app(List.set(&2, Nat, l, n, v), r), Settle.app(l, List.set(&2, Nat, r, Nat.sub(n, Settle.len(l)), v))) : List<&2, Nat>}
+
+law list_set_sum:
+  for +l: +List<Nat>
+  for x: Nat
+  for +r: +List<Nat>
+  for v: Nat
+  {Nat.add(Settle.suml(Settle.app(l, v <> r)), x) == Nat.add(Settle.suml(Settle.app(l, x <> r)), v) : Nat}
+
 law parity_flip_succ:
   for x: U32
   {Parity.par32(U32.add(x, 1)) == Bool.not(Parity.par32(x)) : Bool}

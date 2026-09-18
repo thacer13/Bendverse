@@ -68,6 +68,12 @@ def Laws.strict_events_bounded(xs):
 def Laws.settling_budget(p):
   Settle.burn_exhausts(p)
 
+def Laws.list_set_split(l, r, n, v):
+  Settle.set_append(l, r, n, v)
+
+def Laws.list_set_sum(l, x, r, v):
+  Settle.set_sum(l, x, r, v)
+
 def Laws.parity_flip_succ(x):
   Parity.u32_add_one_flips(x)
 

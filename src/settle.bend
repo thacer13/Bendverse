@@ -189,6 +189,71 @@ def suml1(+a: Nat) -> {suml([a]) == a : Nat}:
 def suml2(+a: Nat, +b: Nat) -> {suml([a, b]) == Nat.add(a, b) : Nat}:
   Equal.cong(Nat, Nat, x => Nat.add(a, x), Nat.add(b, 0n), b, NatL.n_add_zero_right(b))
 
+def pick_cons(+h: Nat, +a: +List<Nat>, +b: +List<Nat>, +c: Bool) -> {Bool.pick(List<&2, Nat>, c, h <> a, h <> b) == h <> Bool.pick(List<&2, Nat>, c, a, b) : List<&2, Nat>}:
+  match c:
+    case False{}:
+      {==}
+    case True{}:
+      {==}
+
+def set_append(+l: +List<Nat>, +r: +List<Nat>, +n: Nat, +v: Nat) -> {List.set(&2, Nat, app(l, r), n, v) == Bool.pick(List<&2, Nat>, Nat.is_lt(n, len(l)), app(List.set(&2, Nat, l, n, v), r), app(l, List.set(&2, Nat, r, Nat.sub(n, len(l)), v))) : List<&2, Nat>}:
+  match l n:
+    case Nil{} 0n:
+      {==}
+    case Nil{} 1n+p:
+      {==}
+    case h <> t 0n:
+      {==}
+    case +h <> +t 1n+ +p:
+      +c = Nat.is_lt(p, len(t))
+      +a = app(List.set(&2, Nat, t, p, v), r)
+      +b = app(t, List.set(&2, Nat, r, Nat.sub(p, len(t)), v))
+      Equal.trans(List<&2, Nat>,
+        h <> List.set(&2, Nat, app(t, r), p, v),
+        h <> Bool.pick(List<&2, Nat>, c, a, b),
+        Bool.pick(List<&2, Nat>, c, h <> a, h <> b),
+        Equal.cong(List<&2, Nat>, List<&2, Nat>, (x => h <> x),
+          List.set(&2, Nat, app(t, r), p, v),
+          Bool.pick(List<&2, Nat>, c, a, b),
+          set_append(t, r, p, v)),
+        Equal.sym(List<&2, Nat>,
+          Bool.pick(List<&2, Nat>, c, h <> a, h <> b),
+          h <> Bool.pick(List<&2, Nat>, c, a, b),
+          pick_cons(h, a, b, c)))
+
+def suml_cons_mid(+l: +List<Nat>, +x: Nat, +r: +List<Nat>) -> {suml(app(l, x <> r)) == Nat.add(suml(l), Nat.add(x, suml(r))) : Nat}:
+  Equal.trans(Nat,
+    suml(app(l, x <> r)),
+    Nat.add(suml(l), Nat.add(Nat.add(x, 0n), suml(r))),
+    Nat.add(suml(l), Nat.add(x, suml(r))),
+    suml_mid(l, [x], r),
+    Equal.cong(Nat, Nat, y => Nat.add(suml(l), y),
+      Nat.add(Nat.add(x, 0n), suml(r)),
+      Nat.add(x, suml(r)),
+      Equal.cong(Nat, Nat, y => Nat.add(y, suml(r)), Nat.add(x, 0n), x, NatL.n_add_zero_right(x))))
+
+def set_sum(+l: +List<Nat>, +x: Nat, +r: +List<Nat>, +v: Nat) -> {Nat.add(suml(app(l, v <> r)), x) == Nat.add(suml(app(l, x <> r)), v) : Nat}:
+  +L = suml(l)
+  +R = suml(r)
+  +after = suml(app(l, v <> r))
+  +before = suml(app(l, x <> r))
+  +ea = suml_cons_mid(l, v, r)
+  +eb = suml_cons_mid(l, x, r)
+  Equal.trans(Nat,
+    Nat.add(after, x),
+    Nat.add(Nat.add(L, Nat.add(v, R)), x),
+    Nat.add(before, v),
+    Equal.cong(Nat, Nat, y => Nat.add(y, x), after, Nat.add(L, Nat.add(v, R)), ea),
+    Equal.trans(Nat,
+      Nat.add(Nat.add(L, Nat.add(v, R)), x),
+      Nat.add(Nat.add(L, Nat.add(x, R)), v),
+      Nat.add(before, v),
+      NatL.n_add_mid_swap(L, x, v, R),
+      Equal.cong(Nat, Nat, y => Nat.add(y, v),
+        Nat.add(L, Nat.add(x, R)),
+        before,
+        Equal.sym(Nat, before, Nat.add(L, Nat.add(x, R)), eb))))
+
 def fall_before(+D: Nat, +G: Nat, +L: Nat) -> +List<Nat>:
   [Pot.phi_up(Nat.add(D, G), L), Pot.phi(D, L)]
 

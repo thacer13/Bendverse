@@ -4,6 +4,7 @@ import ../src/cell.bend as Cell
 import ../src/worldgen.bend as Worldgen
 import ../src/parity.bend as Parity
 import ../src/priority.bend as Priority
+import ../src/settle.bend as Settle
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -200,6 +201,62 @@ def total_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def total_bad() -> U32:
   total_go(U32.to_nat(4096), 0, 0)
 
+def nlist_eq(+xs: +List<Nat>, +ys: +List<Nat>) -> Bool:
+  match xs:
+    case Nil{}:
+      match ys:
+        case Nil{}:
+          True{}
+        case Con{hy, ty}:
+          False{}
+    case Con{hx, tx}:
+      match ys:
+        case Nil{}:
+          False{}
+        case Con{hy, ty}:
+          Bool.and(Nat.is_eq(hx, hy), nlist_eq(tx, ty))
+
+def sample_xs() -> +List<Nat>:
+  [10n, 20n, 30n, 40n]
+
+def sample_ys() -> +List<Nat>:
+  [50n, 60n]
+
+def set_split_case(+n: Nat, bad: U32) -> U32:
+  +xs = sample_xs()
+  +ys = sample_ys()
+  +v = {99n : Nat}
+  +lhs = List.set(&2, Nat, Settle.app(xs, ys), n, v)
+  +rhs = Bool.pick(List<&2, Nat>, Nat.is_lt(n, Settle.len(xs)),
+    Settle.app(List.set(&2, Nat, xs, n, v), ys),
+    Settle.app(xs, List.set(&2, Nat, ys, Nat.sub(n, Settle.len(xs)), v)))
+  inc_if_false(nlist_eq(lhs, rhs), bad)
+
+def set_split_go(fuel: Nat, +n: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      set_split_go(p, 1n + n, set_split_case(n, bad))
+
+def sample_xs2() -> +List<Nat>:
+  [1n, 2n, 3n]
+
+def sample_ys2() -> +List<Nat>:
+  [5n, 6n]
+
+def set_sum_case(bad: U32) -> U32:
+  +xs = sample_xs2()
+  +ys = sample_ys2()
+  +x = {7n : Nat}
+  +v = {8n : Nat}
+  +lhs = Nat.add(Settle.suml(Settle.app(xs, v <> ys)), x)
+  +rhs = Nat.add(Settle.suml(Settle.app(xs, x <> ys)), v)
+  inc_if_false(Nat.is_eq(lhs, rhs), bad)
+
+def set_laws_bad() -> U32:
+  set_sum_case(set_split_go(U32.to_nat(7), 0n, 0))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -214,3 +271,4 @@ def main() -> IO(Unit):
     report("T12 dir phi cancellation", phi_bad())
     report("T13 neighbor index cancellation", nc_bad())
     report("T14 scan order totality", total_bad())
+    report("T15 list set split + sum", set_laws_bad())
