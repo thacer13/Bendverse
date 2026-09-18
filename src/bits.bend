@@ -682,3 +682,90 @@ def model_cell_rt(+w: Word(32n)) -> {model_cell(32n, w) == Word.and(32n, w, mask
     Equal.cong(Word(32n), Word(32n), x => Word.and(32n, w2, x),
         Word.or(32n, Word.or(32n, Word.or(32n, Word.or(32n, mask(32n, 5n), shl_n(32n, mask(32n, 6n), 5n)), shl_n(32n, mask(32n, 1n), 11n)), shl_n(32n, mask(32n, 5n), 12n)), shl_n(32n, mask(32n, 6n), 17n)),
         mask(32n, 23n), mask_cell()))
+
+def shr_pad_and(+p: Nat, +at: Word(p), +bt: Word(p)) -> {Word.shr.pad(p, Word.and(p, at, bt)) == Word.and(1n+p, Word.shr.pad(p, at), Word.shr.pad(p, bt)) : Word(1n+p)}:
+  match p:
+    case 0n:
+      match at bt:
+        case WNil{} WNil{}:
+          {==}
+    case 1n+q:
+      match at bt:
+        case WCon{ath, att} WCon{bth, btt}:
+          Equal.cong(Word(1n+q), Word(1n+(1n+q)), t => WCon{Bool.and(ath, bth), t},
+            Word.shr.pad(q, Word.and(q, att, btt)),
+            Word.and(1n+q, Word.shr.pad(q, att), Word.shr.pad(q, btt)),
+            shr_pad_and(q, att, btt))
+
+def shr_and(+n: Nat, +a: Word(n), +b: Word(n)) -> {Word.shr(n, Word.and(n, a, b)) == Word.and(n, Word.shr(n, a), Word.shr(n, b)) : Word(n)}:
+  match n:
+    case 0n:
+      match a b:
+        case WNil{} WNil{}:
+          {==}
+    case 1n+p:
+      match a b:
+        case WCon{ah, at} WCon{bh, bt}:
+          shr_pad_and(p, at, bt)
+
+def shr_n_and(+n: Nat, k: Nat, +a: Word(n), +b: Word(n)) -> {shr_n(n, k, Word.and(n, a, b)) == Word.and(n, shr_n(n, k, a), shr_n(n, k, b)) : Word(n)}:
+  match k:
+    case 0n:
+      {==}
+    case 1n+q:
+      Equal.trans(Word(n),
+        shr_n(n, 1n+q, Word.and(n, a, b)),
+        shr_n(n, q, Word.and(n, Word.shr(n, a), Word.shr(n, b))),
+        Word.and(n, shr_n(n, 1n+q, a), shr_n(n, 1n+q, b)),
+        Equal.cong(Word(n), Word(n), x => shr_n(n, q, x),
+          Word.shr(n, Word.and(n, a, b)),
+          Word.and(n, Word.shr(n, a), Word.shr(n, b)),
+          shr_and(n, a, b)),
+        shr_n_and(n, q, Word.shr(n, a), Word.shr(n, b)))
+
+def shr_n_or(+n: Nat, k: Nat, +a: Word(n), +b: Word(n)) -> {shr_n(n, k, Word.or(n, a, b)) == Word.or(n, shr_n(n, k, a), shr_n(n, k, b)) : Word(n)}:
+  match k:
+    case 0n:
+      {==}
+    case 1n+q:
+      Equal.trans(Word(n),
+        shr_n(n, 1n+q, Word.or(n, a, b)),
+        shr_n(n, q, Word.or(n, Word.shr(n, a), Word.shr(n, b))),
+        Word.or(n, shr_n(n, 1n+q, a), shr_n(n, 1n+q, b)),
+        Equal.cong(Word(n), Word(n), x => shr_n(n, q, x),
+          Word.shr(n, Word.or(n, a, b)),
+          Word.or(n, Word.shr(n, a), Word.shr(n, b)),
+          shr_or(n, a, b)),
+        shr_n_or(n, q, Word.shr(n, a), Word.shr(n, b)))
+
+def shr_pad_zero(+p: Nat) -> {Word.shr.pad(p, Word.zero(p)) == Word.zero(1n+p) : Word(1n+p)}:
+  match p:
+    case 0n:
+      {==}
+    case 1n+q:
+      Equal.cong(Word(1n+q), Word(1n+(1n+q)), t => WCon{False{}, t},
+        Word.shr.pad(q, Word.zero(q)),
+        Word.zero(1n+q),
+        shr_pad_zero(q))
+
+def shr_zero(+n: Nat) -> {Word.shr(n, Word.zero(n)) == Word.zero(n) : Word(n)}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      shr_pad_zero(p)
+
+def shr_n_zero(+n: Nat, k: Nat) -> {shr_n(n, k, Word.zero(n)) == Word.zero(n) : Word(n)}:
+  match k:
+    case 0n:
+      {==}
+    case 1n+q:
+      Equal.trans(Word(n),
+        shr_n(n, 1n+q, Word.zero(n)),
+        shr_n(n, q, Word.zero(n)),
+        Word.zero(n),
+        Equal.cong(Word(n), Word(n), x => shr_n(n, q, x),
+          Word.shr(n, Word.zero(n)),
+          Word.zero(n),
+          shr_zero(n)),
+        shr_n_zero(n, q))
