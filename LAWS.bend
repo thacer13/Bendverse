@@ -7,6 +7,7 @@ import ./src/parity.bend as Parity
 import ./src/mod.bend as Mod
 import ./src/priority.bend as Priority
 import ./src/order.bend as Order
+import ./src/refine.bend as Refine
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -137,3 +138,26 @@ law scan_order_total:
   for a: U32
   for b: U32
   {Bool.or(Bool.or(U32.is_lt(a, b), U32.is_gt(a, b)), U32.is_eq(a, b)) == True{} : Bool}
+
+law swap_refines_array:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +v: U32
+  {Refine.unpack(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, v))) == Refine.swap_m(t, n, i, v) : Refine.PT}
+
+law array_swap_pots:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +v: U32
+  {Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, v)), base, n) == Refine.pots_swap_m(t, base, n, i, v) : +List<Nat>}
+
+law swap_lowers_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +v: U32
+  {Nat.add(Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, v)), base, n)), Refine.nfst(Refine.chg_m(t, base, n, i, v))) == Nat.add(Settle.suml(Settle.to_pots(Refine.pack(t), base, n)), Refine.nsnd(Refine.chg_m(t, base, n, i, v))) : Nat}

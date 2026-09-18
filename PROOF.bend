@@ -9,6 +9,7 @@ import ./src/parity.bend as Parity
 import ./src/mod.bend as Mod
 import ./src/priority.bend as Priority
 import ./src/order.bend as Order
+import ./src/refine.bend as Refine
 
 def Laws.sanity():
   {==}
@@ -100,3 +101,12 @@ def Laws.neighbor_cancel(i, a, b, c):
 
 def Laws.scan_order_total(a, b):
   Order.u32_cmp_total(a, b)
+
+def Laws.swap_refines_array(t, n, i, v):
+  Refine.swap_ref(t, n, i, v)
+
+def Laws.array_swap_pots(t, base, n, i, v):
+  Refine.array_swap_pots(t, base, n, i, v)
+
+def Laws.swap_lowers_phi(t, base, n, i, v):
+  Refine.array_swap_decreases(t, base, n, i, v)

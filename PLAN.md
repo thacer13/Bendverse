@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 27 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 30 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -294,7 +294,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-27 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+30 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -352,7 +352,7 @@ an oversight to hide.
 | `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `rock_crumbles_lighter` | T9 | support potential |
 | `R7` | Support recomputed, never cached | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
-| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` | T4 T4b | sim potential settle |
+| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` | T4 T4b | sim potential settle refine |
 | `R10` | Determinism under any schedule | — (by construction) | T1 | sim |
 | `R11` | Worldgen is a pure seeding function | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
 | `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` | T5 spike bit31 spike mul wrap | bits grid cell nat |
@@ -382,6 +382,7 @@ R10 and R11 hold by construction and are witnessed by tests.
 | `M8c` | chunk-store assemble + tick equivalence, T18 | A.23 |
 | `V1` | Nat arithmetic + Φ-decrease / settling kernel | A.7 |
 | `V2b-i` | `List.set` split and sum lemmas | A.20 |
+| `V2b-ii` | array/model swap refinement + Φ-decrease under a point update | A.27 |
 | `V3a` | parity model + all-axis neighbor parity | A.13–A.14 |
 | `V3b` | packed-index neighbor cancel + total scan order | A.15–A.17 |
 | `—` | pi tooling: proof loop, lemma index, audit | A.24–A.25 |
@@ -390,8 +391,10 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
 ### 5.2 Open work (dependency-ordered)
 
-- [ ] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — the
-  tree induction. The risky one; closes `G1`.
+- [x] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — landed
+  (A.27): a non-linear `PT` model with a machine-checked `Array.swap.go`
+  refinement, the point-update pot list, and the Φ-decrease. Closes `G1`; the
+  one phrasing linearity forbids is recorded as `G8`.
 - [ ] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` — support
   writes preserve Φ; the bedrock floor keeps every crumble at `L ≥ 1`. Closes `G2`.
 - [ ] **V2 Global settling** — complete when ii and iii land; then `M8d` is ungated.
@@ -416,17 +419,18 @@ GPU targets and real payoff is at M8 scale. Near-term wins are CPU forks.
 Machine-readable: `bend_audit` parses this table. `Kind` is `unproven` (we claim
 it but have no proof), `accepted` (a deliberate assurance boundary), `standing`
 (a methodological caveat that applies across claims), or `review` (needs a human
-decision). Status is `open`, `accepted`, or `review`.
+decision). Status is `open`, `accepted`, `review`, or `closed`.
 
 | ID | Kind | Unproven / assumed | Status | Gates | Closes by |
 |---|---|---|---|---|---|
-| `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | open | M8d | tree induction over `Array.swap.go`; `List.set` split is done (V2b-i) |
+| `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | open | M8d | support writes preserve Φ; bedrock floor keeps crumble at `L ≥ 1` |
 | `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven) |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
-| `G5` | standing | laws constrain models (`Word` `List` `Nat`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` is the outstanding instance |
+| `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, remaining instance is the support-pass write (V2b-iii) |
 | `G6` | accepted | conservation (rule 2) and support (rule 7) are test-witnessed only | accepted | — | a count-invariant law over swap/transform ops |
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
+| `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 
 ---
 
@@ -452,6 +456,7 @@ decision). Status is `open`, `accepted`, or `review`.
 | `src/nat.bend` | `Nat` arithmetic lemmas |
 | `src/potential.bend` | Φ evaluation kernel |
 | `src/settle.bend` | settling lemmas (`suml`, `app`, `List.set` splits) |
+| `src/refine.bend` | array↔model refinement: `PT` model, pack/unpack, `Array.swap.go` correspondence, Φ decrease |
 | `src/parity.bend` | rule 4/1: parity model, neighbor parity |
 | `src/mod.bend` | rule 1: modular-add independence, ∓1 cancel |
 | `src/priority.bend` | rule 1/3: `Dir` model, φ cancellation, neighbor cancel |
@@ -488,9 +493,11 @@ All of `src/` is pure (zero IO). Runners are thin shells.
 
 ## 8. Open risks / spikes
 
-- **Refinement (`G1`, `G5`).** The single load-bearing risk: proofs about models
-  are not proofs about the engine. `G1` is the concrete instance; the mitigation
-  is explicit refinement lemmas, never assumptions.
+- **Refinement (`G5`, `G8`).** The single load-bearing risk: proofs about models
+  are not proofs about the engine. `G1` (`Array.swap.go`) is now proven as explicit
+  refinement lemmas (A.27); `G8` records the linearity limit on how an array may be
+  named in a statement. The remaining instance is the support-pass write (V2b-iii).
+  Mitigation throughout: explicit refinement lemmas, never assumptions.
 - **Schedule invariance (`G3`).** A region-split fold may differ from the
   sequential fold in tie-break corners. Mitigation: V3a+V3b stay proven; M7d
   waits for V3c or is dropped.

@@ -658,3 +658,34 @@ Wave 2 adds four tools:
 **Consequences.** `AGENTS.md` updated to the new hierarchy and to the downgrade-into-§5.3 protocol. `bend_plan` gained `HISTORY` and now reports open work + gap summary; `bend_status` reads the landed table, gap registry, and `HISTORY.md`; `bend_audit` is table-driven (gap registry + lawless rules + law-count drift). Parsers were unit-tested against the new docs and every tool re-exercised through the stubbed-pi harness.
 
 **Verification:** `bend PROOF.bend` → `All terms check.`; `bend app/tests.bend` 16/16; native sim tests 7/7.
+
+### A.27 — V2b-ii complete: `Array.swap.go` ↔ `to_pots` refinement + Φ decrease
+
+**Status:** V2b-ii **complete** (§5.2 box checked, `G1` closed). **3 new laws** (30 total). Engine untouched; gate green; fast (16/16) and simulation (7/7) suites pass.
+
+**What landed** (`src/refine.bend`, new, pure):
+- `PT` — a non-linear (`Data`) model of `Array<U32>`'s `ALeaf`/`ANode` shape, with `pack`/`unpack` and both roundtrips (`unpack_pack`, `pack_unpack`).
+- `swap_m` — the model point-update, mirroring `Array.swap.go` (and its `h = shr n` / `is_lt(i,h)` split).
+- `swap_ref` — **the refinement**: `unpack(afst(Array.swap.go(U32, pack t, n, i, v))) == swap_m(t, n, i, v)`. This is a machine-checked statement about Base's actual `Array.swap.go`, over arrays presented as `pack t`.
+- `pots_m` / `pots_swap_m` / `chg_m` — the positional potential list, the incrementally-swapped list, and the old/new potential at the changed leaf.
+- `to_pots_pack` — `to_pots(pack t, base, n) == pots_m(t, base, n)` (connects the model fold to the real array fold).
+- `pots_corr` — `pots_m(swap_m t …, base, n) == pots_swap_m(t, base, n, i, v)` (the point-update list correspondence).
+- `dec` — the **Φ decrease**: `suml(pots_swap_m …) + old == suml(pots_m …) + new`, no bound hypotheses (`i < n` is unnecessary: the walk hits some leaf and both sides agree there; range discharge belongs to V2b-iii).
+- `array_swap_pots` / `array_swap_decreases` — the composed array-level statements.
+
+**Laws added:** `swap_refines_array`, `array_swap_pots`, `swap_lowers_phi` (LAWS.bend + PROOF.bend). §4 R9 gains all three; §6 gains `src/refine.bend`; §5.3 `G1` → closed.
+
+**Bend findings (V2b-ii).** These are the reasons the induction took the shape it did:
+- **Arrays can never be copied.** `Array` is `Type`, so `+a` is rejected and a law like `to_pots(Array.set a …) == to_pots a` cannot even be *stated* (`List<&1,Nat>` vs `List<&2,Nat>`), and a proof body that consumes `a` twice is rejected (`consumed more than once`). The fix is a `Data` presentation: every array is definitionally `pack(unpack a)`, so all claims go through `PT`.
+- **No forward references to unfilled laws.** Base's mutual `Array.swap.if` ↔ `Array.swap.go` works only in the prelude; user code that calls an unfilled `law` gets `an unfilled law is a dead claim: live code cannot use it`. Mutual recursion is therefore unavailable.
+- **No matching a computed scrutinee.** `+z = U32.is_lt(i, h)` then `match z` is `a match cannot scrutinize a local binder`. The replacement is `Bool.pick` + a helper that takes `z` as a *parameter*; matching the parameter is fine.
+- **Mutual recursion in proofs is broken by passing IHs.** A `z`-helper that would call the recursive lemma is defined *first*, taking the child proofs as arguments; the recursive lemma evaluates both children's IHs and passes them in. No mutual recursion, same induction.
+- **Pair-returning Base defs don't reduce on stuck inputs.** `Array.swap.lo/hi` destructure their third argument, so `afst(Array.swap.lo(…, go))` is stuck while `go = Array.swap.go(pack xs, …)` is stuck (`pack xs` is a match on a variable). `lo_fst`/`hi_fst` (`afst(swap.lo(ys, r)) == ANode{afst r, ys}` by matching `r`) expose the component and unblock the congruence.
+- **Erased positions still count for definitional equality, not for quantity.** `Equal.cong`'s `a`/`b`/`f` are erased, so a stuck `Array.swap.go …` may be duplicated there, but the live use must be unique.
+
+**Honest scope note.** The laws are stated over `PT`, not over an arbitrary `Array` variable, because linearity forbids naming one twice. This is recorded as new gap `G8` (`accepted`): it is a language expressiveness limit, not a semantic one — the refinement is against Base's real `Array.swap.go` and every array is `pack(unpack a)`. The next step, V2b-iii, must make the same move for the support pass (writes that change bits, not material, so `pots` is unchanged).
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (30 laws).
+- `bend app/tests.bend` (JS, tick-free) → 16/16.
+- Native `bend app/simtests.bend -o bin && ./bin` → 7/7.
