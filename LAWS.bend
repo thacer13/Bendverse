@@ -5,6 +5,7 @@ import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
 import ./src/mod.bend as Mod
+import ./src/priority.bend as Priority
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -104,3 +105,8 @@ law low6_add_independent:
   for a: U32
   for b: U32
   {U32.and(U32.add(a, b), 63) == U32.and(U32.add(U32.and(a, 63), U32.and(b, 63)), 63) : U32}
+
+law dir_phi_cancel:
+  for d: Priority.Dir
+  for x: U32
+  {Priority.phi(Priority.dir_neg(d), Priority.phi(d, x)) == U32.and(x, 63) : U32}

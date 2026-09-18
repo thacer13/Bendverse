@@ -3,6 +3,7 @@ import ../src/grid.bend as Grid
 import ../src/cell.bend as Cell
 import ../src/worldgen.bend as Worldgen
 import ../src/parity.bend as Parity
+import ../src/priority.bend as Priority
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -139,6 +140,21 @@ def mod_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def mod_bad() -> U32:
   mod_go(U32.to_nat(4096), 0, 0)
 
+def phi_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +x = U32.mul(i, 2654435761)
+      o0 = U32.is_eq(Priority.phi(Priority.dir_neg(Priority.Dno{}), Priority.phi(Priority.Dno{}, x)), U32.and(x, 63))
+      o1 = U32.is_eq(Priority.phi(Priority.dir_neg(Priority.Dup{}), Priority.phi(Priority.Dup{}, x)), U32.and(x, 63))
+      o2 = U32.is_eq(Priority.phi(Priority.dir_neg(Priority.Ddn{}), Priority.phi(Priority.Ddn{}, x)), U32.and(x, 63))
+      all = Bool.and(o0, Bool.and(o1, o2))
+      phi_go(p, U32.add(i, 1), inc_if_false(all, bad))
+
+def phi_bad() -> U32:
+  phi_go(U32.to_nat(4096), 0, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -150,3 +166,4 @@ def main() -> IO(Unit):
     report("T8 build matches gen", build_bad())
     report("T10 parity flip + neighbor x", parity_bad())
     report("T11 low6 add independence + pm1 cancel", mod_bad())
+    report("T12 dir phi cancellation", phi_bad())

@@ -637,3 +637,28 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
 
 **Recommended next:** **V3b-1** (co-target locality / radius-2), then **V3b-2** (total order + unique winner); the A.12 interleave then goes to M7a.
+
+### A.16 — V3b in progress: V3b-1a per-axis `Dir` cancellation
+
+**Status:** V3b still **partial** (§5 box unchecked). New `src/priority.bend`; `src/mod.bend` gained three U32 wrappers; **1 new law** (23 total). Engine untouched; gate green; fast suite passes (T12 added).
+
+**Why this split.** A.15 left "locality" as V3b-1. Executing it, the axis arithmetic and the packed-index assembly turned out to be separable, so V3b-1 is being landed as **1a** (per-axis translation cancellation) and **1b** (index-level radius-2 assembly). 1a is done here.
+
+**Deliverables (`src/priority.bend`)**
+- `Dir` (`Dno` / `Dup` / `Ddn`), `dir_val` (0 / 1 / 0xFFFFFFFF), `dir_neg` (the additive inverse per axis), and `phi(d, x) = and(x + val(d), 63)`.
+- `phi_cancel(d, x)`: **`phi(neg d, phi(d, x)) = and(x, 63)`** — advancing by one `{−1,0,+1}` step and then its opposite returns to the masked original. Proven per `Dir` from A.15's two cancels plus `low_mask_absorb`; `Dno` uses `add_zero` twice.
+- `src/mod.bend`: U32 wrappers `u32_add_one_ones` / `u32_add_ones_one` / `u32_add_zero_r`.
+
+**Law appended (`LAWS.bend`; existing laws untouched)**
+- `dir_phi_cancel` — the per-axis cancellation above. Runtime twin **T12** checks all three `Dir` values over 4096 samples.
+
+**Why this is the heart of locality.** A source targeting cell `d` sits one ±1/0 step from `d` in each axis. `phi_cancel` says that step is recoverable, so for a fixed destination the candidate sources are exactly its `{neighbor(d, u) : u ∈ Dir³}` (≤ 27 cells), and any two such candidates are within two steps in each axis — the **comparison radius ≤2** premise. The remaining work is to assemble this coordinate-wise result into the packed-index statement.
+
+**Remaining for V3b-1b (index level).** Prove `Grid.neighbor(Grid.neighbor(i, d), neg d) == U32.and(i, 262143)` by combining `Parity.u32_ix_neighbor`/`u32_iy_neighbor`/`u32_iz_neighbor` with `phi_cancel`, then reassembling equal coordinates via the `index_roundtrip` def. This needs small mask-18 absorptions (`ix(and(i, 262143)) = ix(i)`, and the same for `iy`/`iz`) plus a "neighbor output is bounded" lemma; no new carry arithmetic.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (23 laws).
+- `bend src/mod.bend` / `bend src/priority.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T11, T12, ~1.2s.
+
+**Recommended next:** **V3b-1b** (packed-index radius-2 locality), then **V3b-2** (total order + unique winner); then M7a per A.12.

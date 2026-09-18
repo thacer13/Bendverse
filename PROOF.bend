@@ -7,6 +7,7 @@ import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
 import ./src/mod.bend as Mod
+import ./src/priority.bend as Priority
 
 def Laws.sanity():
   {==}
@@ -83,3 +84,6 @@ def Laws.neighbor_z_parity(i, dz):
 
 def Laws.low6_add_independent(a, b):
   Mod.low6_add_indep(a, b)
+
+def Laws.dir_phi_cancel(d, x):
+  Priority.phi_cancel(d, x)

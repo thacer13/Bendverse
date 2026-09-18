@@ -259,3 +259,27 @@ def low6_add_indep(+a: U32, +b: U32) -> {U32.and(U32.add(a, b), 63) == U32.and(U
             Word.and(32n, Word.adc(32n, x, y, False{}, False{}), Bits.mask(32n, 6n)),
             Word.and(32n, Word.adc(32n, Word.and(32n, x, Bits.mask(32n, 6n)), Word.and(32n, y, Bits.mask(32n, 6n)), False{}, False{}), Bits.mask(32n, 6n)),
             lowadc(32n, 6n, x, y, False{}))
+
+def u32_add_one_ones(+a: U32) -> {U32.add(U32.add(a, 1), 4294967295) == a : U32}:
+  match a:
+    case U32{x}:
+      Equal.cong(Word(32n), U32, t => U32{t},
+        Word.add(32n, Word.add(32n, x, one(32n)), ones(32n)),
+        x,
+        add_one_ones(32n, x))
+
+def u32_add_ones_one(+a: U32) -> {U32.add(U32.add(a, 4294967295), 1) == a : U32}:
+  match a:
+    case U32{x}:
+      Equal.cong(Word(32n), U32, t => U32{t},
+        Word.add(32n, Word.add(32n, x, ones(32n)), one(32n)),
+        x,
+        add_ones_one(32n, x))
+
+def u32_add_zero_r(+a: U32) -> {U32.add(a, 0) == a : U32}:
+  match a:
+    case U32{x}:
+      Equal.cong(Word(32n), U32, t => U32{t},
+        Word.add(32n, x, Word.zero(32n)),
+        x,
+        add_zero(32n, x))
