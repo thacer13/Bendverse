@@ -423,3 +423,259 @@ def array_wake_write_preserves_count(+t: R.PT, +n: U32, +i: U32)
 def array_deactivate_write_preserves_count(+t: R.PT, +n: U32, +i: U32)
   -> {S.suml(to_counts(R.afst(Array.swap.go(U32, R.pack(t), n, i, U32.and(T.tget(t, n, i), 4294965247))))) == S.suml(to_counts(R.pack(t))) : Nat}:
   array_point_write_preserves_count(t, n, i, U32.and(T.tget(t, n, i), 4294965247), nempty_deactivate(T.tget(t, n, i)))
+# The engine's movement is two point writes: the target receives `mov(w)` and the
+# source receives the displaced target value. Each write's count balance leaves a
+# `+`-term; the two telescope because `mov` preserves the count. This is the
+# conservation of the rule-2 *swap*.
+
+def nfst_pick(+z: Bool, A: Nat & Nat, B: Nat & Nat)
+  -> {R.nfst(Bool.pick(Nat & Nat, z, A, B)) == Bool.pick(Nat, z, R.nfst(A), R.nfst(B)) : Nat}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
+def nsnd_pick(+z: Bool, A: Nat & Nat, B: Nat & Nat)
+  -> {R.nsnd(Bool.pick(Nat & Nat, z, A, B)) == Bool.pick(Nat, z, R.nsnd(A), R.nsnd(B)) : Nat}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
+def nempty_pick(+z: Bool, +a: U32, +b: U32)
+  -> {nempty(Bool.pick(U32, z, a, b)) == Bool.pick(Nat, z, nempty(a), nempty(b)) : Nat}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
+def pick_same(+z: Bool, +x: Nat) -> {Bool.pick(Nat, z, x, x) == x : Nat}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
+# The displaced (first) and written (second) counts of `cnt_chg_m`, exposed as
+# `nempty` of the model's read and of the written value.
+def cnt_chg_fst(+t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {R.nfst(cnt_chg_m(t, n, i, v)) == nempty(T.tget(t, n, i)) : Nat}:
+  match t:
+    case R.PL{x}:
+      {==}
+    case R.PN{+xs, +ys}:
+      +z = U32.is_lt(i, U32.shr(n))
+      +AX = R.nfst(cnt_chg_m(xs, U32.shr(n), i, v))
+      +AY = R.nfst(cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))
+      +p1 = Equal.cong(Nat, Nat, X => Bool.pick(Nat, z, X, AY), AX, nempty(T.tget(xs, U32.shr(n), i)), cnt_chg_fst(xs, U32.shr(n), i, v))
+      +p2 = Equal.cong(Nat, Nat, Y => Bool.pick(Nat, z, nempty(T.tget(xs, U32.shr(n), i)), Y), AY, nempty(T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))), cnt_chg_fst(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))
+      Equal.trans(Nat,
+        R.nfst(cnt_chg_m(R.PN{xs, ys}, n, i, v)),
+        Bool.pick(Nat, z, AX, AY),
+        nempty(T.tget(R.PN{xs, ys}, n, i)),
+        nfst_pick(z, cnt_chg_m(xs, U32.shr(n), i, v), cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)),
+        Equal.trans(Nat,
+          Bool.pick(Nat, z, AX, AY),
+          Bool.pick(Nat, z, nempty(T.tget(xs, U32.shr(n), i)), nempty(T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n))))),
+          nempty(T.tget(R.PN{xs, ys}, n, i)),
+          Equal.trans(Nat,
+            Bool.pick(Nat, z, AX, AY),
+            Bool.pick(Nat, z, nempty(T.tget(xs, U32.shr(n), i)), AY),
+            Bool.pick(Nat, z, nempty(T.tget(xs, U32.shr(n), i)), nempty(T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n))))),
+            p1, p2),
+          Equal.sym(Nat,
+            nempty(T.tget(R.PN{xs, ys}, n, i)),
+            Bool.pick(Nat, z, nempty(T.tget(xs, U32.shr(n), i)), nempty(T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n))))),
+            nempty_pick(z, T.tget(xs, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))))))
+
+def cnt_chg_snd(+t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {R.nsnd(cnt_chg_m(t, n, i, v)) == nempty(v) : Nat}:
+  match t:
+    case R.PL{x}:
+      {==}
+    case R.PN{+xs, +ys}:
+      +z = U32.is_lt(i, U32.shr(n))
+      +AX = R.nsnd(cnt_chg_m(xs, U32.shr(n), i, v))
+      +AY = R.nsnd(cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))
+      +p1 = Equal.cong(Nat, Nat, X => Bool.pick(Nat, z, X, AY), AX, nempty(v), cnt_chg_snd(xs, U32.shr(n), i, v))
+      +p2 = Equal.cong(Nat, Nat, Y => Bool.pick(Nat, z, nempty(v), Y), AY, nempty(v), cnt_chg_snd(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))
+      Equal.trans(Nat,
+        R.nsnd(cnt_chg_m(R.PN{xs, ys}, n, i, v)),
+        Bool.pick(Nat, z, AX, AY),
+        nempty(v),
+        nsnd_pick(z, cnt_chg_m(xs, U32.shr(n), i, v), cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)),
+        Equal.trans(Nat,
+          Bool.pick(Nat, z, AX, AY),
+          Bool.pick(Nat, z, nempty(v), nempty(v)),
+          nempty(v),
+          Equal.trans(Nat,
+            Bool.pick(Nat, z, AX, AY),
+            Bool.pick(Nat, z, nempty(v), AY),
+            Bool.pick(Nat, z, nempty(v), nempty(v)),
+            p1, p2),
+          pick_same(z, nempty(v))))
+
+# The balance with the displaced count written as `nempty` of the model read.
+def cnt_balance_tget(+t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {Nat.add(S.suml(cnts_m(R.swap_m(t, n, i, v))), nempty(T.tget(t, n, i))) == Nat.add(S.suml(cnts_m(t)), nempty(v)) : Nat}:
+  +s1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+    cnts_m(R.swap_m(t, n, i, v)), cnts_swap_m(t, n, i, v), cnts_corr(t, n, i, v))
+  +f1 = Equal.cong(Nat, Nat, x => Nat.add(x, nempty(T.tget(t, n, i))),
+    S.suml(cnts_m(R.swap_m(t, n, i, v))), S.suml(cnts_swap_m(t, n, i, v)), s1)
+  +h1 = Equal.cong(Nat, Nat, y => Nat.add(S.suml(cnts_swap_m(t, n, i, v)), y),
+    nempty(T.tget(t, n, i)), R.nfst(cnt_chg_m(t, n, i, v)),
+    Equal.sym(Nat, R.nfst(cnt_chg_m(t, n, i, v)), nempty(T.tget(t, n, i)), cnt_chg_fst(t, n, i, v)))
+  +h2 = Equal.cong(Nat, Nat, y => Nat.add(S.suml(cnts_m(t)), y),
+    R.nsnd(cnt_chg_m(t, n, i, v)), nempty(v), cnt_chg_snd(t, n, i, v))
+  Equal.trans(Nat,
+    Nat.add(S.suml(cnts_m(R.swap_m(t, n, i, v))), nempty(T.tget(t, n, i))),
+    Nat.add(S.suml(cnts_swap_m(t, n, i, v)), R.nfst(cnt_chg_m(t, n, i, v))),
+    Nat.add(S.suml(cnts_m(t)), nempty(v)),
+    Equal.trans(Nat,
+      Nat.add(S.suml(cnts_m(R.swap_m(t, n, i, v))), nempty(T.tget(t, n, i))),
+      Nat.add(S.suml(cnts_swap_m(t, n, i, v)), nempty(T.tget(t, n, i))),
+      Nat.add(S.suml(cnts_swap_m(t, n, i, v)), R.nfst(cnt_chg_m(t, n, i, v))),
+      f1, h1),
+    Equal.trans(Nat,
+      Nat.add(S.suml(cnts_swap_m(t, n, i, v)), R.nfst(cnt_chg_m(t, n, i, v))),
+      Nat.add(S.suml(cnts_m(t)), R.nsnd(cnt_chg_m(t, n, i, v))),
+      Nat.add(S.suml(cnts_m(t)), nempty(v)),
+      cnt_balance(t, n, i, v),
+      h2))
+
+# `tget`/`swap_m` do not reduce through a `Bool.pick`, so a nested read-back is
+# stuck unless the decision is exposed. `tget_pick` (by matching `z`) distributes
+# `tget` over the swap's pick; the read-back lemma is then a two-decision
+# induction. The written value is `mov` of the *whole-tree* read, inlined as a
+# `Bool.pick` on `zi` so it reduces in each branch.
+
+def tget_pick(+z: Bool, A: R.PT, B: R.PT, n: U32, +i: U32)
+  -> {T.tget(Bool.pick(R.PT, z, A, B), n, i) == Bool.pick(U32, z, T.tget(A, n, i), T.tget(B, n, i)) : U32}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
+def nempty_tget_swap_mov_if(
+  +xs: R.PT, +ys: R.PT, +n: U32, +i: U32, +j: U32, +zj: Bool, +zi: Bool,
+  ihx: {nempty(T.tget(R.swap_m(xs, U32.shr(n), j, Rules.mov(T.tget(xs, U32.shr(n), i))), U32.shr(n), i)) == nempty(T.tget(xs, U32.shr(n), i)) : Nat},
+  ihy: {nempty(T.tget(R.swap_m(ys, U32.shr(n), U32.sub(j, U32.shr(n)), Rules.mov(T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n))))), U32.shr(n), U32.sub(i, U32.shr(n)))) == nempty(T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))) : Nat}
+) -> {nempty(Bool.pick(U32, zj,
+        Bool.pick(U32, zi, T.tget(R.swap_m(xs, U32.shr(n), j, Rules.mov(Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))))), U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))),
+        Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(R.swap_m(ys, U32.shr(n), U32.sub(j, U32.shr(n)), Rules.mov(Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))))), U32.shr(n), U32.sub(i, U32.shr(n))))))
+     == nempty(Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n))))) : Nat}:
+  match zj:
+    case True{}:
+      match zi:
+        case True{}: ihx
+        case False{}: {==}
+    case False{}:
+      match zi:
+        case True{}: {==}
+        case False{}: ihy
+
+def nempty_tget_swap_mov(+t: R.PT, +n: U32, +i: U32, +j: U32)
+  -> {nempty(T.tget(R.swap_m(t, n, j, Rules.mov(T.tget(t, n, i))), n, i)) == nempty(T.tget(t, n, i)) : Nat}:
+  match t:
+    case R.PL{x}:
+      nempty_mov(x)
+    case R.PN{+xs, +ys}:
+      +zj = U32.is_lt(j, U32.shr(n))
+      +zi = U32.is_lt(i, U32.shr(n))
+      +A = R.swap_m(xs, U32.shr(n), j, Rules.mov(Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n))))))
+      +B = R.swap_m(ys, U32.shr(n), U32.sub(j, U32.shr(n)), Rules.mov(Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n))))))
+      +tp = tget_pick(zj, R.PN{A, ys}, R.PN{xs, B}, n, i)
+      +hh = nempty_tget_swap_mov_if(xs, ys, n, i, j, zj, zi,
+        nempty_tget_swap_mov(xs, U32.shr(n), i, j),
+        nempty_tget_swap_mov(ys, U32.shr(n), U32.sub(i, U32.shr(n)), U32.sub(j, U32.shr(n))))
+      +ceq = Equal.cong(U32, Nat, w2 => nempty(w2),
+        T.tget(R.swap_m(R.PN{xs, ys}, n, j, Rules.mov(T.tget(R.PN{xs, ys}, n, i))), n, i),
+        Bool.pick(U32, zj,
+          Bool.pick(U32, zi, T.tget(A, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))),
+          Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(B, U32.shr(n), U32.sub(i, U32.shr(n))))),
+        tp)
+      Equal.trans(Nat,
+        nempty(T.tget(R.swap_m(R.PN{xs, ys}, n, j, Rules.mov(T.tget(R.PN{xs, ys}, n, i))), n, i)),
+        nempty(Bool.pick(U32, zj,
+          Bool.pick(U32, zi, T.tget(A, U32.shr(n), i), T.tget(ys, U32.shr(n), U32.sub(i, U32.shr(n)))),
+          Bool.pick(U32, zi, T.tget(xs, U32.shr(n), i), T.tget(B, U32.shr(n), U32.sub(i, U32.shr(n)))))),
+        nempty(T.tget(R.PN{xs, ys}, n, i)),
+        ceq, hh)
+
+def mov_count(+t: R.PT, +n: U32, +i: U32, +j: U32)
+  -> {S.suml(cnts_m(R.swap_m(R.swap_m(t, n, j, Rules.mov(T.tget(t, n, i))), n, i, T.tget(t, n, j)))) == S.suml(cnts_m(t)) : Nat}:
+  +w = T.tget(t, n, i)
+  +gv = T.tget(t, n, j)
+  +t1 = R.swap_m(t, n, j, Rules.mov(w))
+  +t2 = R.swap_m(t1, n, i, gv)
+  +C0 = S.suml(cnts_m(t))
+  +C1 = S.suml(cnts_m(t1))
+  +C2 = S.suml(cnts_m(t2))
+  +e1 = cnt_balance_tget(t, n, j, Rules.mov(w))
+  +e2 = cnt_balance_tget(t1, n, i, gv)
+  +hr = nempty_tget_swap_mov(t, n, i, j)
+  +hm = nempty_mov(w)
+  +c1 = Equal.trans(Nat,
+    Nat.add(C2, nempty(T.tget(t1, n, i))),
+    Nat.add(C1, nempty(gv)),
+    Nat.add(C0, nempty(Rules.mov(w))),
+    e2, e1)
+  +c2 = Equal.trans(Nat,
+    Nat.add(C2, nempty(w)),
+    Nat.add(C2, nempty(T.tget(t1, n, i))),
+    Nat.add(C0, nempty(Rules.mov(w))),
+    Equal.sym(Nat, Nat.add(C2, nempty(T.tget(t1, n, i))), Nat.add(C2, nempty(w)),
+      Equal.cong(Nat, Nat, x => Nat.add(C2, x), nempty(T.tget(t1, n, i)), nempty(w), hr)),
+    c1)
+  +c3 = Equal.trans(Nat,
+    Nat.add(C2, nempty(w)),
+    Nat.add(C0, nempty(Rules.mov(w))),
+    Nat.add(C0, nempty(w)),
+    c2,
+    Equal.cong(Nat, Nat, y => Nat.add(C0, y), nempty(Rules.mov(w)), nempty(w), hm))
+  NatL.n_add_cancel_right(C2, C0, nempty(w), c3)
+
+def afst_swap_m(+t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {R.afst(Array.swap.go(U32, R.pack(t), n, i, v)) == R.pack(R.swap_m(t, n, i, v)) : Array<U32>}:
+  Equal.trans(Array<U32>,
+    R.afst(Array.swap.go(U32, R.pack(t), n, i, v)),
+    R.pack(R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))),
+    R.pack(R.swap_m(t, n, i, v)),
+    Equal.sym(Array<U32>,
+      R.pack(R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))),
+      R.afst(Array.swap.go(U32, R.pack(t), n, i, v)),
+      R.pack_unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))),
+    Equal.cong(R.PT, Array<U32>, t2 => R.pack(t2),
+      R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v))), R.swap_m(t, n, i, v),
+      R.swap_ref(t, n, i, v)))
+
+def array_mov_swap_preserves_count(+t: R.PT, +n: U32, +i: U32, +j: U32)
+  -> {S.suml(to_counts(R.afst(Array.swap.go(U32, R.afst(Array.swap.go(U32, R.pack(t), n, j, Rules.mov(T.tget(t, n, i)))), n, i, T.tget(t, n, j))))) == S.suml(to_counts(R.pack(t))) : Nat}:
+  +w = T.tget(t, n, i)
+  +gv = T.tget(t, n, j)
+  +t1 = R.swap_m(t, n, j, Rules.mov(w))
+  +t2 = R.swap_m(t1, n, i, gv)
+  +a2eq = Equal.trans(Array<U32>,
+    R.afst(Array.swap.go(U32, R.afst(Array.swap.go(U32, R.pack(t), n, j, Rules.mov(w))), n, i, gv)),
+    R.afst(Array.swap.go(U32, R.pack(t1), n, i, gv)),
+    R.pack(t2),
+    Equal.cong(Array<U32>, Array<U32>, a => R.afst(Array.swap.go(U32, a, n, i, gv)),
+      R.afst(Array.swap.go(U32, R.pack(t), n, j, Rules.mov(w))), R.pack(t1), afst_swap_m(t, n, j, Rules.mov(w))),
+    afst_swap_m(t1, n, i, gv))
+  +tc = Equal.cong(Array<U32>, +List<Nat>, a => to_counts(a),
+    R.afst(Array.swap.go(U32, R.afst(Array.swap.go(U32, R.pack(t), n, j, Rules.mov(w))), n, i, gv)),
+    R.pack(t2), a2eq)
+  +lhs = Equal.trans(+List<Nat>,
+    to_counts(R.afst(Array.swap.go(U32, R.afst(Array.swap.go(U32, R.pack(t), n, j, Rules.mov(w))), n, i, gv))),
+    to_counts(R.pack(t2)), cnts_m(t2), tc, to_counts_pack(t2))
+  +rhs = to_counts_pack(t)
+  +same = mov_count(t, n, i, j)
+  Equal.trans(Nat,
+    S.suml(to_counts(R.afst(Array.swap.go(U32, R.afst(Array.swap.go(U32, R.pack(t), n, j, Rules.mov(w))), n, i, gv)))),
+    S.suml(cnts_m(t2)),
+    S.suml(to_counts(R.pack(t))),
+    Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+      to_counts(R.afst(Array.swap.go(U32, R.afst(Array.swap.go(U32, R.pack(t), n, j, Rules.mov(w))), n, i, gv))),
+      cnts_m(t2), lhs),
+    Equal.trans(Nat,
+      S.suml(cnts_m(t2)),
+      S.suml(cnts_m(t)),
+      S.suml(to_counts(R.pack(t))),
+      same,
+      Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+        cnts_m(t), to_counts(R.pack(t)),
+        Equal.sym(+List<Nat>, to_counts(R.pack(t)), cnts_m(t), rhs))))

@@ -928,3 +928,51 @@ Either route is viable; both are larger than the balance primitive. The balance
 law (`array_point_write_count_balance`, A.32) is landed and is the reusable
 primitive; `G6` stays open for the composition. The unfinished attempt was
 reverted so the gate stays green.
+
+### A.34 — V4 complete: the two-write movement swap (rule 2 is law-covered)
+
+**Status:** the movement swap landed; **1 new law** (48 total); **rule 2 is now
+fully law-covered**. Engine untouched; gate green; fast (22/22) and simulation
+(8/8) suites pass.
+
+**What landed (`src/count.bend`).**
+- `tget_pick` — `tget` distributes over the swap's `Bool.pick` (proved by matching
+  the decision). This is the key that unlocks a nested read-back: `tget`/`swap_m`
+  are structural matches and do **not** reduce through a `Bool.pick`, so
+  `tget(swap_m(t,…), …)` is stuck when `t` is abstract until the decision is
+  exposed.
+- `nfst_pick`/`nsnd_pick`/`nempty_pick`/`pick_same`, `cnt_chg_fst`/`cnt_chg_snd`
+  (the displaced/written counts as `nempty`), and `cnt_balance_tget` — the balance
+  with the displaced count written as `nempty` of the model read.
+- `nempty_tget_swap_mov` — read-back: after writing `mov(w)` at `j`, the
+  non-emptiness at `i` is still `nempty(w)` (i is untouched, or holds `mov` of its
+  old value). A two-decision induction; the written value is `mov` of the
+  whole-tree read, inlined as a `Bool.pick` on the i-decision so it reduces.
+- `mov_count` — the two balances telescope (no case analysis): apply
+  `cnt_balance_tget` at `j` then at `i`, use read-back + `nempty_mov`, cancel.
+- `afst_swap_m` (`afst(Array.swap.go(pack t,…)) == pack(swap_m t…)`) and
+  `array_mov_swap_preserves_count` — the array-level law.
+- `LAWS.bend`/`PROOF.bend`: `array_mov_swap_preserves_count`.
+
+**Why this closes rule 2.** A movement is two point writes: the target receives
+`mov(w)` and the source receives the displaced target value. Each write's count
+balance leaves a `+`-term; the terms telescope because `mov` preserves the count.
+So `suml(to_counts(world))` is invariant under the rule-2 swap, machine-checked.
+(Transform writes — support/fall/active — are already outright count-preserving,
+A.31.) `G6` now reduces to rule 7 (support), which stays test-witnessed.
+
+**Bend findings (V4 movement).**
+- **Structural matches do not reduce through `Bool.pick`.** `tget`/`swap_m` on a
+  `Bool.pick` are stuck; a *distribution lemma* (`tget_pick`, trivial by matching
+  the decision) is the way through, not a reformulation of the definitions.
+- **A nested induction's hypotheses must match the reduced goal.** The helper's
+  written value had to be `mov(Bool.pick(zi, …))` *inlined* (not a parameter), so
+  that matching `zi` reduces it to the recursive hypothesis's `mov(tget …)`.
+- **`Array<U32>` is `Type`, not `Data`** — array values cannot be named twice, so
+  the array-level lift inlines the nested `Array.swap.go` rather than binding an
+  intermediate `a1`.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (48 laws).
+- `bend app/tests.bend` (JS, tick-free) → 22/22.
+- Native `bend app/simtests.bend -o bin && ./bin` → 8/8.

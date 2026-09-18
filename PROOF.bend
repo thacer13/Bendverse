@@ -152,6 +152,9 @@ def Laws.array_point_write_preserves_count(t, n, i, v, h):
 def Laws.array_point_write_count_balance(t, n, i, v):
   Count.array_point_write_count_balance(t, n, i, v)
 
+def Laws.array_mov_swap_preserves_count(t, n, i, j):
+  Count.array_mov_swap_preserves_count(t, n, i, j)
+
 def Laws.array_support_write_preserves_count(t, n, i, s):
   Count.array_support_write_preserves_count(t, n, i, s)
 
