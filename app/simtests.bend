@@ -94,8 +94,72 @@ def t3() -> U32:
   w2 = Sim.ticks(U32.to_nat(10), w)
   t3_go(U32.to_nat(262144), 0, Grid.to_list(w2), 0)
 
+def near(+x: U32, +z: U32) -> Bool:
+  Bool.and(
+    Bool.and(U32.is_ge(x, 27), U32.is_le(x, 37)),
+    Bool.and(U32.is_ge(z, 27), U32.is_le(z, 37))
+  )
+
+def t4_go(fuel: Nat, +i: U32, cells: List<U32>, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          +hh = h
+          +x = Grid.ix(i)
+          +z = Grid.iz(i)
+          +g = Worldgen.gen(x, Grid.iy(i), z, 42)
+          act = U32.is_ne(Cell.active(hh), 0)
+          fr = Bool.not(near(x, z))
+          eq = U32.is_eq(hh, g)
+          ok = Bool.and(Bool.not(act), Bool.or(Bool.not(fr), eq))
+          t4_go(p, U32.add(i, 1), t, inc_if_false(ok, bad))
+
+def settle(fuel: Nat, world: Array<U32>) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      settle(p, Sim.tick(world))
+
+def t4() -> U32:
+  w = Worldgen.build()
+  w1 = Sim.spawn(w)
+  w2 = settle(U32.to_nat(50), w1)
+  t4_go(U32.to_nat(262144), 0, Grid.to_list(w2), 0)
+
+def maybe_tick(z: Bool, world: Array<U32>) -> Array<U32>:
+  match z:
+    case True{}:
+      Sim.tick(world)
+    case False{}:
+      world
+
+def list_hash(xs: List<U32>, +h: U32) -> U32:
+  match xs:
+    case Nil{}:
+      h
+    case Con{x, t}:
+      list_hash(t, U32.add(U32.mul(h, 16777619), x))
+
+def settled_hash(z: Bool) -> U32:
+  w = Worldgen.build()
+  w1 = Sim.spawn(w)
+  w2 = settle(U32.to_nat(50), w1)
+  w3 = maybe_tick(z, w2)
+  list_hash(Grid.to_list(w3), 5381)
+
+def t4b() -> U32:
+  is_bad(U32.is_eq(settled_hash(False{}), settled_hash(True{})))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
     report("T2 conservation of non-Empty", t2())
     report("T3 bedrock static", t3())
+    report("T4 settles + far cells unchanged", t4())
+    report("T4b settled world is a fixed point", t4b())

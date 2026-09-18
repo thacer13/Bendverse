@@ -33,20 +33,6 @@ def in_box(+x: U32, +y: U32, +z: U32) -> Bool:
 def box_word(+x: U32, +y: U32, +z: U32) -> U32:
   Bool.pick(U32, in_box(x, y, z), 2, Worldgen.gen(x, y, z, 42))
 
-def spawn(fuel: Nat, +i: U32, world: Array<U32>) -> Array<U32>:
-  match fuel:
-    case 0n:
-      world
-    case 1n+p:
-      bx = U32.mod(i, 5)
-      bz = U32.mod(U32.div(i, 5), 5)
-      by = U32.mod(U32.div(i, 25), 7)
-      x = U32.add(bx, 30)
-      z = U32.add(bz, 30)
-      y = U32.add(by, 46)
-      world = world[Grid.index(x, y, z)] <- 2
-      spawn(p, U32.add(i, 1), world)
-
 def append_if(z: Bool, row: String, c: String) -> String:
   match z:
     case True{}:
@@ -117,7 +103,7 @@ def ticks() -> Nat:
 def main() -> IO(Unit):
   do IO<Unit>:
     world : Array<U32> = Worldgen.build()
-    world1 : Array<U32> = spawn(U32.to_nat(175), 0, world)
+    world1 : Array<U32> = Sim.spawn(world)
     IO.print("BEFORE (x-y at z=32, y=63 top; spawned sand block in air):")
     IO.print(render_gen())
     world2 : Array<U32> = Sim.ticks(ticks(), world1)

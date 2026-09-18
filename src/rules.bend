@@ -33,16 +33,59 @@ def diag_index(i: U32, k: U32) -> U32:
     case _:
       i
 
+def mark_got(p: Array<U32> & U32, i: U32) -> Array<U32>:
+  match p:
+    case (world, w):
+      nw = U32.or(w, 2048)
+      world = world[i] <- nw
+      world
+
+def mark(world: Array<U32>, +i: U32) -> Array<U32>:
+  p = Array.get(U32, world, i)
+  mark_got(p, i)
+
+def wake_x(
+  fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
+) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      j = Grid.neighbor(i, U32.sub(dx, 1), U32.sub(dy, 1), U32.sub(dz, 1))
+      world2 = mark(world, j)
+      wake_x(p, U32.add(dx, 1), dy, dz, i, world2)
+
+def wake_y(
+  fuel: Nat, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
+) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      world2 = wake_x(U32.to_nat(3), 0, dy, dz, i, world)
+      wake_y(p, U32.add(dy, 1), dz, i, world2)
+
+def wake_z(fuel: Nat, +dz: U32, +i: U32, world: Array<U32>) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      world2 = wake_y(U32.to_nat(3), 0, dz, i, world)
+      wake_z(p, U32.add(dz, 1), i, world2)
+
+def wake(world: Array<U32>, i: U32) -> Array<U32>:
+  wake_z(U32.to_nat(3), 0, i, world)
+
 def mov(+w: U32) -> U32:
   nf = U32.min(U32.add(Cell.fall(w), 1), 63)
   Cell.encode(Cell.material(w), Cell.cohesion(w), Cell.active(w), Cell.support(w), nf)
 
-def clear_fall_if(z: Bool, world: Array<U32>, +w: U32, i: U32) -> Array<U32>:
+def clear_fall_if(z: Bool, world: Array<U32>, +w: U32, +i: U32) -> Array<U32>:
   match z:
     case True{}:
       nw = Cell.encode(Cell.material(w), Cell.cohesion(w), Cell.active(w), Cell.support(w), 0)
       world = world[i] <- nw
-      world
+      wake(world, i)
     case False{}:
       world
 
@@ -69,14 +112,20 @@ def step(
           match sel:
             case 0:
               +v = gv
+              act = U32.is_ne(Cell.active(v), 0)
+              step(p, (world, v), Bool.pick(U32, act, 20, 19), i, c, 0, 0)
+            case 20:
+              +v = gv
+              bad = U32.is_ne(color_of(i), c)
+              step(p, (world, v), Bool.pick(U32, bad, 19, 18), i, c, 0, 0)
+            case 19:
+              step(p, (world, gv), 14, i, c, 0, 0)
+            case 18:
+              +v = gv
+              nw = U32.and(v, 4294965247)
+              world = world[i] <- nw
               +m = Cell.material(v)
-              skip = Bool.or(
-                Bool.or(
-                  Bool.or(U32.is_eq(m, 0), Cell.static(m)),
-                  Bool.or(U32.is_ne(Cell.cohesion(v), 0), U32.is_eq(Grid.iy(i), 0))
-                ),
-                U32.is_ne(color_of(i), c)
-              )
+              skip = Bool.or(Bool.or(U32.is_eq(m, 0), Cell.static(m)), U32.is_ne(Cell.cohesion(v), 0))
               step(p, (world, v), Bool.pick(U32, skip, 4, 5), i, c, v, 0)
             case 4:
               step(p, (world, gv), 14, i, c, 0, 0)
@@ -91,6 +140,8 @@ def step(
             case 6:
               world = world[Grid.below(i)] <- mov(w)
               world = world[i] <- gv
+              world = wake(world, i)
+              world = wake(world, Grid.below(i))
               q = Array.get(U32, world, i)
               step(p, q, 14, i, c, 0, 0)
             case 7:
@@ -122,6 +173,8 @@ def step(
             case 12:
               world = world[diag_index(i, k)] <- w
               world = world[i] <- gv
+              world = wake(world, i)
+              world = wake(world, diag_index(i, k))
               q = Array.get(U32, world, i)
               step(p, q, 14, i, c, 0, 0)
             case 13:

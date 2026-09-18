@@ -285,3 +285,24 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 - Worst-case ≈26 `step` calls per cell; fuel set to `2^23` (`U32.to_nat(8388608)`), which exceeds the bound. Verified the loop exits on `i == volume`, not on fuel exhaustion (doubling fuel changes nothing).
 
 **Recommended next:** M4 (activity: skip inactive, propagate on writes, settle). This will cut the per-tick cost dramatically (only disturbed regions do work), and it fits the `step` machine by adding an active-bit gate at `sel 0`. Then M5 (support/crumble/impact). M1.5 bit-lemmas remain queued.
+
+### A.4 — M4 complete: activity (skip inactive, wake on writes, settle)
+
+**Status:** M4 complete.
+
+**Deliverables / semantics**
+- `src/rules.bend`: added `mark`/`wake` (sets the active bit — 2048, bit 11 — on a cell and its 26 neighbors via three forward-only nested loops `wake_z → wake_y → wake_x`, no mutual recursion). `step` sel 0/20/19/18 now gate on activity:
+  - sel 0: inactive → advance (sel 19), active → sel 20.
+  - sel 20: color ≠ phase → advance without clearing (sel 19, so the cell is still evaluated in *its own* phase); else sel 18.
+  - sel 18: active and in-phase → **clear the active bit** (`w & 0xFFFFF7FF`) then run the skip/fall logic. So a cell that does nothing settles; a cell that moves is re-woken for next tick.
+- Movement writes (down/diagonal) and `clear_fall` (only when it actually writes) call `wake` on the moved cells, so the frontier propagates one ring per tick.
+- `src/sim.bend`: added `spawn`/`spawn_go` (the demo sand block, now waking each written cell). `app/ascii.bend` uses `Sim.spawn`.
+
+**Reset of the M3 activity gap:** M3 ran every cell every phase; M4 makes an untouched, settled world do only the per-cell bit test with **zero writes** (sel 0 → 19 → advance). Fresh worlds stay all-inactive; runners wake regions on demand (`Sim.spawn`, and `wake` for future paint/editing).
+
+**Golden tests (native, `app/simtests.bend`) — all PASS, ~4s**
+- T1 determinism, T2 conservation, T3 bedrock static (as before).
+- **T4**: build → spawn → settle (50 ticks) → (a) no active bits anywhere, (b) every cell outside the disturbance footprint (x,z ∉ [27,37]) is bit-identical to fresh `gen`.
+- **T4b**: hashing a settled world is identical with and without one extra tick — i.e. a tick over a settled world is a **fixed point / zero writes**.
+
+**Recommended next:** M5 (cohesion: support pass, crumble, impact crush Rock→Rubble, remove the cohesive-as-static interim). This is the last big rule-system piece; activity already gives it cheap incremental evaluation. Then M6 (windowed app). M1.5 bit-lemmas still queued (laws currently: `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`).
