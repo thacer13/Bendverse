@@ -1227,3 +1227,52 @@ accumulated at the guarded crush; `set_support`/`wake` add 0), then `Rules.step`
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (53 laws); fast 22/22; sim 8/8.
+
+### A.42 — G10 mirror: selector representation, then a checker performance cliff
+
+**Status:** probe only — nothing landed; gate green (53 laws); suites unchanged.
+The `Support.sup` fuel-loop mirror was built and typechecks as a *definition*, but
+its Φ theorem does not check in reasonable time. Two distinct obstacles, both
+isolated by bisection. This is a tooling finding, not bad mathematics.
+
+**Obstacle 1 — the selector is an opaque `U32` (the A.37 problem again).** A
+literal mirror matches on `sel: U32`. In a proof `sel` is abstract, so
+`match sel` never reduces: the goal stays `sup_m(1n+p, …)` and no branch fires.
+Fix: a proper datatype selector (`SupSel`: `S0`…`S11`). Matching then reduces
+structurally in both definition and proof, and the recursive calls pass
+`Bool.pick(SupSel, cond, S1{}, S9{})` — which the universally-quantified
+induction hypothesis accepts without needing to reduce the pick. `sup_m` with
+`SupSel` typechecks in 3 s. The mapping `SupSel` → the engine's numeric selectors
+belongs to the `G5` refinement, by inspection.
+
+**Obstacle 2 — a normalisation cliff in the support-write branches.** With
+`SupSel`, `sup_m_preserves` still runs >120 s at 100 % CPU (reproducible). The
+bisection (`?h`-stubbing branches, then timing):
+- statement alone (trivial body): 3 s — and note the goal keeps `sup_m(1n+p, …)`
+  opaque, so the type is not the problem;
+- no-write branches (S0/S1/S2/S5/S9/S10/S11) + S6: 3 s;
+- stubbing S3/S4 (the two `set_support` writes): 3 s;
+- S3/S4 present: hang.
+Each ingredient typechecks *alone* in ≤3 s (`sup_m`; `swap_support_preserves`;
+`array_support_write`). The cliff is the interaction: `sup_m_preserves`' statement
+mentions `sr_tree(sup_m …)` **and** `sr_gap(sup_m …)`, so reducing
+`sup_m(1n+p, …, S3{}, …)` inlines the write as
+`swap_m(t, n, i, set_support(tget(t, n, i), s2))`, normalisation unfolds
+`set_support`/`Cell.encode` into a large `U32.or(…shifts…)` bit term, and that
+term is embedded inside `swap_m`→`pack`→`to_pots`, twice. This is a normaliser
+performance limit (no wrong answer); whether it is a *bug* or just absent
+sharing/opacity is unclear.
+
+**Assessment.** Obstacle 1 is ours to fix. Obstacle 2 looks like a Bend2
+limitation on large unfolded terms in nested positions. This is the same family as
+the A.41 concrete-fuel blowup — both are "the checker expanded something huge
+inside a type". Candidate mitigations, neither yet tried:
+1. **`sup_step` opacity** — move the write into a helper
+   `sup_step(..., v)` so the large term is an *argument* (`swap_m(t, n, i, v)`
+   stays stuck with `v` abstract) instead of nested inside the tree in the type.
+2. **Single-occurrence statement** — bind the `SupR` result once and state the Φ
+   theorem against that binding, so `sup_m` appears once, not twice.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (53 laws); fast 22/22; sim 8/8.
+- Probe files removed (`.bendverse-*` is gitignored); no stray compiler processes.

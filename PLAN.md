@@ -433,10 +433,11 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      guarded write's Φ effect at every index (rock gap, or identity), so both
      crush sites are covered without a `G9` hypothesis. The `wake`/activate
      infrastructure is done (A.41): `array_activate_write_preserves_phi` and the
-     `wake_*_m` mirrors. Remaining: the fuel-loop mirror that shows every write
-     in both state machines is one of the proven primitives
-     (support/fall/activate/swap/guarded-crush).
-  See `HISTORY.md` A.36–A.41 for the analysis and probes.
+     `wake_*_m` mirrors. The `sup_m` mirror (with a `SupSel` datatype selector)
+     typechecks; its Φ theorem is blocked on a Bend2 normalisation cliff (A.42,
+     §8) — the support-write branches blow up. Next: the `sup_step` opacity
+     mitigation.
+  See `HISTORY.md` A.36–A.42 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -546,6 +547,18 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   **`G10` is now known to depend on `G9`** (A.36): its crush sites apply
   `crush_word` to a non-provably-rock target, so mirroring the control flow alone
   cannot close it. Mitigation throughout: explicit refinement lemmas, never assumptions.
+  `G9` is resolved (A.38–A.40); `G10`'s write primitives are all proven (A.39–A.41).
+- **`G10` mirror: selector representation + a checker performance cliff (A.42).**
+  Two obstacles, both isolated. (1) A literal mirror of `Support.sup` matches on
+  `sel: U32`; in a proof `sel` is abstract so `match sel` never reduces — the fix
+  is a datatype selector (`SupSel`), after which the mirror typechecks in 3 s.
+  (2) The Φ theorem still hits a normalisation cliff (>120 s at 100 % CPU): the
+  `set_support` write unfolds via `Cell.encode` into a large bit term nested in
+  `swap_m`→`pack`→`to_pots`, and `sup_m` appears twice in the statement. Each
+  piece typechecks alone in ≤3 s. Likely a Bend2 normaliser/sharing limit rather
+  than a wrong answer. Mitigation under test: pass the write value through a
+  `sup_step` helper so the huge term is an opaque argument; if that fails, `G10`
+  is tooling-blocked, not conceptually open.
 - **Schedule invariance (`G3`).** A region-split fold may differ from the
   sequential fold in tie-break corners. Mitigation: V3a+V3b stay proven; M7d
   waits for V3c or is dropped.
