@@ -6,6 +6,7 @@ import ./src/cell.bend as Cell
 import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
+import ./src/mod.bend as Mod
 
 def Laws.sanity():
   {==}
@@ -79,3 +80,6 @@ def Laws.neighbor_y_parity(i, dy):
 
 def Laws.neighbor_z_parity(i, dz):
   Parity.neighbor_z_par(i, dz)
+
+def Laws.low6_add_independent(a, b):
+  Mod.low6_add_indep(a, b)

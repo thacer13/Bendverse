@@ -4,6 +4,7 @@ import ./src/cell.bend as Cell
 import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
+import ./src/mod.bend as Mod
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -98,3 +99,8 @@ law neighbor_z_parity:
   for i: U32
   for dz: U32
   {Parity.par32(Grid.iz(Grid.neighbor(i, 0, 0, dz))) == Bool.xor(Parity.par32(Grid.iz(i)), Parity.par32(dz)) : Bool}
+
+law low6_add_independent:
+  for a: U32
+  for b: U32
+  {U32.and(U32.add(a, b), 63) == U32.and(U32.add(U32.and(a, 63), U32.and(b, 63)), 63) : U32}

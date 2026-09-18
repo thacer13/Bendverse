@@ -196,7 +196,7 @@ These carry the properties the engine claims and touch no runtime code; they are
   - [ ] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` instances — including "support writes preserve Φ" and "the bedrock floor keeps every crumble at `L ≥ 1`".
 - [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test. Sharded:
   - [x] **V3a Parity independence** — same-color cells are never 26-neighbors (pure index/parity arithmetic on the existing bit model; small, provable now). (See A.13–A.14.)
-  - [ ] **V3b Priority is total and local** — among same-phase movers targeting one cell, scan order yields a unique winner and the losers observe it occupied; comparison radius ≤2 (medium).
+  - [ ] **V3b Priority is total and local** — among same-phase movers targeting one cell, scan order yields a unique winner and the losers observe it occupied; comparison radius ≤2 (medium). In progress: V3b-0 modular-add core landed (see A.15); V3b-1 locality and V3b-2 totality remain.
   - [ ] **V3c Schedule invariance** — a region-split fold equals the sequential fold; builds on V3a+V3b. Large and stall-prone: fallback is V3a+V3b proven with V3c kept as a documented gap.
 
 ### Visibility (independent of verification)
@@ -604,3 +604,36 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
 
 **Recommended next:** **V3b** (priority is total and local: unique scan-order winner among same-phase movers, comparison radius ≤2), then **M7a** (parallel worldgen) per the A.12 interleave.
+
+### A.15 — V3b in progress: V3b-0 modular-add core
+
+**Status:** V3b **partial** (§5 box unchecked). New `src/mod.bend`; **1 new law** (22 total). Engine untouched; gate green; fast and simulation suites pass.
+
+**What V3b needs, and what Base lacked.** Locality ("comparison radius ≤2") turns a common destination into a bound on the sources: per axis, two sources `i, j` targeting the same cell satisfy `φ_b(y) = φ_a(x)` where `φ_k(z) = and(z + k, 63)` and `a, b ∈ {−1, 0, +1}` (the move offsets). Recovering `y` from that needs the ±1-translation inverse, i.e. "add 1 then add −1 is the identity mod 64". Base has no `Word.add` associativity, no `Word.sub` semantics, and no mask/add interaction lemmas, so a small modular-add layer was required. (General add associativity is **not** needed — only the concrete ±1 cancels — which keeps the shard bounded.)
+
+**Deliverables (`src/mod.bend`)**
+- `lowadc(k, a, b, c)`: **the crux** — masking the sum `a + b` (with carry-in `c`) to its low `k` bits equals masking the *inputs* to `k` bits first. Proven by induction on the word, with the 8-way ripple carry case split used in Base's own `Word.add_comm`. `and_mask0` handles the `k = 0` branch.
+- `one` / `ones`; `add_zero` (`a + 0 = a`); `addc_ones_true` (`a + (−1) + 1 = a`, one induction).
+- `add_one_eq` (`a + 1` equals the carry-in-one form, by reduction). This aligns the recursion so the cancel lemmas close.
+- `add_one_ones` (`(a + 1) + (−1) = a`) and `add_ones_one` (`(a + (−1)) + 1 = a`): the ±1-translation inverses, by structural induction (each branch uses one prior lemma; no general associativity).
+- `low_mask_absorb_w` / `low_mask_absorb`: **the reusable form** — `and(and(x,63) + w, 63) = and(x + w, 63)`. Assembled from `lowadc` and `w_and_absorb`; this is what lets locality strip a mask before applying a cancel.
+- `low6_add_indep` (U32 lift): the law below.
+
+**Law appended (`LAWS.bend`; existing laws untouched)**
+- `low6_add_independent` — `and(a + b, 63) = and(and(a,63) + and(b,63), 63)`. A runtime twin was added to `app/tests.bend` as **T11**, which also checks the two ±1 cancels over 4096 samples.
+
+**Torus caveat (recorded for M7d).** "Radius 2" holds on the **torus**: e.g. `x = 0` and `x = 62` both target `x = 63`, so a parallel halo around a region must **wrap**, and raw index distance is not the metric.
+
+**Honest remaining for V3b**
+- **V3b-1 locality**: per-axis `φ` inverse over an enumerated `Dir` (`0 / +1 / −1`), then the radius-2 statement assembled coordinate-wise via `u32_ix_neighbor` and the index roundtrip. No new bit arithmetic expected — V3b-0 is the dependency.
+- **V3b-2 totality/uniqueness**: `U32.cmp`/`is_lt` is a total order, so a nonempty candidate set has a unique least scan-order index (the winner); losers observe it occupied.
+
+**Process note.** Per AGENTS, the risky piece (`lowadc`) was spiked in a throwaway `scratch.bend` before any module work; it closed in one iteration, so the shard proceeded rather than downgrading. The two cancel lemmas needed a few term-shaping passes (Bend's `{==}` is definitional, so the inner `add a one` had to be rewritten explicitly through `add_one_eq`). The scratch file was removed before commit.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (22 laws).
+- `bend src/mod.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T11, ~1.2s.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
+
+**Recommended next:** **V3b-1** (co-target locality / radius-2), then **V3b-2** (total order + unique winner); the A.12 interleave then goes to M7a.

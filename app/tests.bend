@@ -123,6 +123,22 @@ def parity_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def parity_bad() -> U32:
   parity_go(U32.to_nat(4096), 0, 0)
 
+def mod_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +a = i
+      +b = U32.mul(i, 2654435761)
+      o1 = U32.is_eq(U32.and(U32.add(a, b), 63), U32.and(U32.add(U32.and(a, 63), U32.and(b, 63)), 63))
+      o2 = U32.is_eq(U32.add(U32.add(a, 1), 4294967295), a)
+      o3 = U32.is_eq(U32.add(U32.add(a, 4294967295), 1), a)
+      all = Bool.and(o1, Bool.and(o2, o3))
+      mod_go(p, U32.add(i, 1), inc_if_false(all, bad))
+
+def mod_bad() -> U32:
+  mod_go(U32.to_nat(4096), 0, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -133,3 +149,4 @@ def main() -> IO(Unit):
     report("T7 terrain structure", terrain_bad())
     report("T8 build matches gen", build_bad())
     report("T10 parity flip + neighbor x", parity_bad())
+    report("T11 low6 add independence + pm1 cancel", mod_bad())
