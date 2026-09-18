@@ -260,3 +260,28 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 **Note for `src/bits.bend` (M1.5):** M2 did not add laws (nothing cheap: worldgen is numeric, not inductive). Still recommend M1.5 before M5.
 
 **Recommended next:** proceed to M3 (movement: 8-phase tick, swap-only) — it needs the world `Array` threaded through rules and will exercise the pair/helper patterns hardest; or do M1.5 first if laws are wanted green sooner.
+
+### A.3 — M3 complete: 8-phase movement (swap-only)
+
+**Status:** M3 complete. Chosen order: M3 before M1.5 (movement unblocks the whole engine; laws still queued).
+
+**Deliverables**
+- `src/rules.bend` — `color_of` (the §2.4 parity color), `side_index`/`diag_index` (the 4 slide directions in spec order), `mov` (down-move with `fall := min(63, fall+1)`), `clear_fall`, and `step`: the whole per-cell universal falling rule as a **single recursive state machine** (one `Nat` fuel param, a `U32` selector `sel`, plus carried `i/c/w/k`).
+- `src/sim.bend` — `phase(world, c)` runs one phase over cells of color `c` in flat (x,z,y) scan order; `tick` runs phases `0..7`; `ticks(fuel, world)` iterates. Column swap is by two in-place writes; no material created/destroyed.
+- `app/ascii.bend` — builds the world, spawns a floating 5×5×7 sand block, prints the `z=32` cross-section, runs 14 ticks, prints again. `main.bend` still delegates here.
+- `app/simtests.bend` — T1 (determinism: two worlds, 10 ticks, lists equal), T2 (non-Empty count invariant over 10 ticks), T3 (every gen-Bedrock cell unchanged after 10 ticks). **All PASS**, ~1s native.
+
+**Verified acceptance:** native `main` shows the spawned block fall from y≈52 and form a pile at y≈18–30; over the untouched heightfield almost nothing moves (correct: the terrain has no overhangs and 1-cell steps are stable, so there is little to avalanche). Gate green.
+
+**Platform finding (important for all future runners/tests):** `bend file.bend` **normalizes a value-returning `main`**, so an expensive pure computation in a `-> U32` main appears to "hang" in the checker. Always make expensive runners `main -> IO(Unit)` (print the result), or compile and run the binary. The emitted JS itself is fine.
+
+**Timing:** native tick ≈ 45 ms; JS tick ≈ 2.9 s (≈ 8× total for a full before/after demo). `app/simtests.bend` is therefore **native-recommended**; keep `app/tests.bend` (T5–T8) tick-free so it stays fast under plain `bend`.
+
+**Bend patterns discovered in M3 (the linear-array ruleset)**
+- Fetch-then-use for linear arrays: `Array.get` returns a pair that can only be *matched as a def parameter*. The working shape is one recursive `step(fuel, gp: Array<U32> & U32, ...)` that matches `gp` each call; reads pass the new pair forward, and non-read transitions reconstruct a fresh `(world, v)` pair (passing an already-matched `gp` again counts as re-consuming it).
+- Control flow on computed `Bool`s: `match` cannot scrutinize a let-bound value, so branch by selecting the next state with `Bool.pick(U32, cond, true_sel, false_sel)` and recursing; the recursive call's `sel` is a parameter, which *can* be matched.
+- Multi-scrutinee `match` cannot take a pair pattern (`match a b: case .. (x,y):` is rejected); nest single matches instead. Match parameters in binder order (fuel before gp before sel).
+- Affine `+` is required for any binder used twice on a path; `+b` inside a pair pattern did **not** register in the nested case here, so bind `+v = gv` *inside the branch* (a let before a `match` on a parameter is rejected — "match scrutinees in binder order").
+- Worst-case ≈26 `step` calls per cell; fuel set to `2^23` (`U32.to_nat(8388608)`), which exceeds the bound. Verified the loop exits on `i == volume`, not on fuel exhaustion (doubling fuel changes nothing).
+
+**Recommended next:** M4 (activity: skip inactive, propagate on writes, settle). This will cut the per-tick cost dramatically (only disturbed regions do work), and it fits the `step` machine by adding an active-bit gate at `sel 0`. Then M5 (support/crumble/impact). M1.5 bit-lemmas remain queued.
