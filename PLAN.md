@@ -420,6 +420,16 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   write preserves the count, `array_point_write_count_balance` gives the exact
   displacement identity, and `array_mov_swap_preserves_count` proves the
   **movement swap** (the two writes telescope). Rule 2 is fully law-covered.
+- [ ] **G9/G10 unlock (option-2 route)** — the current verification frontier.
+  1. Prove `Word.cmp` reflection
+     (`Cmp.is_eq(Word.cmp(32n, x, y)) == True → x == y`) and the `U32.is_eq`
+     corollary, in a new `src/word.bend` (mirror `order.cmp_fin_total`; Word's
+     `WCon{head, tail}` structure, LT/GT/EQ × head-bit cases).
+  2. Guard the crush sites to rock (`Rules.step` sel 22, `Support.sup` sel 6);
+     behaviour-validated by A.37 (non-rock field-reset is not load-bearing).
+  3. Mirror `Support.sup`/`Rules.step` on `PT` for `G10`; every write site then
+     has a provable Φ effect (table in A.36).
+  See `HISTORY.md` A.36–A.37 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -448,7 +458,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
-| `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 | a decision procedure / refined match on `U32`; runtime-witnessed by T19 |
+| `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 G10 | the `Word.cmp` reflection lemma (A.37, §5.2); runtime-witnessed by T19 |
 | `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical) **and** resolve `G9`. The crush sites (`Rules.step` sel 22 on the impact target, `Support.sup` sel 6 on the crumble source) apply `crush_word` to a target that is not provably rock; **a behavior probe (A.37) shows the non-rock field-reset is not load-bearing** (all suites pass with non-rock `crush_word = identity`), so guarding the material change to rock is the right fix — but the proof of the guard needs *reflection* (`U32.is_eq(m,3) == True → m == 3`, equivalently `Cmp.is_eq(Word.cmp(32n,x,y)) == True → x == y`), which Base does not provide. Building that reflection lemma is the true unlock for `G9`, `G10`, and any material-guarded engine logic. Would also widen `M8d` eviction |
 
 ---
