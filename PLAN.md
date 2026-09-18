@@ -190,7 +190,7 @@ Milestone IDs (`M0`–`M5`, `V1`…) are **stable historical labels**, not a man
 These carry the properties the engine claims and touch no runtime code; they are scheduled by what they unlock, not by number.
 
 - [x] **V1** Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Formalizes the settling assumption M4/M8 rest on. See A.7.
-- [ ] **V2 Global settling** (in progress — measure kernel + global composition landed, `Array` refinement gap documented; see A.9): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle.
+- [ ] **V2 Global settling** (in progress — list measure + composition landed (A.9); array-level Φ via `to_pots` landed (A.10); the `Array.set`/`to_pots` refinement is the remaining wall): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle.
 - [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test.
 
 ### Visibility (independent of verification)
@@ -454,3 +454,27 @@ Then every swap changes Φ by `−(d_heavy − d_light) < 0`, and every crumble 
 - `bend app/tests.bend` (JS) → all PASS; native `app/simtests.bend` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
 
 **Recommended next:** continue V2 toward the `Array`/tick refinement ((a)–(b) above), or begin M6 in parallel (visibility; independent).
+
+### A.10 — V2: array-level potential (`to_pots`) landed; `Array.set` refinement is the remaining wall
+
+**Status:** in progress. `src/settle.bend` extended; no new laws (the array identities are definitional plus `suml_append`). Gate green; engine untouched; tests pass.
+
+**Deliverables**
+- `pot_at(w, i)` — site potential of word `w` at flat index `i`: `density(material(w)) · iy(i)`.
+- `to_pots(a, base, n)` — the positional potential list; structural over `ALeaf`/`ANode`, splitting at `h = n/2` and using `base` / `base+h` for levels. This is the array's ALeaf/ANode fold of its site potentials.
+- `array_phi(a)` — the true global Φ: `suml(to_pots(a, 0, size(a)))`, with `Array.size` extracted through the `phi_got`/`size_got` pair helpers (the M2 workaround).
+- `to_pots_node` — structural additivity: `suml(to_pots(ANode{xs,ys}, base, n)) == suml(to_pots(xs,base,h)) + suml(to_pots(ys,base+h,h))`, immediate from the `to_pots` definition and `suml_append`. The array potential is therefore the sum of its halves — exactly the shape `replace_decreases` consumes.
+
+**Finding — why (a) is defined through `to_pots`.** A second, direct `Nat`-valued fold `phi_go(a, base, n)` was implemented and a proof of `phi_go(a,base,n) == suml(to_pots(a,base,n))` attempted. It is **blocked by affine arrays**: `Array<U32>` is linear, and the proof needs both folds over the same array (each consumes it) — `ihx = phi_go_eq(xs,…)` consumes `xs`, yet the goal type also mentions `to_pots(xs,…)`. Erasure lets a consumed array appear in proof *types*, but the quantity checker still rejects two runtime mentions (observed: `ys (consumed more than once)`). Resolution: define `array_phi` *through* `to_pots`, so the fold and the `suml` are one traversal and no equality proof is required. `phi_go`/`phi_go_eq` were removed rather than left dead.
+
+**Remaining wall — (b) the `Array.set` refinement.** The precise missing lemma is the tree-update / position correspondence:
+```
+to_pots(Array.set(a, i, v), base, n) == List.set(to_pots(a, base, n), to_nat(i - base), pot_at(v, i))   (base ≤ i < base+n)
+```
+or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an induction over `Array.swap.go` mirroring its `i < h` / `i-h` descent; (ii) a `List.set` split lemma over `app(l,r)` (`i < len l` → set in the left, else in the right at `i-h`) with the associated bound reasoning; (iii) `U32`/`Nat` index arithmetic connecting `base+i`. This is the same imperative-array refinement A.6 flagged, and it is substantial — the reason the `Array` is not yet linked to the `List` measure. Until it lands, the end-to-end `Sim` settling theorem stays the documented gap and **M8 remains gated on V2**.
+
+**Verification**
+- `bend src/settle.bend` → `All terms check.`; `bend PROOF.bend` → `All terms check.` (16 laws).
+- `bend app/tests.bend` (JS) → all PASS; native `app/simtests.bend` → all PASS. No engine code touched.
+
+**Recommended next:** attack (b) via the `Array.swap.go` induction plus the `List.set` split lemma (a real chunk of work), or pause V2 and start M6 (visibility; independent).

@@ -1,6 +1,8 @@
 import Base
 import ./nat.bend as NatL
 import ./potential.bend as Pot
+import ./grid.bend as Grid
+import ./cell.bend as Cell
 
 def app(xs: +List<Nat>, ys: +List<Nat>) -> +List<Nat>:
   List.append(&2, Nat, xs, ys)
@@ -231,3 +233,32 @@ def crumble_segment_decreases(+d: Nat, +G: Nat, +L: Nat) -> {Nat.add(suml([Pot.p
 
 def crumble_lowers_world(+l: +List<Nat>, +r: +List<Nat>, +d: Nat, +G: Nat, +L: Nat) -> {Nat.add(suml(app(l, app([Pot.phi(d, L)], r))), Pot.phi(G, L)) == suml(app(l, app([Pot.phi(Nat.add(d, G), L)], r))) : Nat}:
   replace_decreases(l, r, [Pot.phi(Nat.add(d, G), L)], [Pot.phi(d, L)], Pot.phi(G, L), crumble_segment_decreases(d, G, L))
+
+
+def pot_at(+w: U32, +i: U32) -> Nat:
+  Nat.mul(Pot.dens(Cell.material(w)), U32.to_nat(Grid.iy(i)))
+
+def to_pots(a: Array<U32>, +base: U32, n: U32) -> +List<Nat>:
+  match a:
+    case ALeaf{x}:
+      [pot_at(x, base)]
+    case ANode{xs, ys}:
+      +h = U32.shr(n)
+      app(to_pots(xs, base, h), to_pots(ys, U32.add(base, h), h))
+
+def size_got(p: Array<U32> & U32) -> U32:
+  match p:
+    case (_, n):
+      n
+
+def phi_got(p: Array<U32> & U32) -> Nat:
+  match p:
+    case (a, n):
+      suml(to_pots(a, 0, n))
+
+def array_phi(a: Array<U32>) -> Nat:
+  phi_got(Array.size(U32, a))
+
+def to_pots_node(xs: Array<U32>, ys: Array<U32>, +base: U32, +n: U32) -> {suml(to_pots(ANode{xs, ys}, base, n)) == Nat.add(suml(to_pots(xs, base, U32.shr(n))), suml(to_pots(ys, U32.add(base, U32.shr(n)), U32.shr(n)))) : Nat}:
+  suml_append(to_pots(xs, base, U32.shr(n)), to_pots(ys, U32.add(base, U32.shr(n)), U32.shr(n)))
+
