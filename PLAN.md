@@ -190,8 +190,14 @@ Milestone IDs (`M0`–`M5`, `V1`…) are **stable historical labels**, not a man
 These carry the properties the engine claims and touch no runtime code; they are scheduled by what they unlock, not by number.
 
 - [x] **V1** Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Formalizes the settling assumption M4/M8 rest on. See A.7.
-- [ ] **V2 Global settling** (in progress — list measure + composition landed (A.9); array-level Φ via `to_pots` landed (A.10); the `Array.set`/`to_pots` refinement is the remaining wall): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle.
-- [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test.
+- [ ] **V2 Global settling** (in progress — list measure + composition landed (A.9); array-level Φ via `to_pots` landed (A.10); the `Array.set`/`to_pots` refinement is the remaining wall): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle. The remaining refinement shards as:
+  - [ ] **V2b-i** `List.set` split/sum lemma — self-contained.
+  - [ ] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — the tree induction; the risky one.
+  - [ ] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` instances — including "support writes preserve Φ" and "the bedrock floor keeps every crumble at `L ≥ 1`".
+- [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test. Sharded:
+  - [ ] **V3a Parity independence** — same-color cells are never 26-neighbors (pure index/parity arithmetic on the existing bit model; small, provable now).
+  - [ ] **V3b Priority is total and local** — among same-phase movers targeting one cell, scan order yields a unique winner and the losers observe it occupied; comparison radius ≤2 (medium).
+  - [ ] **V3c Schedule invariance** — a region-split fold equals the sequential fold; builds on V3a+V3b. Large and stall-prone: fallback is V3a+V3b proven with V3c kept as a documented gap.
 
 ### Visibility (independent of verification)
 
@@ -199,10 +205,21 @@ These carry the properties the engine claims and touch no runtime code; they are
 
 ### Scale (optional, droppable; M8 gated on V2)
 
-- [ ] **M7** Parallel track: parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Pair with **V3**. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed).
-- [ ] **M8** Chunks / "infinite" world (stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Requires **V2**. Accept: chunk gen + tick identical to fixed-world behavior on the same region.
+- [ ] **M7 Parallel track**: parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Pair with **V3**. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed). Sharded, easiest → hardest:
+  - [ ] **M7a Parallel worldgen** (`build`) — pure, no shared linear state; smallest real speedup, zero semantic risk.
+  - [ ] **M7b GPU worldgen** (`!` on `hash`/`noise2`/`gen`) — same semantics, needs CUDA.
+  - [ ] **M7c Parallel render** (`view`) — per-pixel, but shares the world `Array` → clone-per-region; independent of movement.
+  - [ ] **M7d Parallel phase folds (CPU)** — region splits + clone + the §2.5 tie-break; gated on **V3c**.
+  - [ ] **M7e GPU phases** — last and most optional.
+- [ ] **M8 Chunks / "infinite" world** (stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Requires **V2**. Accept: chunk gen + tick identical to fixed-world behavior on the same region. Sharded:
+  - [ ] **M8a** chunk key/index + pure per-chunk gen (easy; worldgen is already pure).
+  - [ ] **M8b** radix-tree chunk store (replaces the string-keyed `Map`).
+  - [ ] **M8c** region tick equivalence.
+  - [ ] **M8d** sleeping/eviction (rests on **V2b**).
 
-Suggested sequence: **M6 ∥ V2 → M7 (with V3) → M8**. Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the settling guarantee.
+Suggested sequence (interleaved by dependency): **V3a → V3b → M7a → M7c → V3c → M7d → (M7b/M7e once CUDA is installed) → V2b-i → V2b-ii → V2b-iii → M8**. V3 gates M7's correctness; V2b gates M8; M7 and V2b are independent, so V2b may jump ahead if the CUDA/GPU path stalls. Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the settling guarantee.
+
+**GPU expectation (honest):** the current 64³ world is too small to showcase a GPU; the GTX 1050 is discrete VRAM (transfer cost) and falling-sand is divergent work, whereas the GPU's sweet spot is uniform numeric work. Worldgen/noise are the good GPU targets, and real GPU payoff is at M8 scale, not in the movement phases. Near-term, CPU forks (M7a/M7c) are likelier to show wins than the GPU path.
 
 ## 6. Bend guardrails (these WILL bite — read before writing code)
 
@@ -503,3 +520,19 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `app/window.bend` built and ran a full 6 s event loop under `DISPLAY=:0` with no crash; the human confirmed the window appears (and flagged the initial size, now fixed).
 
 **Recommended next:** continue V2 (b) `Array.set`/`to_pots`, or polish M6 (brush size, water). M7/M8 remain optional; M8 is gated on V2.
+
+### A.12 — roadmap sharded: V3, M7, V2b, M8 split into sub-steps; interleaved sequence
+
+**Status:** documentation only (planning). No engine, law, or test change.
+
+**Decision.** The remaining work was reviewed for "one step, one thing". V2, V3, M7, and M8 were each judged too big as single milestones and split (see §5):
+- **V2** refinement → **V2b-i** (`List.set` split/sum), **V2b-ii** (`Array.swap.go` ↔ `to_pots` correspondence; risky), **V2b-iii** (`Sim.tick` as composed `replace_decreases`, including support-writes-preserve-Φ and bedrock `L ≥ 1`).
+- **V3** → **V3a** parity independence, **V3b** total/local priority, **V3c** schedule invariance (stall-prone; fallback = V3a+V3b proven, V3c documented).
+- **M7** → **M7a** parallel worldgen, **M7b** GPU worldgen, **M7c** parallel render, **M7d** parallel phase folds (gated on V3c), **M7e** GPU phases.
+- **M8** → **M8a** chunk key + pure per-chunk gen, **M8b** radix store, **M8c** region tick equivalence, **M8d** sleeping (needs V2b).
+
+**Dependency shape.** V3 gates M7's correctness (otherwise parallel output is only T1-witnessed); V2b gates M8 (sleeping needs settling). M7 and V2b are mutually independent. Chosen interleave: **V3a → V3b → M7a → M7c → V3c → M7d → (M7b/M7e once CUDA is installed) → V2b-i → V2b-ii → V2b-iii → M8**. If the CUDA/GPU path stalls, V2b may proceed first.
+
+**GPU expectation (recorded).** For the current 64³ world a GPU is unlikely to help: too little work, discrete VRAM transfer cost, and divergent cellular work vs. the GPU's uniform-numeric sweet spot. Worldgen/noise are the compelling GPU kernels; real payoff is at M8 scale. Near-term wins are expected from CPU forks (M7a/M7c).
+
+**Not in scope / left as-is:** window centering (Bend's `window_open.c` creates at `(0,0)` with fixed size hints; a Hyprland rule experiment was reverted and the config left clean) and window sizing (draggable, left small).
