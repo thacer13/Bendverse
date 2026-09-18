@@ -839,3 +839,18 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9, T18 all PASS (~4.9s).
 
 **Recommended next:** the non-gated scale track is complete. The remaining meaningful work is the verification frontier — **V2b-ii** (`Array.swap.go` ↔ `to_pots`, which then unlocks M8d), **V2b-iii**, or **V3c** — each large/risky and each with the §5 documented-gap fallback. Everything above them is landed.
+
+### A.24 — pi tooling: `bendverse` extension (6 tools)
+
+**Status:** developer-experience only. Engine, `LAWS.bend`, and the gate are untouched; gate green (27 laws), fast and sim suites pass.
+
+Added a project-local pi extension at `.pi/extensions/bendverse/` (`index.ts` + pure, testable `lib.ts`) that wraps the AGENTS.md workflow so the model spends tokens on reasoning instead of command boilerplate:
+
+- `bend_gate` — runs `bend PROOF.bend`; one line green, or the raw compiler error red.
+- `bend_test` — fast (JS) and sim (native, mtime-cached binary) suites; returns only a PASS/FAIL summary.
+- `bend_run` — runs any `.bend` file (`native` optional), tail-capped output, for scenarios/repros.
+- `bend_api` — `bend base` / `bend guide` lookup; module catalogue or signatures-only by default.
+- `bend_plan` — section/query search over `PLAN.md`, `LAWS.bend`, `coreidea.md` (fence-aware heading index; numbered outline for coreidea).
+- `bend_status` — git HEAD/dirty, open §5 milestones, law list, newest Appendix A entry.
+
+All bend invocations are serialized (each saturates the cores). Pure helpers were unit-tested against the real docs and every tool was exercised end-to-end through a stubbed-`pi` harness. Activation: project-local extensions load once the project is trusted (`~/.pi/agent/trust.json`); `/reload` or restart picks them up in a running session.
