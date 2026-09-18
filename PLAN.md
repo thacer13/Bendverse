@@ -4,8 +4,9 @@ Single source of truth. Executors: implement what this says, check off milestone
 Workflow authority: `AGENTS.md` (run `bend PROOF.bend` before every commit; learn via `bend guide`; look up APIs via `bend base <Name>`; parallelize where balanced).
 Concept authority: `coreidea.md`. Where this file concretizes it, this file wins.
 
-Status: **M0 complete.** Toolchain: bend 2.0.5 (auto-updated from 2.0.4 during planning; verified working).
+Toolchain: bend 2.0.5 (verified working).
 Machine facts: clang 22, X11 dev headers present, 6 CPU cores, no CUDA — `!` GPU calls fall back to CPU parallel here.
+Progress lives in §5 (milestone checkboxes) and Appendix A (log), newest last.
 
 ## 0. Verified platform facts (do not re-derive)
 
@@ -175,10 +176,10 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 - [x] **M0** Plan + scaffold + sanity law proven + gate green + native build verified. (this commit)
 - [x] **M1** Cell word + index math. Spike: bit-31 roundtrip (decides whether bits 24–31 are usable; layout above already safe without them). Laws: `index_roundtrip`, `cell_roundtrip`. Accept: gate green, T5 passes.
 - [x] **M1.5** Bit-lemma library (`src/bits.bend`) + Word-level index/cell model + refinement to `U32`. Upgrades `index_roundtrip`/`cell_roundtrip` from golden tests back to proven laws. Accept: gate green, T5 still passes. (See A.6.)
-- [ ] **M2** Worldgen + ASCII slice. Accept: `bend main.bend` prints recognizable terrain; T1-style determinism holds for gen (same seed → same world).
-- [ ] **M3** Movement: empty/sand/bedrock world; 8-phase tick; swap-only. Accept: T1, T2, T3 pass; before/after ASCII shows plausible falling.
-- [ ] **M4** Activity: skip inactive, propagate on writes, settle. Accept: T4 passes; a tick over a fully-settled world does (near) zero writes.
-- [ ] **M5** Cohesion: support pass, crumble, impact crush (Rock → Rubble), cohesive-as-static interim removed. Accept: T2 still passes (crumble conserves non-Empty count); pull-the-base scenario collapses in ASCII demo.
+- [x] **M2** Worldgen + ASCII slice. Accept: `bend main.bend` prints recognizable terrain; T1-style determinism holds for gen (same seed → same world).
+- [x] **M3** Movement: empty/sand/bedrock world; 8-phase tick; swap-only. Accept: T1, T2, T3 pass; before/after ASCII shows plausible falling.
+- [x] **M4** Activity: skip inactive, propagate on writes, settle. Accept: T4 passes; a tick over a fully-settled world does (near) zero writes.
+- [x] **M5** Cohesion: support pass, crumble, impact crush (Rock → Rubble), cohesive-as-static interim removed. Accept: T2 still passes (crumble conserves non-Empty count); the pull-the-base scenario collapses in the ASCII runner's before/after cross-section.
 - [x] **V1** (extra, after M5) Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Not an M-step; a verification layer for the settling assumption M4/M8 rely on. See A.7.
 - [ ] **M6** Windowed app: `App.run`, cross-section view, mouse/keyboard editing. Accept: interactive editing visibly disturbs and settles.
 - [ ] **M7** Parallel track (optional, droppable): parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed).
@@ -211,7 +212,7 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 
 ### A.1 — M1 complete: cell word + index math (bend 2.0.5)
 
-**Status:** M1 complete. (The `Status:` line above still reads M0; this entry supersedes it.)
+**Status:** M1 complete.
 
 **Deliverables**
 - `src/grid.bend` — `size`, `volume`, `index(x,y,z) = x | (z<<6) | (y<<12)`, decoders `ix/iy/iz`, generic `neighbor(i,dx,dy,dz)` with wrapping U32 deltas and 6-bit masks, and axis neighbors `below/above/west/east/south/north`.

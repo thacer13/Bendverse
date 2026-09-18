@@ -36,3 +36,7 @@ Given the same starting state and the same tie-break rule (#3), the result of a 
 
 11. World generation is a pure seeding function, not a system
 For any cell coordinate, there exists a pure function f(x, y, z) → material, parameters that depends only on the coordinate itself (and a fixed global seed) — never on generation order, neighboring chunks' generation status, or simulation history. A chunk's initial state is produced by sampling this function once per cell within it, with every cell marked inactive (per rule 9). This function may internally layer multiple scalar fields (e.g., macro-scale for base terrain shape, higher-frequency for material selection, sparse fields for isolated features) — but externally it must behave as a single pure lookup: same coordinate, same seed, same result, regardless of when or in what order it's called.
+
+Ambition (in the open)
+
+This is not really a demo, and it isn't trying to be one. The ASCII and windowed front-ends exist only to keep the model visible and honest. The ambition is a small, complete rule system whose determinism, conservation, stability, and scalability are properties of the design rather than features layered on top — a reference engine that is free to mature slowly. Parallelism and chunking are sketched, not claimed; the verified kernels are real. The demo can be as plain as it likes.
