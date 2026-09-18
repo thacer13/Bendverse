@@ -689,3 +689,29 @@ Wave 2 adds four tools:
 - `bend PROOF.bend` → `All terms check.` (30 laws).
 - `bend app/tests.bend` (JS, tick-free) → 16/16.
 - Native `bend app/simtests.bend -o bin && ./bin` → 7/7.
+
+### A.28 — V2b-iii (partly): write→Φ bridge; support/fall/mov preserve pot, crumble lowers pot
+
+**Status:** V2b-iii **partly landed** (§5.2 box still open; `G2` narrowed, not closed). **6 new laws** (36 total). Engine untouched; gate green; fast (16/16) and simulation (7/7) suites pass. `V2` therefore still gated, so `M8d` stays gated.
+
+**What landed** (`src/writepot.bend`, new, pure):
+- `mat_encode` — `Cell.material(Cell.encode(m, c, a, s, f)) == U32.and(m, 31)`: the material field of an encoded cell is the material argument alone. The engine's write primitives are all `Cell.encode` re-encodings, so this is the load-bearing bit fact.
+- `pot_set_support`, `pot_set_fall0`, `pot_mov` — `pot_at` is unchanged by the support, fall-reset, and fall-increment writes (the "support writes preserve Φ" claim, pointwise).
+- `pot_crush_rock` — for `Cell.material(w) == 3`, `pot_at(crush_word(w), i) + 50·L == pot_at(w, i)` where `L = iy(i)`: the crumble (rock→rubble, density 200→150) lowers Φ by `50·L`, and the "bedrock floor" `L ≥ 1` makes it a strict decrease.
+- `point_write_lowers` — the composition step: a whole-world point write that replaces a pot `v + g` by `v` lowers Φ by `g` (a `replace_decreases` instance at an arbitrary segment split; V2b-i's `list_set_sum` in decrease form).
+
+**Laws added:** `material_encode`, `support_write_preserves_pot`, `fall_write_preserves_pot`, `mov_preserves_pot`, `crumble_lowers_pot`, `point_write_lowers`. §4 R0/R6/R9 and §6 updated; §5.1/§5.2/§5.3 and `HISTORY.md` record the partial status.
+
+**What is still open (honest).** `G2` needs the tick's write *sites* enumerated over `Support.pass`/`Rules.step` and `point_write_lowers` instantiated at each; that is control-flow bookkeeping, not new mathematics. The fully array-level `Sim.tick` statement is blocked by linearity (recorded as `G8`), so the closure will be model/pot-list level with the refinement argument in `A.27`/`G5`. Until then `V2` is not complete and `M8d` remains gated.
+
+**Bend findings (V2b-iii).**
+- **The bit proof is the cost centre.** The `Word(32n)` model prints literals byte-by-byte (`WCon{…}`), so errors are pages long; iterate by diffing normalized goal text, not by eye.
+- **Peel, don't factor.** The first attempt distributed `and(mask5, ·)` over the 5-way `or` with `factor5`, which produced unmanageable congruence goals. Rewriting one shifted term at a time with a generic `peel` (`and(mask5, or(A, shl_n(X,k))) == and(mask5, A)`, given `shr_n(k, mask5) == 0`) is far simpler: four applications plus `absorb_mat`.
+- **Polymorphic shifts need the hypothesis, not reduction.** `Bits.and_shl_n` with a *variable* `k` leaves `shr_n(k, mask5)` stuck, so the hypothesis `h : shr_n(k, mask5) == zero` must be applied by `Equal.cong` (a literal `k` would reduce, a variable one will not).
+- **Proof hypotheses are `+`-able.** `+h: {Cell.material(w) == 3 : U32}` is accepted, so a proof can be used twice; distinct `Equal` facts needed by different branches do not require re-derivation.
+- **`pot_at` unfolds to `dens ∘ material`.** Every write lemma is therefore a material-field equality plus `dens_rock`/`dens_rubble` (`{==}` laws) and the `+`-form Nat algebra; no order lemmas were needed.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (36 laws).
+- `bend app/tests.bend` (JS, tick-free) → 16/16.
+- Native `bend app/simtests.bend -o bin && ./bin` → 7/7.

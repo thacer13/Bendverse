@@ -10,6 +10,9 @@ import ./src/mod.bend as Mod
 import ./src/priority.bend as Priority
 import ./src/order.bend as Order
 import ./src/refine.bend as Refine
+import ./src/ops.bend as Ops
+import ./src/rules.bend as Rules
+import ./src/writepot.bend as WP
 
 def Laws.sanity():
   {==}
@@ -110,3 +113,21 @@ def Laws.array_swap_pots(t, base, n, i, v):
 
 def Laws.swap_lowers_phi(t, base, n, i, v):
   Refine.array_swap_decreases(t, base, n, i, v)
+
+def Laws.material_encode(m, c, a, s, f):
+  WP.mat_encode(m, c, a, s, f)
+
+def Laws.support_write_preserves_pot(w, s, i):
+  WP.pot_set_support(w, s, i)
+
+def Laws.fall_write_preserves_pot(w, i):
+  WP.pot_set_fall0(w, i)
+
+def Laws.mov_preserves_pot(w, i):
+  WP.pot_mov(w, i)
+
+def Laws.crumble_lowers_pot(w, i, h):
+  WP.pot_crush_rock(w, i, h)
+
+def Laws.point_write_lowers(l, v, g, r):
+  WP.point_write_lowers(l, v, g, r)
