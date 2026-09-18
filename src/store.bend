@@ -92,3 +92,44 @@ def get(s: Store, +k: U32) -> Maybe<&2, List<&2, U32>>:
   match k:
     case U32{w}:
       get_w(32n, w, s, k)
+
+def assemble_chunk(fuel: Nat, +i: U32, +k: U32, cells: List<&2, U32>, world: Array<U32>) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          world
+        case Con{h, t}:
+          +idx = Grid.index(Chunk.global_x(k, i), Chunk.global_y(k, i), Chunk.global_z(k, i))
+          assemble_chunk(p, U32.add(i, 1), k, t, world[idx] <- h)
+
+def assemble_cells(m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> Array<U32>:
+  match m:
+    case None{}:
+      world
+    case Some{cells}:
+      assemble_chunk(U32.to_nat(4096), 0, k, cells, world)
+
+def assemble_go(fuel: Nat, +ci: U32, +s: Store, world: Array<U32>) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      +k = Chunk.key(U32.and(ci, 3), U32.and(U32.shrn(ci, 2n), 3), U32.and(U32.shrn(ci, 4n), 3))
+      assemble_go(p, U32.add(ci, 1), s, assemble_cells(get(s, k), k, world))
+
+def assemble(s: Store) -> Array<U32>:
+  assemble_go(64n, 0, s, [0 : U32^18n])
+
+def put_all_go(fuel: Nat, +ci: U32, store: Store) -> Store:
+  match fuel:
+    case 0n:
+      store
+    case 1n+p:
+      +k = Chunk.key(U32.and(ci, 3), U32.and(U32.shrn(ci, 2n), 3), U32.and(U32.shrn(ci, 4n), 3))
+      put_all_go(p, U32.add(ci, 1), set(store, k, chunk_list(k)))
+
+def build_all() -> Store:
+  put_all_go(64n, 0, STip{})

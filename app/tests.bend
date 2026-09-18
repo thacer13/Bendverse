@@ -374,6 +374,27 @@ def overwrite_bad(+store: Store.Store, bad: U32) -> U32:
   +other = Chunk.key(0, 0, 1)
   maybe_overwrite(Store.get(Store.set(store, k, Store.chunk_list(other)), k), other, bad)
 
+def list_cmp_go(fuel: Nat, xs: List<U32>, ys: List<U32>, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match xs:
+        case Nil{}:
+          bad
+        case Con{hx, tx}:
+          match ys:
+            case Nil{}:
+              bad
+            case Con{hy, ty}:
+              list_cmp_go(p, tx, ty, inc_if_false(U32.is_eq(hx, hy), bad))
+
+def assemble_bad() -> U32:
+  store = Store.build_all()
+  a = Store.assemble(store)
+  b = Worldgen.build()
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), 0)
+
 def store_bad() -> U32:
   +base = put_keys(U32.to_nat(8), chunk_keys(), Store.empty())
   U32.add(get_keys(U32.to_nat(8), chunk_keys(), base, 0),
@@ -396,3 +417,4 @@ def main() -> IO(Unit):
     report("T15 list set split + sum", set_laws_bad())
     report("T16 chunk key/local roundtrip + gen", chunk_bad())
     report("T17 chunk store set/get/overwrite", store_bad())
+    report("T18 store assemble == worldgen", assemble_bad())

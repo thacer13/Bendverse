@@ -3,6 +3,9 @@ import ../src/grid.bend as Grid
 import ../src/cell.bend as Cell
 import ../src/worldgen.bend as Worldgen
 import ../src/sim.bend as Sim
+import ../src/support.bend as Support
+import ../src/chunk.bend as Chunk
+import ../src/store.bend as Store
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -177,6 +180,14 @@ def t9() -> U32:
   after = count_rock_list(Grid.to_list(w2), 0)
   is_bad(U32.is_lt(after, before))
 
+def t18() -> U32:
+  a0 = Support.pass_all(Store.assemble(Store.build_all()))
+  b0 = Sim.build()
+  init_bad = is_bad(list_eq(Grid.to_list(a0), Grid.to_list(b0)))
+  a = Sim.ticks(U32.to_nat(10), Sim.spawn(Support.pass_all(Store.assemble(Store.build_all()))))
+  b = Sim.ticks(U32.to_nat(10), Sim.spawn(Sim.build()))
+  U32.add(init_bad, is_bad(list_eq(Grid.to_list(a), Grid.to_list(b))))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -185,3 +196,4 @@ def main() -> IO(Unit):
     report("T4 settles + far cells unchanged", t4())
     report("T4b settled world is a fixed point", t4b())
     report("T9 pull-base collapses rock", t9())
+    report("T18 chunk store tick equivalence", t18())

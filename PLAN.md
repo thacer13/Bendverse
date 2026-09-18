@@ -214,7 +214,7 @@ These carry the properties the engine claims and touch no runtime code; they are
 - [ ] **M8 Chunks / "infinite" world** (stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Requires **V2**. Accept: chunk gen + tick identical to fixed-world behavior on the same region. Sharded:
   - [x] **M8a** chunk key/index + pure per-chunk gen (easy; worldgen is already pure). (See A.21.)
   - [x] **M8b** radix-tree chunk store (replaces the string-keyed `Map`). (See A.22.)
-  - [ ] **M8c** region tick equivalence.
+  - [x] **M8c** region tick equivalence. (See A.23.)
   - [ ] **M8d** sleeping/eviction (rests on **V2b**).
 
 Suggested sequence (interleaved by dependency): **V3a → V3b → M7a → M7c → V3c → M7d → (M7b/M7e once CUDA is installed) → V2b-i → V2b-ii → V2b-iii → M8**. V3 gates M7's correctness; V2b gates M8; M7 and V2b are independent, so V2b may jump ahead if the CUDA/GPU path stalls. Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the settling guarantee.
@@ -811,3 +811,31 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
 
 **Recommended next:** **M8c** — region tick equivalence: assemble the fixed world from the store into an `Array<U32>`, run `Sim.tick`, compare to `Sim.tick` on `Sim.build()`, and (optionally) scatter back into the store.
+
+### A.23 — M8c complete: chunk-store assemble + tick equivalence
+
+**Status:** M8c **complete** (§5 box checked). `src/store.bend` extended; **no new laws**. Engine untouched; gate green; fast and simulation suites pass.
+
+**Interpretation (scope, honestly).** "Region tick equivalence" is implemented as **representation equivalence under the tick pipeline**, not independent per-chunk ticking: the chunked world is gathered back into an `Array<U32>`, and that world is shown to equal the fixed-world build and to evolve identically through `Sim.tick`. Independent per-region ticking (a chunk + halo ticked in isolation) is **not** claimed and would need **V3c** (schedule invariance) to be sound — the sequential scan order and §2.5 tie-break are global. So the non-gated M8 work stops here; only **M8d** (sleeping/eviction) still rests on V2b.
+
+**Deliverables (`src/store.bend`)**
+- `assemble(s) -> Array<U32>` — gather: `assemble_go` walks the 64 chunk coordinates (decoded from a single `ci = 0..63`), `assemble_cells` matches the `get` result, and `assemble_chunk` walks each chunk's local-ordered list writing `world[Grid.index(global…)] <- cell`. All three are tail-recursive (fuelled), so JS does not blow its stack.
+- `build_all() -> Store` — `put_all_go` inserts all 64 chunks (`chunk_list ∘ key`) — the canonical chunked world, used by both suites.
+
+**Tests**
+- `app/tests.bend` **T18**: `assemble(build_all())` equals `Worldgen.build()` cell-for-cell. The comparator is a **tail-recursive** mismatch count (`list_cmp_go`) — the obvious non-tail `list_eq` over 262144 elements overflows the JS stack (`memory fault`).
+- `app/simtests.bend` **T18** (native): (a) `Support.pass_all(assemble(build_all()))` equals `Sim.build()` cell-for-cell; (b) `Sim.spawn` + 10 ticks on the assembled world equals `Sim.spawn` + 10 ticks on `Sim.build()`, bit-for-bit. This closes "chunk gen + tick identical to fixed-world behavior".
+
+**Bend findings (M8c)**
+- `U32.shrn` shift amounts are `Nat`: use `2n`/`4n`, not `2`/`4`.
+- A non-tail `List` compare over 262144 elements overflows the JS stack; fuelled tail recursion does not.
+- `+List<U32>` is rejected ("expected Data, observed Type") — `List<U32>` is the linear `&1` list; only `List<&2, U32>` is `Data` and can take `+`. The comparator takes it plain and consumes it.
+
+**Where the scale track now stands.** M8a (keys + pure per-chunk gen), M8b (radix store), M8c (assemble + tick equivalence) are all landed and non-gated. The remaining pieces are the ones the plan always marked as gated/risky: **M8d** (sleeping — needs V2b-ii/iii) and, if ever wanted, true per-region ticking (needs V3c). Neither is required for any verified claim or for the fixed-world engine.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (27 laws); `bend src/store.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T16–T18, ~3.0s.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9, T18 all PASS (~4.9s).
+
+**Recommended next:** the non-gated scale track is complete. The remaining meaningful work is the verification frontier — **V2b-ii** (`Array.swap.go` ↔ `to_pots`, which then unlocks M8d), **V2b-iii**, or **V3c** — each large/risky and each with the §5 documented-gap fallback. Everything above them is landed.
