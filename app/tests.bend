@@ -5,6 +5,7 @@ import ../src/worldgen.bend as Worldgen
 import ../src/parity.bend as Parity
 import ../src/priority.bend as Priority
 import ../src/settle.bend as Settle
+import ../src/chunk.bend as Chunk
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -257,6 +258,56 @@ def set_sum_case(bad: U32) -> U32:
 def set_laws_bad() -> U32:
   set_sum_case(set_split_go(U32.to_nat(7), 0n, 0))
 
+def ck_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +k = U32.and(U32.mul(i, 2654435761), 1073741823)
+      ok = U32.is_eq(Chunk.key(Chunk.key_x(k), Chunk.key_y(k), Chunk.key_z(k)), k)
+      ck_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def cl_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +j = U32.and(i, 4095)
+      ok = U32.is_eq(Chunk.local(Chunk.local_x(j), Chunk.local_y(j), Chunk.local_z(j)), j)
+      cl_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def chunk_gen_go(fuel: Nat, +i: U32, +k: U32, cells: List<U32>, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          +g = Worldgen.gen(Chunk.global_x(k, i), Chunk.global_y(k, i), Chunk.global_z(k, i), 42)
+          chunk_gen_go(p, U32.add(i, 1), k, t, inc_if_false(U32.is_eq(h, g), bad))
+
+def chunk_gen_case(+k: U32, bad: U32) -> U32:
+  chunk_gen_go(U32.to_nat(4096), 0, k, Grid.to_list(Chunk.build(k)), bad)
+
+def chunk_keys() -> List<U32>:
+  [Chunk.key(0, 0, 0), Chunk.key(3, 0, 0), Chunk.key(0, 3, 0), Chunk.key(0, 0, 3), Chunk.key(1, 2, 3), Chunk.key(2, 1, 0), Chunk.key(0, 2, 1), Chunk.key(3, 3, 3)]
+
+def cg_cases(fuel: Nat, keys: List<U32>, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match keys:
+        case Nil{}:
+          bad
+        case Con{k, t}:
+          cg_cases(p, t, chunk_gen_case(k, bad))
+
+def chunk_bad() -> U32:
+  U32.add(ck_go(U32.to_nat(4096), 0, 0), U32.add(cl_go(U32.to_nat(4096), 0, 0), cg_cases(U32.to_nat(8), chunk_keys(), 0)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -272,3 +323,4 @@ def main() -> IO(Unit):
     report("T13 neighbor index cancellation", nc_bad())
     report("T14 scan order totality", total_bad())
     report("T15 list set split + sum", set_laws_bad())
+    report("T16 chunk key/local roundtrip + gen", chunk_bad())

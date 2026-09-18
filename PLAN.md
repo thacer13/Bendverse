@@ -212,7 +212,7 @@ These carry the properties the engine claims and touch no runtime code; they are
   - [ ] **M7d Parallel phase folds (CPU)** — region splits + clone + the §2.5 tie-break; gated on **V3c**.
   - [ ] **M7e GPU phases** — last and most optional.
 - [ ] **M8 Chunks / "infinite" world** (stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Requires **V2**. Accept: chunk gen + tick identical to fixed-world behavior on the same region. Sharded:
-  - [ ] **M8a** chunk key/index + pure per-chunk gen (easy; worldgen is already pure).
+  - [x] **M8a** chunk key/index + pure per-chunk gen (easy; worldgen is already pure). (See A.21.)
   - [ ] **M8b** radix-tree chunk store (replaces the string-keyed `Map`).
   - [ ] **M8c** region tick equivalence.
   - [ ] **M8d** sleeping/eviction (rests on **V2b**).
@@ -752,3 +752,30 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
 
 **Recommended next:** **V2b-ii** (`Array.swap.go` ↔ `to_pots`), the risky tree induction; the split lemma plus a `len(to_pots) = n` and a `Nat`/`U32` comparison correspondence are its dependencies.
+
+### A.21 — M8a complete: chunk key/index + pure per-chunk gen
+
+**Status:** M8a **complete** (§5 box checked). New `src/chunk.bend`; **no new laws** (golden test only — see below). Engine untouched; gate green; fast and simulation suites pass.
+
+**Interpretation chosen.** M8's acceptance is "chunk gen + tick identical to fixed-world behavior on the same region", so M8a **chunks the existing 64³ world** rather than changing `gen`'s semantics for an unbounded world. Per-chunk gen calls the same pure `Worldgen.gen` on **global** coordinates, so a chunk reproduces its region of `Worldgen.build()` exactly (T8 already proves `build == gen` cellwise). Generalizing `gen` for a true infinite world (drop the x/z/63 side shells, keep the y=0 floor) is deliberately deferred; it is a model change, not a key/index one.
+
+**Deliverables (`src/chunk.bend`)**
+- `size() = 16`, `bits() = 4n`, `cells() = 4096`, `per_axis() = 4` (64³ = 4³ chunks of 16³).
+- `local(x,y,z) = x | (z<<4) | (y<<8)` and decoders `local_x/y/z` — the 12-bit chunk-local flat index, mirroring the world's `index`/`ix/iy/iz` shape at 4-bit width.
+- `key(cx,cy,cz) = cx | (cz<<10) | (cy<<20)` with decoders `key_x/y/z` — **10 bits per axis** (30 usable bits), i.e. up to 1024³ chunks, leaving room for a genuinely large world beyond the 4³ used today.
+- `global_x/y/z(k,i)` — the local → global coordinate map (`chunk_coord*16 + local`), and `gen_local(k,i) = Worldgen.gen(global…, 42)`.
+- `build_at(depth, base, k)` / `build(k) = build_at(12n, 0, k)` — the M7a structural parallel build pattern (a 4096-leaf tree, `ALeaf` at flat local index `base`), so chunk gen is parallel with no shared linear state.
+
+**Golden test (`app/tests.bend`, T16)**
+- `key ∘ (key_x,key_y,key_z) == id` on 30 bits, 4096 sampled keys.
+- `local ∘ (local_x,local_y,local_z) == id` on 12 bits, 4096 sampled values.
+- For 8 chunks (all corners plus interior/mixed keys): every one of the 4096 cells equals `Worldgen.gen` at its global coordinate — 32768 cells, validating the local/global decomposition and leaf order. Combined with T8 (`build == gen`), this gives chunk-region equality with the fixed world.
+
+**Why no law.** A chunk-key roundtrip is the same bit shape as `index_roundtrip`, but at **10-bit** fields, while the `src/bits.bend` model is specialized to the 6-bit masks/shifts (`mask(32,6)`, `shl/shr` by 6 and 12). Re-proving the mask/shift library at width 10 would be real work for a claim §3 classifies as a golden test ("simulation-level properties … not laws"). Recorded here rather than silently omitted; can be promoted to a law later by parameterizing the bit model over the field width.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (27 laws); `bend src/chunk.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T16, ~2.05s.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
+
+**Recommended next:** **M8b** (radix-tree chunk store keyed by the packed `U32` chunk key; not `Map`, which is string-keyed), then **M8c** (region tick equivalence). Both are independent of V2b-ii; **M8d** (sleeping/eviction) remains gated on V2b.
