@@ -3,6 +3,7 @@ import ./LAWS.bend as Laws
 import ./src/bits.bend as Bits
 import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
+import ./src/potential.bend as Pot
 
 def Laws.sanity():
   {==}
@@ -31,3 +32,18 @@ def Laws.cell_roundtrip(w):
         Bits.model_cell(32n, x),
         Word.and(32n, x, Bits.mask(32n, 23n)),
         Bits.model_cell_rt(x))
+
+def Laws.rock_crumbles_lighter():
+  {==}
+
+def Laws.sand_sinks_in_water():
+  {==}
+
+def Laws.fall_decreases(L, D, G):
+  Pot.fall_decreases(D, 1n + G, L)
+
+def Laws.crumble_decreases(d, G, L):
+  Pot.crumble_decreases(d, 1n + G, L)
+
+def Laws.budget_exhausts(m):
+  Pot.spend_exhausts(m)

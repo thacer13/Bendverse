@@ -179,6 +179,7 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 - [ ] **M3** Movement: empty/sand/bedrock world; 8-phase tick; swap-only. Accept: T1, T2, T3 pass; before/after ASCII shows plausible falling.
 - [ ] **M4** Activity: skip inactive, propagate on writes, settle. Accept: T4 passes; a tick over a fully-settled world does (near) zero writes.
 - [ ] **M5** Cohesion: support pass, crumble, impact crush (Rock → Rubble), cohesive-as-static interim removed. Accept: T2 still passes (crumble conserves non-Empty count); pull-the-base scenario collapses in ASCII demo.
+- [x] **V1** (extra, after M5) Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Not an M-step; a verification layer for the settling assumption M4/M8 rely on. See A.7.
 - [ ] **M6** Windowed app: `App.run`, cross-section view, mouse/keyboard editing. Accept: interactive editing visibly disturbs and settles.
 - [ ] **M7** Parallel track (optional, droppable): parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed).
 - [ ] **M8** Chunks / "infinite" world (optional stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Accept: chunk gen + tick identical to fixed-world behavior on the same region.
@@ -362,3 +363,36 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 - `bend app/simtests.bend -o bin && ./bin` (native) → T1, T2, T3, T4, T4b, T9 all PASS. No simulation code changed, so no behavioural or performance change to the engine.
 
 **Recommended next:** M6 (windowed `App.run` app). M1.5 debt is now paid; no bit-level laws remain queued.
+
+### A.7 — V1 complete: Nat arithmetic + Φ-decrease / settling kernel
+
+**Status:** V1 complete. Added on request after A.6, to formalize the stability assumption behind M4/M8 (a disturbance must settle; otherwise "cost proportional to disturbance" and chunk sleeping are unsound). Gate is green with **11 laws**.
+
+**Motivation (the physics).** Every engine movement is a swap between two cells whose levels differ by exactly 1, where the mover is strictly denser than the cell it displaces (the fall/slide predicate is `density(below) < density(above)` or below empty). Crumble/impact lower a cell's density in place (Rock 200 → Rubble 150). Define the potential
+
+> Φ = Σ over cells of density(cell) · level(cell)
+
+Then every swap changes Φ by `−(d_heavy − d_light) < 0`, and every crumble decreases Φ by `(d_before − d_after) · level`. Φ is a `Nat`, bounded below by 0, so it can decrease only finitely often: the active set must empty. This appendix proves the kernel of that argument.
+
+**Deliverables**
+- `src/nat.bend` (new) — the minimal `Nat` arithmetic library Base lacks, all proven:
+  `n_add_zero_right`, `n_add_succ_right`, `n_add_assoc`, `n_add_comm`, `n_mul_zero_right`, `n_mul_distrib_left`, `n_mul_succ_right`, `n_sub_zero`, `n_not_lt_zero`.
+- `src/potential.bend` (new) — `dens` (material → `Nat`), `phi(d,L) = d·L`, `phi_up(d,L) = d·L + d` (= `d·(L+1)`, via `phi_up_eq`), and the kernel:
+  - `fall_decreases(D,G,L)` — `(Φ_after) + G == Φ_before`, where the upper level holds density `D+G` and the lower `D`: the swap lowers Φ by exactly the density gap `G`. With `G` arbitrary, `G ≥ 1` captures strictness.
+  - `crumble_decreases(d,G,L)` — `d·L + G·L == (d+G)·L`: lowering density by `G` at level `L` frees `G·L`.
+  - `spend(k,m)` / `spend_exhausts(m)` — a `Nat` budget of `m` unit decreases is exhausted to `0` after `m` steps: `spend(m, m) == 0`.
+  - Concrete material facts: `dens_empty/water/sand/rubble/rock` = 0/80/100/150/200.
+- `LAWS.bend` (appended; existing laws untouched) — `rock_crumbles_lighter` (`dens(rock) == dens(rubble) + 50`), `sand_sinks_in_water` (`dens(water) + 20 == dens(sand)`), `fall_decreases`, `crumble_decreases`, `budget_exhausts`.
+- `PROOF.bend` — the five new proofs; the material facts and `rock/sand` gaps by computation, the Φ laws delegated to `Pot`.
+
+**What is proven vs. what remains (scope, honestly)**
+- **Proven:** the arithmetic of the potential, the exact per-event decrease with the real density table, and the fact that a `Nat` measure admits only finitely many unit decreases.
+- **Not machine-checked (documented refinement gap):** the *global* composition — that a whole `Sim.tick` over the linear `Array<U32>` performs a sum of such events, that `Φ` over the array changes only at the written cells, and therefore `Sim` settles. That needs a formal `Array`/tick model (the array is `ALeaf`/`ANode`, and `Sim.tick` is a fuelled fold), in the same spirit as A.6's warning that proving the model is not proving the imperative code without an explicit refinement. This is the remaining work to turn the kernel into an end-to-end settling theorem; it is a modeling milestone, not an arithmetic one.
+
+**Consequences if the refinement lands.** It would certify the M4 claim ("untouched, settled worlds do zero writes" — T4b is currently the only witness), justify M8 chunk sleeping, and rule out perpetual slide/jitter configurations that tests may not sample.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (11 laws).
+- `bend app/tests.bend` (JS) → all PASS; native `app/simtests.bend` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched; no behavioural or performance change.
+
+**Recommended next:** M6. Optionally, a later **V2** formalizes the `Array`/tick refinement above to close the global settling theorem.
