@@ -351,6 +351,71 @@ export function extractGapLines(planText: string, max = 30): Array<{ heading: st
 	return out;
 }
 
+// ---------------------------------------------------------------- ledger
+
+export interface GapRow {
+	id: string;
+	kind: string;
+	gap: string;
+	status: string;
+	gates: string;
+	closes: string;
+}
+
+/** Rows of PLAN.md §5.3 `| `G1` | kind | gap | status | gates | closes |`. */
+export function parseGapTable(planText: string): GapRow[] {
+	const out: GapRow[] = [];
+	for (const line of planText.split("\n")) {
+		const m = /^\|\s*`(G\d+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$/.exec(line);
+		if (!m) continue;
+		out.push({
+			id: m[1],
+			kind: m[2].trim(),
+			gap: m[3].trim(),
+			status: m[4].trim(),
+			gates: m[5].trim(),
+			closes: m[6].trim(),
+		});
+	}
+	return out;
+}
+
+export interface RuleRow {
+	rule: string;
+	constraint: string;
+	laws: string;
+	tests: string;
+	modules: string;
+}
+
+/** Rows of the PLAN.md §4 traceability matrix (`| `R1` | ... | laws | tests | modules |`). */
+export function parseTraceTable(planText: string): RuleRow[] {
+	const out: RuleRow[] = [];
+	for (const line of planText.split("\n")) {
+		const m = /^\|\s*`(R\d+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$/.exec(line);
+		if (!m) continue;
+		out.push({
+			rule: m[1],
+			constraint: m[2].trim(),
+			laws: m[3].trim(),
+			tests: m[4].trim(),
+			modules: m[5].trim(),
+		});
+	}
+	return out;
+}
+
+/** Landed milestone rows in PLAN.md §5.1 (`| `M0` | what | evidence |`). */
+export function parseLandedTable(planText: string): Array<{ id: string; what: string; evidence: string }> {
+	const out: Array<{ id: string; what: string; evidence: string }> = [];
+	for (const line of planText.split("\n")) {
+		const m = /^\|\s*`([MV][\w.\-]*)`\s*\|([^|]*)\|([^|]*)\|\s*$/.exec(line);
+		if (!m) continue;
+		out.push({ id: m[1], what: m[2].trim(), evidence: m[3].trim() });
+	}
+	return out;
+}
+
 /** Newest mtime (ms) among `exts` files under `dir`, recursively. */
 export async function newestMtime(dir: string, exts = [".bend"]): Promise<number> {
 	let newest = 0;

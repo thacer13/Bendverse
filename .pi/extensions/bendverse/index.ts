@@ -8,7 +8,7 @@
  *   bend_test    fast (JS) / sim (native) suites, pass-fail summary only
  *   bend_run     run any .bend file (scenarios, repros), output tail
  *   bend_api     `bend base` / `bend guide` lookup, compact by default
- *   bend_plan    search PLAN.md / LAWS.bend / coreidea.md by section/query
+ *   bend_plan    search PLAN.md / LAWS.bend / coreidea.md / HISTORY.md by section/query
  *   bend_status  one-screen project digest (git, milestones, laws)
  *
  * All bend invocations are serialized: each one saturates the CPU cores, so
@@ -34,9 +34,12 @@ import {
 	numberedOutline,
 	parseAppendix,
 	parseBaseSymbols,
+	parseGapTable,
+	parseLandedTable,
 	parseLaws,
 	parseMilestones,
 	parseTestResults,
+	parseTraceTable,
 	sectionByTitle,
 	signatureLines,
 	stripBendNoise,
@@ -299,20 +302,21 @@ export default function bendverse(pi: ExtensionAPI) {
 		name: "bend_plan",
 		label: "search project docs",
 		description:
-			"Search the human-owned docs without reading them whole. file=PLAN (default), LAWS, or coreidea. With section=<title fragment> returns that section; with query=<text> returns labelled grep windows; with neither returns a table of contents.",
-		promptSnippet: "Read PLAN.md/LAWS.bend/coreidea.md by section or query instead of whole-file reads.",
+			"Search the project docs without reading them whole. file: PLAN (default, normative plan), LAWS (claims), coreidea (11 rules), HISTORY (milestone log). With section=<title fragment> returns that section; with query=<text> returns labelled grep windows; with neither returns a table of contents (PLAN also returns open work and the gap summary).",
+		promptSnippet: "Read PLAN.md/LAWS.bend/coreidea.md/HISTORY.md by section or query instead of whole-file reads.",
 		promptGuidelines: [
 			"Use bend_plan to look up PLAN.md sections, laws, or coreidea rules instead of reading those large files in full.",
 		],
 		parameters: Type.Object({
-			file: StringEnum(["PLAN", "LAWS", "coreidea"] as const, { description: "which doc to search" }),
+			file: StringEnum(["PLAN", "LAWS", "coreidea", "HISTORY"] as const, { description: "which doc to search" }),
 			section: Type.Optional(Type.String({ description: "Heading/title fragment to extract." })),
 			query: Type.Optional(Type.String({ description: "Case-insensitive text to grep for." })),
 			maxLines: Type.Optional(Type.Number({ description: "Cap for section extraction (default 220)." })),
 		}),
 		async execute(_id, params, _signal, _onUpdate, ctx) {
 			const file = params.file ?? "PLAN";
-			const rel = file === "PLAN" ? "PLAN.md" : file === "LAWS" ? "LAWS.bend" : "coreidea.md";
+			const rel =
+				file === "PLAN" ? "PLAN.md" : file === "LAWS" ? "LAWS.bend" : file === "coreidea" ? "coreidea.md" : "HISTORY.md";
 			const content = await readFile(join(ctx.cwd, rel), "utf8");
 
 			if (file === "LAWS" && !params.section && !params.query) {
@@ -351,12 +355,20 @@ export default function bendverse(pi: ExtensionAPI) {
 				return text(`# coreidea.md — rules\n${outline || "(no numbered outline; use query=)"}`);
 			}
 
-			const root = toc(content, 2);
+			if (file === "HISTORY") {
+				return text(`# HISTORY.md — contents\n${toc(content, 3)}`);
+			}
 
-			const milestones = sectionByTitle(content, "5. Milestones", 100000) ?? content;
-			const { open } = parseMilestones(milestones);
+			const root = toc(content, 2);
+			const { open } = parseMilestones(content);
+			const landed = parseLandedTable(content).length;
+			const openGaps = parseGapTable(content).filter((g) => g.status === "open" || g.status === "review");
 			const openList = open.length ? open.map((m) => `  - ${m.slice(0, 130)}`).join("\n") : "  (none)";
-			return text(`# PLAN.md — contents\n${root}\n\n## open milestones\n${openList}`);
+			return text(
+				`# PLAN.md — contents\n${root}\n\n` +
+					`## open work (${open.length})\n${openList}\n\n` +
+					`landed: ${landed} milestones · open gaps: ${openGaps.length} (${openGaps.map((g) => g.id).join(", ")})`,
+			);
 		},
 	});
 
@@ -365,18 +377,19 @@ export default function bendverse(pi: ExtensionAPI) {
 		name: "bend_status",
 		label: "project status digest",
 		description:
-			"One-screen project digest: git HEAD/dirty state, open PLAN.md §5 milestones, law names from LAWS.bend, and the newest Appendix A entry. Cheap, read-only, no bend invocation.",
-		promptSnippet: "Show a compact Bendverse status digest (git, open milestones, laws).",
+			"One-screen project digest: git HEAD/dirty state, open PLAN.md work items, the gap registry summary, law names from LAWS.bend, and the newest HISTORY.md entry. Cheap, read-only, no bend invocation.",
+		promptSnippet: "Show a compact Bendverse status digest (git, open work, gaps, laws).",
 		promptGuidelines: [
 			"Use bend_status at the start of a work session to orient without reading PLAN.md in full.",
 		],
 		parameters: Type.Object({}),
 		async execute(_id, _params, signal, _onUpdate, ctx) {
-			const [status, log, plan, laws] = await Promise.all([
+			const [status, log, plan, laws, history] = await Promise.all([
 				pi.exec("git", ["status", "--porcelain=v1", "-b"], { cwd: ctx.cwd, signal }),
 				pi.exec("git", ["log", "-1", "--oneline"], { cwd: ctx.cwd, signal }),
 				readFile(join(ctx.cwd, "PLAN.md"), "utf8").catch(() => ""),
 				readFile(join(ctx.cwd, "LAWS.bend"), "utf8").catch(() => ""),
+				readFile(join(ctx.cwd, "HISTORY.md"), "utf8").catch(() => ""),
 			]);
 
 			const statusLines = clean([status.stdout, status.stderr]).split("\n").filter(Boolean);
@@ -384,9 +397,11 @@ export default function bendverse(pi: ExtensionAPI) {
 			const dirty = statusLines.slice(1);
 			const head = clean([log.stdout]).trim() || "(no commits)";
 
-			const milestones = sectionByTitle(plan, "5. Milestones", 100000) ?? plan;
-			const { open, done } = parseMilestones(milestones);
-			const appendix = parseAppendix(plan);
+			const { open } = parseMilestones(plan);
+			const landed = parseLandedTable(plan).length;
+			const gaps = parseGapTable(plan);
+			const openGaps = gaps.filter((g) => g.status === "open" || g.status === "review");
+			const appendix = parseAppendix(history);
 			const lawNames = parseLaws(laws);
 
 			const openList = open.length
@@ -399,9 +414,10 @@ export default function bendverse(pi: ExtensionAPI) {
 				`git:    ${branch}${dirty.length ? ` — ${dirty.length} dirty: ${dirty.slice(0, 6).join(", ")}` : " — clean"}`,
 				`head:   ${head}`,
 				`laws:   ${lawNames.length} [${lawNames.join(", ")}]`,
-				`milestones: ${done.length} done, ${open.length} open`,
+				`landed: ${landed} milestones; open work: ${open.length}`,
 				openList,
-				`last appendix: ${lastAppendix}`,
+				`gaps:   ${openGaps.length} open/review (${openGaps.map((g) => g.id).join(", ") || "none"})`,
+				`last history: ${lastAppendix}`,
 			];
 			return text(out.join("\n"));
 		},
@@ -534,8 +550,8 @@ export default function bendverse(pi: ExtensionAPI) {
 		name: "bend_audit",
 		label: "trust-boundary audit",
 		description:
-			"A review view of what the project actually guarantees: gate status, proof burden (trivial vs real), PLAN claims vs the machine artifacts, and every assumption/gap/downgrade/fallback admitted anywhere in PLAN.md, consolidated in one place. Heuristic prose extraction, clearly labelled.",
-		promptSnippet: "Audit the trust boundary: gate, proof burden, and all documented gaps.",
+			"A review view of what the project actually guarantees: gate status, proof burden (trivial vs real), a law-count drift check against PLAN, the rules with no law (traceability), and the PLAN gap registry with each open gap's kind, gates, and what would close it. Machine-reads PLAN §4/§5.3 rather than guessing from prose.",
+		promptSnippet: "Audit the trust boundary: gate, proof burden, gap registry, unproven rules.",
 		promptGuidelines: [
 			"Use bend_audit when planning verification work or deciding what is actually safe to build on; it lists the documented gaps in one place.",
 		],
@@ -559,25 +575,46 @@ export default function bendverse(pi: ExtensionAPI) {
 				const extra = proofNames.filter((p) => !laws.includes(p));
 				const trivial = trivialProofNames(proofText);
 
-				const milestones = sectionByTitle(planText, "5. Milestones", 100000) ?? planText;
-				const { open, done } = parseMilestones(milestones);
+				const { open } = parseMilestones(planText);
+				const landed = parseLandedTable(planText).length;
 				const claimed = latestLawCountMention(planText);
+				const gaps = parseGapTable(planText);
+				const rules = parseTraceTable(planText);
+				const lawlessRules = rules.filter((r) => r.laws === "—" || r.laws === "-(by construction)" || r.laws.startsWith("—"));
 
-				const gaps = extractGapLines(planText, 40);
 				const out = [
 					"# Bendverse audit — trust boundary",
 					`gate:         ${green ? "green (All terms check.)" : `RED (exit ${gate.code})`}`,
 					`laws:         ${laws.length} declared; completeness is gate-enforced (a missing proof gives '1 TODO found')`,
 					`proof burden: ${trivial.length} trivial (refl), ${laws.length - trivial.length} by induction/rewrite`,
 					`  trivial:    ${trivial.join(", ") || "(none)"}`,
-					`  → confirm each trivial claim is a closed computation, not a weakened statement`,
-					`plan (§5):    ${done.length} done, ${open.length} open`,
+					`plan:         ${landed} landed, ${open.length} open`,
 					`law counts:   PLAN last says ${claimed ?? "?"}; actual ${laws.length}${claimed === laws.length ? " ✓" : "  ← DRIFT"}`,
 				];
 				if (missing.length) out.push(`MISSING PROOFS: ${missing.join(", ")}`);
 				if (extra.length) out.push(`ORPHAN PROOFS:  ${extra.join(", ")}`);
-				out.push("", `## documented gaps / assumptions (heuristic; ${gaps.length} hits)`, "This is what is NOT guaranteed — review it.");
-				for (const g of gaps) out.push(`- [${g.heading}] ${g.text}`);
+
+				if (rules.length > 0) {
+					out.push("", `## rules with no law (traceability)`, lawlessRules.length ? lawlessRules.map((r) => `- ${r.rule}: ${r.constraint}`).join("\n") : "- (none)");
+				}
+
+				if (gaps.length > 0) {
+					const openGaps = gaps.filter((g) => g.status === "open" || g.status === "review");
+					const closed = gaps.filter((g) => g.status === "closed");
+					out.push(
+						"",
+						`## gap registry (${gaps.length} total, ${openGaps.length} open/review, ${closed.length} closed)`,
+						"This is what is NOT guaranteed.",
+					);
+					for (const g of openGaps) {
+						out.push(`- \`${g.id}\` [${g.kind}] ${g.gap} — gates: ${g.gates || "—"}`);
+						out.push(`      closes by: ${g.closes}`);
+					}
+				} else {
+					const prose = extractGapLines(planText, 40);
+					out.push("", `## documented gaps (heuristic prose fallback; ${prose.length} hits)`, "PLAN has no machine-readable gap registry — pass one to improve this.");
+					for (const g of prose) out.push(`- [${g.heading}] ${g.text}`);
+				}
 				return text(out.join("\n"));
 			});
 		},
