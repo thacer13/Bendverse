@@ -22,7 +22,7 @@ Progress lives in §5 (milestone checkboxes) and Appendix A (log), newest last.
 
 ## 1. Product
 
-A 3D falling-sand-style cellular world (see `coreidea.md`): a 64×64×64 grid of cells, each one `U32` word; materials with density/cohesion; collapse by support loss; impact by fall distance; cost proportional to disturbance (activity bits); pure deterministic worldgen; CPU-parallel with an optional GPU track.
+A formally-verified reference engine over a 3D falling-sand-style cellular world (see `coreidea.md`): a 64×64×64 grid of cells, each one `U32` word; materials with density/cohesion; collapse by support loss; impact by fall distance; cost proportional to disturbance (activity bits); pure deterministic worldgen; CPU-parallel with an optional GPU track. The ASCII and windowed front-ends are visibility only — they exist to keep the model observable, not to be the product.
 
 ## 2. Normative design
 
@@ -171,19 +171,38 @@ app/tests.bend     golden tests T1–T5
 ```
 All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `Base` (and each other via `import ./x.bend as X`).
 
-## 5. Milestones (check off; each must leave gate green + repo runnable)
+## 5. Milestones
+
+Milestone IDs (`M0`–`M5`, `V1`…) are **stable historical labels**, not a mandatory execution order. Below they are grouped by purpose with the gating made explicit: independent work may proceed in parallel, and the optional scale track is droppable without weakening any verified claim. Every landed step must leave the gate green and the repo runnable.
+
+### Foundation (landed)
 
 - [x] **M0** Plan + scaffold + sanity law proven + gate green + native build verified. (this commit)
 - [x] **M1** Cell word + index math. Spike: bit-31 roundtrip (decides whether bits 24–31 are usable; layout above already safe without them). Laws: `index_roundtrip`, `cell_roundtrip`. Accept: gate green, T5 passes.
 - [x] **M1.5** Bit-lemma library (`src/bits.bend`) + Word-level index/cell model + refinement to `U32`. Upgrades `index_roundtrip`/`cell_roundtrip` from golden tests back to proven laws. Accept: gate green, T5 still passes. (See A.6.)
 - [x] **M2** Worldgen + ASCII slice. Accept: `bend main.bend` prints recognizable terrain; T1-style determinism holds for gen (same seed → same world).
-- [x] **M3** Movement: empty/sand/bedrock world; 8-phase tick; swap-only. Accept: T1, T2, T3 pass; before/after ASCII shows plausible falling.
+- [x] **M3** Movement: empty/sand/bedrock world; 8-phase tick; swap-only. Accept: T1, T2, T3 pass; the before/after ASCII cross-section shows plausible falling.
 - [x] **M4** Activity: skip inactive, propagate on writes, settle. Accept: T4 passes; a tick over a fully-settled world does (near) zero writes.
 - [x] **M5** Cohesion: support pass, crumble, impact crush (Rock → Rubble), cohesive-as-static interim removed. Accept: T2 still passes (crumble conserves non-Empty count); the pull-the-base scenario collapses in the ASCII runner's before/after cross-section.
-- [x] **V1** (extra, after M5) Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Not an M-step; a verification layer for the settling assumption M4/M8 rely on. See A.7.
-- [ ] **M6** Windowed app: `App.run`, cross-section view, mouse/keyboard editing. Accept: interactive editing visibly disturbs and settles.
-- [ ] **M7** Parallel track (optional, droppable): parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed).
-- [ ] **M8** Chunks / "infinite" world (optional stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Accept: chunk gen + tick identical to fixed-world behavior on the same region.
+
+### Verification layers (the claims)
+
+These carry the properties the engine claims and touch no runtime code; they are scheduled by what they unlock, not by number.
+
+- [x] **V1** Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Formalizes the settling assumption M4/M8 rest on. See A.7.
+- [ ] **V2 Global settling** (recommended next): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle.
+- [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test.
+
+### Visibility (independent of verification)
+
+- [ ] **M6** Windowed app: `App.run`, cross-section view, mouse/keyboard editing. Accept: interactive editing visibly disturbs and settles. May proceed in parallel with V2.
+
+### Scale (optional, droppable; M8 gated on V2)
+
+- [ ] **M7** Parallel track: parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Pair with **V3**. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed).
+- [ ] **M8** Chunks / "infinite" world (stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Requires **V2**. Accept: chunk gen + tick identical to fixed-world behavior on the same region.
+
+Suggested sequence: **M6 ∥ V2 → M7 (with V3) → M8**. Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the settling guarantee.
 
 ## 6. Bend guardrails (these WILL bite — read before writing code)
 
@@ -397,3 +416,12 @@ Then every swap changes Φ by `−(d_heavy − d_light) < 0`, and every crumble 
 - `bend app/tests.bend` (JS) → all PASS; native `app/simtests.bend` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched; no behavioural or performance change.
 
 **Recommended next:** M6. Optionally, a later **V2** formalizes the `Array`/tick refinement above to close the global settling theorem.
+
+### A.8 — plan re-ordered: verification-gated milestones, runners marked as visibility
+
+**Status:** PLAN.md §1 and §5 revised on human request. Documentation only; no engine, law, or test change.
+
+- **§1 Product** reframed: a formally-verified reference engine over a falling-sand world, with the ASCII/windowed front-ends explicitly marked visibility only.
+- **§5** regrouped. Milestone IDs (`M0`–`M5`, `V1`…) are now stated to be **stable historical labels, not execution order**; the list is grouped by purpose (Foundation / Verification layers / Visibility / Scale) with gates explicit. **V2 (global settling) is recommended next and gates M8**; **V3 (order-independence)** is introduced as M7's enabling lemma; **M6 may run in parallel with V2**; M7/M8 remain droppable.
+- **Rationale:** settling is the only claimed property with a known refinement gap, and it is load-bearing for the M4 zero-write claim (T4b is currently the only witness) and for M8 chunk sleeping. This follows the A.7 recommendation and the surrounding human discussion; the previous strictly linear M6 → M7 → M8 ordering had implied that scale could precede its own soundness argument.
+- **No behavior change:** gate green, `app/tests.bend` and `app/simtests.bend` unchanged.
