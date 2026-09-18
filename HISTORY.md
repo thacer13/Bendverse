@@ -1041,3 +1041,41 @@ middle. Registry and §8 updated.
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (48 laws).
 - `bend app/tests.bend` → 22/22; native `app/simtests.bend` → 8/8.
+
+### A.37 — G9's root: the non-rock crush is an oversight, but the guard needs reflection
+
+**Status:** two probes, no landed code. Gate green; suites unchanged. This sharpens
+`G9`/`G10` from "can't case-split `U32`" to a precise, actionable root cause.
+
+**Probe 1 — is the non-rock crush load-bearing?** Temporarily redefined
+`Ops.crush_word` so that non-rock returns `w` unchanged (rock still `encode(4,…)`):
+**all 8 simulation tests pass** (T1/T2/T3/T4/T4b/T9/T18/T20). So the current
+behaviour — `crush_word` also zeroes a non-rock target's cohesion/support/fall —
+is **not needed by the tested dynamics**. That supports the reading that applying
+`crush_word` to non-rock targets is an oversight (rule 8 wants Rock → Rubble and
+`cohesion := 0`; zeroing the other fields is extra). Probe reverted.
+
+**Probe 2 — can the fix be *proved*?** A guard `material(x) == 3` at the call sites
+is the right fix, but turning it into a proof needs **reflection** — from a Bool
+test back to a fact:
+- `U32.is_eq(a, b)` unfolds to `Cmp.is_eq(Word.cmp(32n, x, y))` and does **not**
+  reduce for abstract arguments (even `is_eq(a,a) == True` is not definitional);
+- a hand-written `is_rock(m)` matched on a parameter is stuck in the wildcard
+  branch, and the wildcard refines `m` to a *partial* `Word` (`WCon{…, _73}`), not
+  to "not 3" — so no contradiction can be extracted;
+- Base exposes no reflection lemma for `U32.cmp`/`Word.cmp`.
+
+So the required lemmas are `Cmp.is_eq(Word.cmp(32n, x, y)) == True → x == y` (and
+its `Nat`/`is_eq` corollaries). This is a bounded `Word`-structural induction
+(mirroring `order.cmp_fin_total`, with `Word.cmp.fin`'s LT/GT/EQ × head-bit cases).
+It is the real unlock: with it, guard-based material logic becomes provable, `G9`
+can be closed by *fixing the rule*, and `G10`'s crush sites stop being special.
+
+**Plan (option-2 route).**
+1. Prove the `Word.cmp` reflection lemma in a new `src/word.bend` (Base-level but
+   in-project, since Base cannot be edited). Gate-checked; no engine change.
+2. Guard the crush sites to rock (behaviour-validated by probe 1).
+3. Then mirror `Support.sup`/`Rules.step` for `G10` with every write site provable.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (48 laws); fast 22/22; sim 8/8.
