@@ -988,3 +988,56 @@ subtraction injectivity are required. The only real obstacle was that `tget`/
 distribution lemma `tget_pick` plus inlining the written value as a
 `Bool.pick(zi, …)` in the induction. A.33's "decision-parameterized double swap"
 framing was an unnecessary detour.
+
+### A.36 — G10 scoped: it is gated by G9, not just "large and mechanical"
+
+**Status:** analysis recorded; no code change beyond naming the activity bit and
+`swap_m_pick` (A.35/A.36 preamble). Gate green; suites unchanged.
+
+**The conundrum, made explicit.** The registry said `G10` closes by "mirroring the
+control flow on `PT`". Enumerating the write sites shows that is necessary but
+**not sufficient**:
+
+| site | write | Φ effect |
+|---|---|---|
+| `Rules.step` sel 18 | `deactivate` | preserves (material-preserving) |
+| `Rules.step` sel 5/6 | `mov(w)` + displaced value | swap; `array_swap_decreases` |
+| `Rules.step` sel 12 | diagonal swap | swap; `array_swap_decreases` |
+| `Rules.step` sel 22 | `crush_word(target)` + `set_fall0` | **rock: decreases; non-rock: needs G9** |
+| `Rules.step` sel 23 | `set_fall0` | preserves |
+| `Support.sup` sel 3/4 | `set_support` | preserves |
+| `Support.sup` sel 6 | `crush_word(w)` + wake | **rock: decreases; non-rock: needs G9** |
+| `Ops.wake` | `activate` | preserves (needs a composition over its loop) |
+
+Every effect is either proven or has a clear route **except the two crush sites**.
+`Rules.step` sel 22 fires `crush_word(gv)` whenever the target is non-static and
+`fall(w) >= cohesion(target)` — for sand/rubble `cohesion = 0`, so it *does* fire
+on non-rock targets. `Support.sup` sel 6 fires on any cohesive, non-static cell,
+which is not provably rock. The needed non-rock fact is only
+`dens(material(crush_word(w))) <= dens(material(w))` (equal for non-rock; `mov`/
+crush preserve non-emptiness), but:
+
+- `Bend rejects non-exhaustive matches` (a 32-literal `match m` with no wildcard
+  errors "expected cases for True"), so we cannot enumerate the 32 material
+  values to close each case as a computation;
+- and in the `case _` branch `crush_material(m)` is **stuck** (the wildcard
+  refines `m` to a partial `Word`, not a literal/range), so `dens` cannot reduce.
+
+So `G10`'s close is "mirror **and** resolve `G9`". This is the A.33 pattern again:
+a mechanical-looking close with a hard case (here a language limitation) in the
+middle. Registry and §8 updated.
+
+**Options (for a human decision).**
+1. Prove `G10` *modulo* `G9`: mirror both machines, take the non-rock crush
+   potential non-increase as a hypothesis. Mechanical but large; sharpens the
+   boundary to exactly `G9`.
+2. Make non-rock `crush_word` **definitionally the identity** (`match
+   Cell.material(w): case 3: encode(4,…); case _: w`). Then `G9` is moot for the
+   tick and `G10` becomes a pure mirror. This is an **engine semantics change**
+   (today non-rock crush zeroes cohesion/active/support/fall); it must be shown
+   behavior-preserving against T1–T4b/T9/T18/T20 before adopting.
+3. Accept and document (current state).
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (48 laws).
+- `bend app/tests.bend` → 22/22; native `app/simtests.bend` → 8/8.

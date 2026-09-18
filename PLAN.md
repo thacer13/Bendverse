@@ -449,7 +449,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 | a decision procedure / refined match on `U32`; runtime-witnessed by T19 |
-| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 | mirror the control flow on `PT` (large, mechanical); would widen `M8d` eviction from gen-equal chunks to every sleeping chunk |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical) **and** resolve `G9`: the crush sites (`Rules.step` sel 22 on the impact target, `Support.sup` sel 6 on the crumble source) apply `crush_word` to a target that is not provably rock, and the non-rock potential non-increase is not a theorem (Bend rejects non-exhaustive `U32` matches, and a wildcard leaves `crush_material(m)` stuck). Options: prove G10 *modulo* G9, or make non-rock `crush_word` definitionally the identity. Would also widen `M8d` eviction |
 
 ---
 
@@ -520,7 +520,9 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   refinement lemmas (A.27) and the write→Φ effects are proven (A.28); `G8` records
   the linearity limit on how an array may be named in a statement. The remaining
   instances are `G9` (non-rock crush) and `G10` (write-site enumeration); `G2` is closed.
-  Mitigation throughout: explicit refinement lemmas, never assumptions.
+  **`G10` is now known to depend on `G9`** (A.36): its crush sites apply
+  `crush_word` to a non-provably-rock target, so mirroring the control flow alone
+  cannot close it. Mitigation throughout: explicit refinement lemmas, never assumptions.
 - **Schedule invariance (`G3`).** A region-split fold may differ from the
   sequential fold in tie-break corners. Mitigation: V3a+V3b stay proven; M7d
   waits for V3c or is dropped.
