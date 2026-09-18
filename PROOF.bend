@@ -182,3 +182,6 @@ def Laws.guarded_crush_lowers_pot(w, i):
 
 def Laws.array_guarded_crush_lowers_phi(t, base, n, i):
   Tick.array_guarded_crush_lowers_auto(t, base, n, i)
+
+def Laws.array_activate_write_preserves_phi(t, base, n, i):
+  Tick.array_activate_write(t, base, n, i)

@@ -212,3 +212,153 @@ def array_guarded_crush_lowers_auto(+t: R.PT, +base: U32, +n: U32, +i: U32)
         Ops.crush_if_rock(tget(t, n, i)))), base, n)),
       guard_gap(t, base, n, i)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
   array_guarded_crush_lowers(t, base, n, i, U32.is_eq(Cell.material(tget(t, n, i)), 3), {==})
+
+# ------------------------------------------------------------------ wake / activate
+# `Ops.wake` only writes `Cell.activate` (bit 11), which preserves the material
+# field and therefore `pot_at`. The array-level write law mirrors
+# `array_support_write`; the `wake_*_m` mirrors and their preservation lemmas
+# compose it along the three nested neighbor loops, for the `Support.sup` mirror.
+
+def chg_activate_if(
+  +xs: R.PT, +ys: R.PT, +base: U32, +h: U32, +i: U32, +z: Bool,
+  ihx: {R.nfst(R.chg_m(xs, base, h, i, Cell.activate(tget(xs, h, i)))) == R.nsnd(R.chg_m(xs, base, h, i, Cell.activate(tget(xs, h, i)))) : Nat},
+  ihy: {R.nfst(R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.activate(tget(ys, h, U32.sub(i, h))))) == R.nsnd(R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.activate(tget(ys, h, U32.sub(i, h))))) : Nat}
+) -> {R.nfst(Bool.pick(Nat & Nat, z,
+        R.chg_m(xs, base, h, i, Cell.activate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h))))),
+        R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.activate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))))))
+      == R.nsnd(Bool.pick(Nat & Nat, z,
+        R.chg_m(xs, base, h, i, Cell.activate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h))))),
+        R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.activate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))))))
+      : Nat}:
+  match z:
+    case True{}:
+      ihx
+    case False{}:
+      ihy
+
+def chg_activate(t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {R.nfst(R.chg_m(t, base, n, i, Cell.activate(tget(t, n, i)))) == R.nsnd(R.chg_m(t, base, n, i, Cell.activate(tget(t, n, i)))) : Nat}:
+  match t:
+    case R.PL{x}:
+      Equal.sym(Nat, S.pot_at(Cell.activate(x), base), S.pot_at(x, base), W.pot_or_hi(x, base))
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      +z = U32.is_lt(i, h)
+      chg_activate_if(xs, ys, base, h, i, z,
+        chg_activate(xs, base, h, i),
+        chg_activate(ys, U32.add(base, h), h, U32.sub(i, h)))
+
+def array_activate_write(+t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, Cell.activate(tget(t, n, i)))), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  +v = Cell.activate(tget(t, n, i))
+  +after = S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n))
+  +before = S.suml(S.to_pots(R.pack(t), base, n))
+  +w1 = R.nfst(R.chg_m(t, base, n, i, v))
+  +w2 = R.nsnd(R.chg_m(t, base, n, i, v))
+  +eq = chg_activate(t, base, n, i)
+  +dec = R.array_swap_decreases(t, base, n, i, v)
+  +e1 = Equal.cong(Nat, Nat, x => Nat.add(after, x), w2, w1, Equal.sym(Nat, w1, w2, eq))
+  +e2 = Equal.trans(Nat, Nat.add(after, w2), Nat.add(after, w1), Nat.add(before, w2), e1, dec)
+  NatL.n_add_cancel_right(after, before, w2, e2)
+
+# Bridge `pack(swap_m(..))` to `Array.swap.go(..)`, so the array laws apply to
+# the `PT` mirror's writes.
+def to_pots_swap_pack(+t: R.PT, +base: U32, +n: U32, +j: U32, +v: U32)
+  -> {S.to_pots(R.pack(R.swap_m(t, n, j, v)), base, n) == S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)), base, n) : +List<Nat>}:
+  Equal.cong(Array<U32>, +List<Nat>, y => S.to_pots(y, base, n),
+    R.pack(R.swap_m(t, n, j, v)),
+    R.afst(Array.swap.go(U32, R.pack(t), n, j, v)),
+    Equal.trans(Array<U32>,
+      R.pack(R.swap_m(t, n, j, v)),
+      R.pack(R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)))),
+      R.afst(Array.swap.go(U32, R.pack(t), n, j, v)),
+      Equal.sym(Array<U32>,
+        R.pack(R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)))),
+        R.pack(R.swap_m(t, n, j, v)),
+        Equal.cong(R.PT, Array<U32>, x => R.pack(x),
+          R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, j, v))),
+          R.swap_m(t, n, j, v),
+          R.swap_ref(t, n, j, v))),
+      R.pack_unpack(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)))))
+
+def wake_x_m(fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, +t: R.PT, +n: U32) -> R.PT:
+  match fuel:
+    case 0n:
+      t
+    case 1n+p:
+      +j = Grid.neighbor(i, U32.sub(dx, 1), U32.sub(dy, 1), U32.sub(dz, 1))
+      t2 = R.swap_m(t, n, j, Cell.activate(tget(t, n, j)))
+      wake_x_m(p, U32.add(dx, 1), dy, dz, i, t2, n)
+
+def wake_x_m_preserves(fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, +t: R.PT, +n: U32, +base: U32)
+  -> {S.suml(S.to_pots(R.pack(wake_x_m(fuel, dx, dy, dz, i, t, n)), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  match fuel:
+    case 0n:
+      {==}
+    case 1n+p:
+      +j = Grid.neighbor(i, U32.sub(dx, 1), U32.sub(dy, 1), U32.sub(dz, 1))
+      +v = Cell.activate(tget(t, n, j))
+      +t2 = R.swap_m(t, n, j, v)
+      +e0 = to_pots_swap_pack(t, base, n, j, v)
+      +e1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+        S.to_pots(R.pack(t2), base, n),
+        S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)), base, n), e0)
+      +e2 = Equal.trans(Nat, S.suml(S.to_pots(R.pack(t2), base, n)),
+        S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, j, Cell.activate(tget(t, n, j)))), base, n)),
+        S.suml(S.to_pots(R.pack(t), base, n)),
+        e1, array_activate_write(t, base, n, j))
+      +ih = wake_x_m_preserves(p, U32.add(dx, 1), dy, dz, i, t2, n, base)
+      Equal.trans(Nat,
+        S.suml(S.to_pots(R.pack(wake_x_m(p, U32.add(dx, 1), dy, dz, i, t2, n)), base, n)),
+        S.suml(S.to_pots(R.pack(t2), base, n)),
+        S.suml(S.to_pots(R.pack(t), base, n)),
+        ih, e2)
+
+def wake_y_m(fuel: Nat, +dy: U32, +dz: U32, +i: U32, +t: R.PT, +n: U32) -> R.PT:
+  match fuel:
+    case 0n:
+      t
+    case 1n+p:
+      t2 = wake_x_m(U32.to_nat(3), 0, dy, dz, i, t, n)
+      wake_y_m(p, U32.add(dy, 1), dz, i, t2, n)
+
+def wake_y_m_preserves(fuel: Nat, +dy: U32, +dz: U32, +i: U32, +t: R.PT, +n: U32, +base: U32)
+  -> {S.suml(S.to_pots(R.pack(wake_y_m(fuel, dy, dz, i, t, n)), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  match fuel:
+    case 0n:
+      {==}
+    case 1n+p:
+      +t2 = wake_x_m(U32.to_nat(3), 0, dy, dz, i, t, n)
+      +e2 = wake_x_m_preserves(U32.to_nat(3), 0, dy, dz, i, t, n, base)
+      +ih = wake_y_m_preserves(p, U32.add(dy, 1), dz, i, t2, n, base)
+      Equal.trans(Nat,
+        S.suml(S.to_pots(R.pack(wake_y_m(p, U32.add(dy, 1), dz, i, t2, n)), base, n)),
+        S.suml(S.to_pots(R.pack(t2), base, n)),
+        S.suml(S.to_pots(R.pack(t), base, n)),
+        ih, e2)
+
+def wake_z_m(fuel: Nat, +dz: U32, +i: U32, +t: R.PT, +n: U32) -> R.PT:
+  match fuel:
+    case 0n:
+      t
+    case 1n+p:
+      t2 = wake_y_m(U32.to_nat(3), 0, dz, i, t, n)
+      wake_z_m(p, U32.add(dz, 1), i, t2, n)
+
+def wake_z_m_preserves(fuel: Nat, +dz: U32, +i: U32, +t: R.PT, +n: U32, +base: U32)
+  -> {S.suml(S.to_pots(R.pack(wake_z_m(fuel, dz, i, t, n)), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  match fuel:
+    case 0n:
+      {==}
+    case 1n+p:
+      +t2 = wake_y_m(U32.to_nat(3), 0, dz, i, t, n)
+      +e2 = wake_y_m_preserves(U32.to_nat(3), 0, dz, i, t, n, base)
+      +ih = wake_z_m_preserves(p, U32.add(dz, 1), i, t2, n, base)
+      Equal.trans(Nat,
+        S.suml(S.to_pots(R.pack(wake_z_m(p, U32.add(dz, 1), i, t2, n)), base, n)),
+        S.suml(S.to_pots(R.pack(t2), base, n)),
+        S.suml(S.to_pots(R.pack(t), base, n)),
+        ih, e2)
+
+def wake_m(+i: U32, +t: R.PT, +n: U32) -> R.PT:
+  wake_z_m(U32.to_nat(3), 0, i, t, n)

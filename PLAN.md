@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 52 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 53 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -294,7 +294,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-52 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+53 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -353,7 +353,7 @@ an oversight to hide.
 | `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `guarded_crush_lowers_pot` `array_crumble_lowers_phi` `array_guarded_crush_lowers_phi` `rock_crumbles_lighter` | T9 T19 | support potential writepot tick |
 | `R7` | Support recomputed, never cached | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
-| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
+| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_activate_write_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
 | `R10` | Determinism under any schedule | — (by construction) | T1 | sim |
 | `R11` | Worldgen is a pure seeding function | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
 | `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
@@ -431,10 +431,12 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   3. [~] Mirror `Support.sup`/`Rules.step` on `PT` for `G10`. The crush-site
      write primitive is done (A.40): `array_guarded_crush_lowers_phi` gives the
      guarded write's Φ effect at every index (rock gap, or identity), so both
-     crush sites are covered without a `G9` hypothesis. Remaining: the fuel-loop
-     mirror that shows every write in both state machines is one of the proven
-     primitives (support/fall/activate/swap/guarded-crush).
-  See `HISTORY.md` A.36–A.40 for the analysis and probes.
+     crush sites are covered without a `G9` hypothesis. The `wake`/activate
+     infrastructure is done (A.41): `array_activate_write_preserves_phi` and the
+     `wake_*_m` mirrors. Remaining: the fuel-loop mirror that shows every write
+     in both state machines is one of the proven primitives
+     (support/fall/activate/swap/guarded-crush).
+  See `HISTORY.md` A.36–A.41 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -525,6 +527,12 @@ All of `src/` is pure (zero IO). Runners are thin shells.
 - New bit facts: search `bend_lemmas` before proving; `bits.bend` and
   `parity.bend` are deep.
 - When unsure of a Base name: `bend_api` / `bend base <Name>`. Do not guess.
+- **Never state a lemma whose type applies a wrapper to a *concrete* fuel** —
+  e.g. `wake_m(i, t, n)` = `wake_z_m(3, 0, i, t, n)`. The checker normalises the
+  whole unrolled loop (3·3·3 swaps) and compilation hangs for minutes (A.41).
+  State the lemma over the abstract-fuel function (`wake_z_m_preserves`) and
+  instantiate the concrete fuel only *inside* a proof, where the equality is a
+  single definitional unfold.
 
 ---
 

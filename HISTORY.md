@@ -1190,3 +1190,40 @@ decrease via `array_swap_decreases`; guarded crush decreases via
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (52 laws); fast 22/22; sim 8/8.
+
+### A.41 — G10 infrastructure: `activate` write + the `wake` mirror (and a compiler trap)
+
+**Status:** one new law (`array_activate_write_preserves_phi`) plus the internal
+`wake` mirror; gate green (53 laws); both suites pass. This is the write-primitive
+coverage the `Support.sup` mirror needs. Mid-step, compilation hung for minutes —
+diagnosed and turned into a guardrail.
+
+**What landed (`src/tick.bend`).**
+- `chg_activate` / `array_activate_write`: the array-level Φ law for an
+  `activate` write, mirroring `array_support_write` but with `pot_or_hi` at the
+  leaf (bit 11 does not touch the material field). Law
+  `array_activate_write_preserves_phi`.
+- `to_pots_swap_pack`: bridges `pack(swap_m(t,n,j,v))` to
+  `afst(Array.swap.go(pack(t),n,j,v))` (via `swap_ref` + `pack_unpack`), so the
+  array laws apply to the mirror's writes.
+- `wake_x_m` / `wake_y_m` / `wake_z_m` / `wake_m`: the `Ops.wake` 26-neighbor
+  loop mirrored on `PT`; each `mark` becomes a `swap_m` of `activate(tget)`.
+- `wake_x_m_preserves` / `wake_y_m_preserves` / `wake_z_m_preserves`: the nested
+  fuel induction composing `array_activate_write`, so `wake` preserves Φ.
+
+**The trap (now a guardrail, PLAN §7).** Stating `wake_m_preserves` over
+`wake_m(i,t,n)` — a wrapper for `wake_z_m(3,…)` — made `bend src/tick.bend` run
+for >90 s at 100% CPU (it never finished). Cause: the checker normalises the
+*statement*, unrolling the concrete fuel `3` into 3·3·3 = 27 `swap_m`/`activate`
+steps, plus the `pack`/`to_pots` over that tree. Bisection (`head -n` on the
+file: 316/339/362/365 fast, 368 hangs) pinned it exactly to that one lemma's
+type. Fixed by deleting `wake_m_preserves`; `sup` will instantiate the
+abstract-fuel `wake_z_m_preserves` at `3` *inside* its proof, where the fold is a
+single definitional unfold. Rule of thumb: never put a concrete-fuel loop
+application in a proposition.
+
+**Next.** The `Support.sup` fuel-loop mirror (`sup_m : PT & Nat`, gap
+accumulated at the guarded crush; `set_support`/`wake` add 0), then `Rules.step`.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (53 laws); fast 22/22; sim 8/8.
