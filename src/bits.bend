@@ -769,3 +769,65 @@ def shr_n_zero(+n: Nat, k: Nat) -> {shr_n(n, k, Word.zero(n)) == Word.zero(n) : 
           Word.zero(n),
           shr_zero(n)),
         shr_n_zero(n, q))
+
+def shr_pad_shl_put(q: Nat, b: Bool, t: Word(q)) -> {Word.shr.pad(q, Word.shl.put(q, b, t)) == Word.and(1n+q, WCon{b, t}, mask(1n+q, q)) : Word(1n+q)}:
+  match q:
+    case 0n:
+      Equal.sym(Word(1n+0n), WCon{Bool.and(b, False{}), WNil{}}, WCon{False{}, WNil{}},
+        Equal.cong(Bool, Word(1n+0n), h => WCon{h, WNil{}}, Bool.and(b, False{}), False{}, b_and_false(b)))
+    case 1n+r:
+      match t:
+        case WCon{v0, v1}:
+          Equal.trans(Word(1n+(1n+r)),
+            WCon{b, Word.shr.pad(r, Word.shl.put(r, v0, v1))},
+            WCon{b, Word.and(1n+r, WCon{v0, v1}, mask(1n+r, r))},
+            WCon{Bool.and(b, True{}), Word.and(1n+r, WCon{v0, v1}, mask(1n+r, r))},
+            Equal.cong(Word(1n+r), Word(1n+(1n+r)), s => WCon{b, s},
+              Word.shr.pad(r, Word.shl.put(r, v0, v1)),
+              Word.and(1n+r, WCon{v0, v1}, mask(1n+r, r)),
+              shr_pad_shl_put(r, v0, v1)),
+            Equal.cong(Bool, Word(1n+(1n+r)), h => WCon{h, Word.and(1n+r, WCon{v0, v1}, mask(1n+r, r))},
+              b, Bool.and(b, True{}), Equal.sym(Bool, Bool.and(b, True{}), b, b_and_true(b))))
+
+def shr_shl_one(+p: Nat, +u: Word(1n+p)) -> {Word.shr(1n+p, Word.shl(1n+p, u)) == Word.and(1n+p, u, mask(1n+p, p)) : Word(1n+p)}:
+  match p:
+    case 0n:
+      match u:
+        case WCon{uh, ut}:
+          match ut:
+            case WNil{}:
+              Equal.sym(Word(1n+0n), WCon{Bool.and(uh, False{}), WNil{}}, WCon{False{}, WNil{}},
+                Equal.cong(Bool, Word(1n+0n), h => WCon{h, WNil{}}, Bool.and(uh, False{}), False{}, b_and_false(uh)))
+    case 1n+q:
+      match u:
+        case WCon{uh, ut}:
+          match ut:
+            case WCon{ut0, utt}:
+              Equal.trans(Word(1n+(1n+q)),
+                WCon{uh, Word.shr.pad(q, Word.shl.put(q, ut0, utt))},
+                WCon{uh, Word.and(1n+q, WCon{ut0, utt}, mask(1n+q, q))},
+                WCon{Bool.and(uh, True{}), Word.and(1n+q, WCon{ut0, utt}, mask(1n+q, q))},
+                Equal.cong(Word(1n+q), Word(1n+(1n+q)), s => WCon{uh, s},
+                  Word.shr.pad(q, Word.shl.put(q, ut0, utt)),
+                  Word.and(1n+q, WCon{ut0, utt}, mask(1n+q, q)),
+                  shr_pad_shl_put(q, ut0, utt)),
+                Equal.cong(Bool, Word(1n+(1n+q)), h => WCon{h, Word.and(1n+q, WCon{ut0, utt}, mask(1n+q, q))},
+                  uh, Bool.and(uh, True{}), Equal.sym(Bool, Bool.and(uh, True{}), uh, b_and_true(uh))))
+
+def and_ones(n: Nat, w: Word(n)) -> {Word.and(n, w, mask(n, n)) == w : Word(n)}:
+  match n:
+    case 0n:
+      match w:
+        case WNil{}:
+          {==}
+    case 1n+p:
+      match w:
+        case WCon{wh, wt}:
+          Equal.trans(Word(1n+p),
+            WCon{Bool.and(wh, True{}), Word.and(p, wt, mask(p, p))},
+            WCon{wh, Word.and(p, wt, mask(p, p))},
+            WCon{wh, wt},
+            Equal.cong(Bool, Word(1n+p), h => WCon{h, Word.and(p, wt, mask(p, p))},
+              Bool.and(wh, True{}), wh, b_and_true(wh)),
+            Equal.cong(Word(p), Word(1n+p), t => WCon{wh, t},
+              Word.and(p, wt, mask(p, p)), wt, and_ones(p, wt)))

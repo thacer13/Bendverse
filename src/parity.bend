@@ -1,6 +1,7 @@
 import Base
 import ./bits.bend as Bits
 import ./grid.bend as Grid
+import ./nat.bend as NatL
 
 def bit0(n: Nat, w: Word(n)) -> Bool:
   match n:
@@ -401,3 +402,167 @@ def shr12_and_m6_zero(+u: Word(32n)) -> {Bits.shr_n(32n, 12n, Word.and(32n, u, B
       Equal.cong(Word(32n), Word(32n), v => Word.and(32n, a, v),
         Bits.shr_n(32n, 12n, Bits.mask(32n, 6n)), Word.zero(32n), shr12_m6()),
       Bits.w_and_zero(32n, a)))
+
+def m6() -> Word(32n):
+  Bits.mask(32n, 6n)
+
+def kmask(k: Nat) -> Word(32n):
+  match k:
+    case 0n:
+      Bits.mask(32n, 32n)
+    case 1n+q:
+      Word.shr(32n, kmask(q))
+
+def mask31_eq_kmask1() -> {Bits.mask(32n, 31n) == kmask(1n) : Word(32n)}:
+  {==}
+
+def shr_kmask(+k: Nat, +j: Nat) -> {Bits.shr_n(32n, k, kmask(j)) == kmask(Nat.add(j, k)) : Word(32n)}:
+  match k:
+    case 0n:
+      Equal.cong(Nat, Word(32n), x => kmask(x), j, Nat.add(j, 0n),
+        Equal.sym(Nat, Nat.add(j, 0n), j, NatL.n_add_zero_right(j)))
+    case 1n+q:
+      match j:
+        case 0n:
+          +ih = shr_kmask(q, 1n)
+          Equal.trans(Word(32n),
+            Bits.shr_n(32n, 1n+q, kmask(0n)),
+            Bits.shr_n(32n, q, kmask(1n)),
+            kmask(Nat.add(0n, 1n+q)),
+            Equal.cong(Word(32n), Word(32n), x => Bits.shr_n(32n, q, x),
+              Word.shr(32n, kmask(0n)), kmask(1n), mask31_eq_kmask1()),
+            ih)
+        case 1n+i:
+          +ih = shr_kmask(q, 2n+i)
+          +arg = NatL.n_add_succ_right(1n+i, q)
+          +c = kmask(Nat.add(1n+i, 1n+q))
+          +p1 = Equal.cong(Word(32n), Word(32n), x => Bits.shr_n(32n, q, x),
+            Word.shr(32n, kmask(1n+i)), kmask(2n+i), {==})
+          +p2 = Equal.trans(Word(32n),
+            Bits.shr_n(32n, q, kmask(2n+i)),
+            kmask(Nat.add(2n+i, q)),
+            c,
+            ih,
+            Equal.cong(Nat, Word(32n), x => kmask(x),
+              Nat.add(2n+i, q), Nat.add(1n+i, 1n+q),
+              Equal.sym(Nat, Nat.add(1n+i, 1n+q), Nat.add(2n+i, q), arg)))
+          Equal.trans(Word(32n),
+            Bits.shr_n(32n, 1n+q, kmask(1n+i)),
+            Bits.shr_n(32n, q, kmask(2n+i)),
+            c, p1, p2)
+
+def shr_kmask1(+k: Nat) -> {Bits.shr_n(32n, k, Bits.mask(32n, 31n)) == kmask(1n+k) : Word(32n)}:
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, k, Bits.mask(32n, 31n)),
+    Bits.shr_n(32n, k, kmask(1n)),
+    kmask(1n+k),
+    Equal.cong(Word(32n), Word(32n), x => Bits.shr_n(32n, k, x), Bits.mask(32n, 31n), kmask(1n), mask31_eq_kmask1()),
+    shr_kmask(k, 1n))
+
+def kmask_nest(k: Nat) -> {Word.and(32n, kmask(k), kmask(1n+k)) == kmask(1n+k) : Word(32n)}:
+  match k:
+    case 0n:
+      {==}
+    case 1n+q:
+      +qq = q
+      Equal.trans(Word(32n),
+        Word.and(32n, kmask(1n+qq), kmask(1n+(1n+qq))),
+        Word.shr(32n, Word.and(32n, kmask(qq), kmask(1n+qq))),
+        kmask(1n+(1n+qq)),
+        Equal.sym(Word(32n), Word.shr(32n, Word.and(32n, kmask(qq), kmask(1n+qq))),
+          Word.and(32n, kmask(1n+qq), kmask(1n+(1n+qq))), Bits.shr_and(32n, kmask(qq), kmask(1n+qq))),
+        Equal.cong(Word(32n), Word(32n), x => Word.shr(32n, x),
+          Word.and(32n, kmask(qq), kmask(1n+qq)), kmask(1n+qq), kmask_nest(qq)))
+
+def shr_shl_kmask(+k: Nat, +X: Word(32n)) -> {Bits.shr_n(32n, k, Bits.shl_n(32n, X, k)) == Word.and(32n, X, kmask(k)) : Word(32n)}:
+  match k:
+    case 0n:
+      Equal.sym(Word(32n), Word.and(32n, X, kmask(0n)), X, Bits.and_ones(32n, X))
+    case 1n+q:
+      +ih = shr_shl_kmask(q, X)
+      +p1 = Bits.shr_n_and(32n, q, Bits.shl_n(32n, X, q), Bits.mask(32n, 31n))
+      +sm = shr_kmask1(q)
+      +e1 = Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, Bits.shr_n(32n, q, Bits.mask(32n, 31n))),
+        Bits.shr_n(32n, q, Bits.shl_n(32n, X, q)), Word.and(32n, X, kmask(q)), ih)
+      +e2 = Equal.cong(Word(32n), Word(32n), v => Word.and(32n, Word.and(32n, X, kmask(q)), v),
+        Bits.shr_n(32n, q, Bits.mask(32n, 31n)), kmask(1n+q), sm)
+      +mid = Word.and(32n, Word.and(32n, X, kmask(q)), Bits.shr_n(32n, q, Bits.mask(32n, 31n)))
+      +p2 = Equal.trans(Word(32n),
+        Word.and(32n, Bits.shr_n(32n, q, Bits.shl_n(32n, X, q)), Bits.shr_n(32n, q, Bits.mask(32n, 31n))),
+        mid,
+        Word.and(32n, Word.and(32n, X, kmask(q)), kmask(1n+q)),
+        e1, e2)
+      +p3 = Equal.trans(Word(32n),
+        Word.and(32n, Word.and(32n, X, kmask(q)), kmask(1n+q)),
+        Word.and(32n, X, Word.and(32n, kmask(q), kmask(1n+q))),
+        Word.and(32n, X, kmask(1n+q)),
+        Bits.w_and_assoc(32n, X, kmask(q), kmask(1n+q)),
+        Equal.cong(Word(32n), Word(32n), v => Word.and(32n, X, v),
+          Word.and(32n, kmask(q), kmask(1n+q)), kmask(1n+q), kmask_nest(q)))
+      +a3 = Bits.shr_n(32n, q, Word.and(32n, Bits.shl_n(32n, X, q), Bits.mask(32n, 31n)))
+      +b = Word.and(32n, Bits.shr_n(32n, q, Bits.shl_n(32n, X, q)), Bits.shr_n(32n, q, Bits.mask(32n, 31n)))
+      +p0 = Equal.cong(Word(32n), Word(32n), x => Bits.shr_n(32n, q, x),
+        Word.shr(32n, Word.shl(32n, Bits.shl_n(32n, X, q))),
+        Word.and(32n, Bits.shl_n(32n, X, q), Bits.mask(32n, 31n)),
+        Bits.shr_shl_one(31n, Bits.shl_n(32n, X, q)))
+      Equal.trans(Word(32n),
+        Bits.shr_n(32n, 1n+q, Bits.shl_n(32n, X, 1n+q)),
+        a3,
+        Word.and(32n, X, kmask(1n+q)),
+        p0,
+        Equal.trans(Word(32n),
+          a3,
+          b,
+          Word.and(32n, X, kmask(1n+q)),
+          p1,
+          Equal.trans(Word(32n),
+            b,
+            Word.and(32n, Word.and(32n, X, kmask(q)), kmask(1n+q)),
+            Word.and(32n, X, kmask(1n+q)),
+            p2, p3)))
+
+def kmask6_eq() -> {kmask(6n) == Bits.mask(32n, 26n) : Word(32n)}:
+  {==}
+
+def kmask12_eq() -> {kmask(12n) == Bits.mask(32n, 20n) : Word(32n)}:
+  {==}
+
+def m6_kmask6() -> {Word.and(32n, m6(), kmask(6n)) == m6() : Word(32n)}:
+  {==}
+
+def m6_kmask12() -> {Word.and(32n, m6(), kmask(12n)) == m6() : Word(32n)}:
+  {==}
+
+def and_m6_kmask6(+u: Word(32n)) -> {Word.and(32n, Word.and(32n, u, m6()), kmask(6n)) == Word.and(32n, u, m6()) : Word(32n)}:
+  Equal.trans(Word(32n),
+    Word.and(32n, Word.and(32n, u, m6()), kmask(6n)),
+    Word.and(32n, u, Word.and(32n, m6(), kmask(6n))),
+    Word.and(32n, u, m6()),
+    Bits.w_and_assoc(32n, u, m6(), kmask(6n)),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, u, v),
+      Word.and(32n, m6(), kmask(6n)), m6(), m6_kmask6()))
+
+def and_m6_kmask12(+u: Word(32n)) -> {Word.and(32n, Word.and(32n, u, m6()), kmask(12n)) == Word.and(32n, u, m6()) : Word(32n)}:
+  Equal.trans(Word(32n),
+    Word.and(32n, Word.and(32n, u, m6()), kmask(12n)),
+    Word.and(32n, u, Word.and(32n, m6(), kmask(12n))),
+    Word.and(32n, u, m6()),
+    Bits.w_and_assoc(32n, u, m6(), kmask(12n)),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, u, v),
+      Word.and(32n, m6(), kmask(12n)), m6(), m6_kmask12()))
+
+def shr_shl66(+u: Word(32n)) -> {Bits.shr_n(32n, 6n, Bits.shl_n(32n, Word.and(32n, u, m6()), 6n)) == Word.and(32n, u, m6()) : Word(32n)}:
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 6n, Bits.shl_n(32n, Word.and(32n, u, m6()), 6n)),
+    Word.and(32n, Word.and(32n, u, m6()), kmask(6n)),
+    Word.and(32n, u, m6()),
+    shr_shl_kmask(6n, Word.and(32n, u, m6())),
+    and_m6_kmask6(u))
+
+def shr_shl1212(+u: Word(32n)) -> {Bits.shr_n(32n, 12n, Bits.shl_n(32n, Word.and(32n, u, m6()), 12n)) == Word.and(32n, u, m6()) : Word(32n)}:
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 12n, Bits.shl_n(32n, Word.and(32n, u, m6()), 12n)),
+    Word.and(32n, Word.and(32n, u, m6()), kmask(12n)),
+    Word.and(32n, u, m6()),
+    shr_shl_kmask(12n, Word.and(32n, u, m6())),
+    and_m6_kmask12(u))
