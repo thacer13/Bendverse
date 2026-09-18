@@ -1,5 +1,5 @@
 import Base
+import ./app/tests.bend as Tests
 
 def main() -> IO(Unit):
-  do IO<Unit>:
-    IO.print("Bendverse M0")
+  Tests.main()
