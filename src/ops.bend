@@ -5,7 +5,7 @@ import ./cell.bend as Cell
 def mark_got(p: Array<U32> & U32, i: U32) -> Array<U32>:
   match p:
     case (world, w):
-      nw = U32.or(w, 2048)
+      nw = Cell.activate(w)
       world = world[i] <- nw
       world
 

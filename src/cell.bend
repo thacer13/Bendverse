@@ -30,6 +30,18 @@ def cohesion(w: U32) -> U32:
 def active(w: U32) -> U32:
   ((w >> 11n) .&. 1 : U32)
 
+# The activity bit (bit 11) as a named mask and the two word-level operations on
+# it. Naming them keeps the engine and the laws on the semantic operation rather
+# than on a literal layout constant.
+def active_mask() -> U32:
+  2048
+
+def activate(+w: U32) -> U32:
+  U32.or(w, active_mask())
+
+def deactivate(+w: U32) -> U32:
+  U32.and(w, U32.not(active_mask()))
+
 def support(w: U32) -> U32:
   ((w >> 12n) .&. 31 : U32)
 

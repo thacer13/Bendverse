@@ -223,12 +223,12 @@ law array_crumble_lowers_phi:
 law wake_preserves_pot:
   for +w: U32
   for +i: U32
-  {Settle.pot_at(U32.or(w, 2048), i) == Settle.pot_at(w, i) : Nat}
+  {Settle.pot_at(Cell.activate(w), i) == Settle.pot_at(w, i) : Nat}
 
 law deactivate_preserves_pot:
   for +w: U32
   for +i: U32
-  {Settle.pot_at(U32.and(w, 4294965247), i) == Settle.pot_at(w, i) : Nat}
+  {Settle.pot_at(Cell.deactivate(w), i) == Settle.pot_at(w, i) : Nat}
 
 law array_point_write_preserves_count:
   for +t: Refine.PT
@@ -275,10 +275,10 @@ law array_wake_write_preserves_count:
   for +t: Refine.PT
   for +n: U32
   for +i: U32
-  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, U32.or(Tick.tget(t, n, i), 2048))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Cell.activate(Tick.tget(t, n, i)))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
 
 law array_deactivate_write_preserves_count:
   for +t: Refine.PT
   for +n: U32
   for +i: U32
-  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, U32.and(Tick.tget(t, n, i), 4294965247))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Cell.deactivate(Tick.tget(t, n, i)))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}

@@ -80,6 +80,16 @@ def swap_m(t: PT, n: U32, +i: U32, +v: U32) -> PT:
         PN{swap_m(xs, h, i, v), ys},
         PN{xs, swap_m(ys, h, U32.sub(i, h), v)})
 
+# `swap_m` is a structural match, so it does not reduce through a `Bool.pick`.
+# This distribution lemma (proved by matching the decision) is the companion of
+# `tget_pick`: any operation applied to a write result can be pushed past the
+# write's decision with it.
+def swap_m_pick(+z: Bool, A: PT, B: PT, n: U32, +i: U32, +v: U32)
+  -> {swap_m(Bool.pick(PT, z, A, B), n, i, v) == Bool.pick(PT, z, swap_m(A, n, i, v), swap_m(B, n, i, v)) : PT}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
 def swap_ref_if(
   +xs: PT, +ys: PT, +h: U32, +i: U32, +v: U32, +z: Bool,
   ihx: {unpack(afst(Array.swap.go(U32, pack(xs), h, i, v))) == swap_m(xs, h, i, v) : PT},

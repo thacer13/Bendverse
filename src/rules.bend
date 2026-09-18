@@ -68,7 +68,7 @@ def step(
               step(p, (world, gv), 14, i, c, 0, 0)
             case 18:
               +v = gv
-              nw = U32.and(v, 4294965247)
+              nw = Cell.deactivate(v)
               world = world[i] <- nw
               +m = Cell.material(v)
               skip = Bool.or(Bool.or(U32.is_eq(m, 0), Cell.static(m)), U32.is_ne(Cell.cohesion(v), 0))
