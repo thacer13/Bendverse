@@ -6,6 +6,7 @@ import ../src/parity.bend as Parity
 import ../src/priority.bend as Priority
 import ../src/settle.bend as Settle
 import ../src/chunk.bend as Chunk
+import ../src/store.bend as Store
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -308,6 +309,76 @@ def cg_cases(fuel: Nat, keys: List<U32>, bad: U32) -> U32:
 def chunk_bad() -> U32:
   U32.add(ck_go(U32.to_nat(4096), 0, 0), U32.add(cl_go(U32.to_nat(4096), 0, 0), cg_cases(U32.to_nat(8), chunk_keys(), 0)))
 
+def dlist_eq(+xs: List<&2, U32>, +ys: List<&2, U32>) -> Bool:
+  match xs ys:
+    case Nil{} Nil{}:
+      True{}
+    case Nil{} Con{hy, ty}:
+      False{}
+    case Con{hx, tx} Nil{}:
+      False{}
+    case Con{hx, tx} Con{hy, ty}:
+      Bool.and(U32.is_eq(hx, hy), dlist_eq(tx, ty))
+
+def put_keys(fuel: Nat, keys: List<U32>, store: Store.Store) -> Store.Store:
+  match fuel:
+    case 0n:
+      store
+    case 1n+p:
+      match keys:
+        case Nil{}:
+          store
+        case Con{+k, t}:
+          put_keys(p, t, Store.set(store, k, Store.chunk_list(k)))
+
+def maybe_present(m: Maybe<&2, List<&2, U32>>, +k: U32, bad: U32) -> U32:
+  match m:
+    case None{}:
+      U32.add(bad, 1)
+    case Some{val}:
+      inc_if_false(dlist_eq(val, Store.chunk_list(k)), bad)
+
+def check_present(+store: Store.Store, +k: U32, bad: U32) -> U32:
+  maybe_present(Store.get(store, k), k, bad)
+
+def get_keys(fuel: Nat, keys: List<U32>, +store: Store.Store, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match keys:
+        case Nil{}:
+          bad
+        case Con{k, t}:
+          get_keys(p, t, store, check_present(store, k, bad))
+
+def maybe_absent(m: Maybe<&2, List<&2, U32>>, bad: U32) -> U32:
+  match m:
+    case None{}:
+      bad
+    case Some{val}:
+      U32.add(bad, 1)
+
+def missing_bad(+store: Store.Store, bad: U32) -> U32:
+  maybe_absent(Store.get(store, Chunk.key(2, 2, 2)), bad)
+
+def maybe_overwrite(m: Maybe<&2, List<&2, U32>>, +other: U32, bad: U32) -> U32:
+  match m:
+    case None{}:
+      U32.add(bad, 1)
+    case Some{val}:
+      inc_if_false(dlist_eq(val, Store.chunk_list(other)), bad)
+
+def overwrite_bad(+store: Store.Store, bad: U32) -> U32:
+  +k = Chunk.key(0, 0, 0)
+  +other = Chunk.key(0, 0, 1)
+  maybe_overwrite(Store.get(Store.set(store, k, Store.chunk_list(other)), k), other, bad)
+
+def store_bad() -> U32:
+  +base = put_keys(U32.to_nat(8), chunk_keys(), Store.empty())
+  U32.add(get_keys(U32.to_nat(8), chunk_keys(), base, 0),
+    U32.add(missing_bad(base, 0), overwrite_bad(base, 0)))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -324,3 +395,4 @@ def main() -> IO(Unit):
     report("T14 scan order totality", total_bad())
     report("T15 list set split + sum", set_laws_bad())
     report("T16 chunk key/local roundtrip + gen", chunk_bad())
+    report("T17 chunk store set/get/overwrite", store_bad())

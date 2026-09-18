@@ -213,7 +213,7 @@ These carry the properties the engine claims and touch no runtime code; they are
   - [ ] **M7e GPU phases** — last and most optional.
 - [ ] **M8 Chunks / "infinite" world** (stretch): chunk index as a custom radix tree keyed by packed `U32` coords (`Map` is string-keyed — do not use it for this). Requires **V2**. Accept: chunk gen + tick identical to fixed-world behavior on the same region. Sharded:
   - [x] **M8a** chunk key/index + pure per-chunk gen (easy; worldgen is already pure). (See A.21.)
-  - [ ] **M8b** radix-tree chunk store (replaces the string-keyed `Map`).
+  - [x] **M8b** radix-tree chunk store (replaces the string-keyed `Map`). (See A.22.)
   - [ ] **M8c** region tick equivalence.
   - [ ] **M8d** sleeping/eviction (rests on **V2b**).
 
@@ -779,3 +779,35 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
 
 **Recommended next:** **M8b** (radix-tree chunk store keyed by the packed `U32` chunk key; not `Map`, which is string-keyed), then **M8c** (region tick equivalence). Both are independent of V2b-ii; **M8d** (sleeping/eviction) remains gated on V2b.
+
+### A.22 — M8b complete: U32-keyed radix-tree chunk store
+
+**Status:** M8b **complete** (§5 box checked). New `src/store.bend`; **no new laws** (data structure — runtime test only). Engine untouched; gate green; fast and simulation suites pass.
+
+**Design.** A persistent binary radix trie over the **32 key bits**, `Store is Data` (`STip{}` / `SLeaf{key: U32, val: List<&2, U32>}` / `SNode{lo, hi}`). Chunk keys are the M8a packed `U32`s, so no string hashing and no `Map` (which is string-keyed). Values are `List<&2, U32>` (Data) rather than `Array<U32>`, deliberately: it makes the store itself **copyable**, so `get` is a pure lookup that does not consume the store — which M8c needs in order to read a chunk's neighbors (halo) without popping them. Array↔list conversion happens at the call site (`Store.chunk_list`, via `relist`).
+
+**Bend constraint that shaped it.** The natural implementation — recurse on a `Nat` bit-depth, and branch on the key bit through a small helper that matches the computed `Bool` — is **mutually recursive** (`set` → helper → `set`), which Bend rejects ("expected a defined name" on the forward reference). The working formulation walks the key as a `Word`: `set_w(n, w, s, k, v)` matches `n` (a `Word(n)` is the type family `Word.Nil`/`Word.Con`, so the `Nat` must be matched first), then `match w: case WCon{head, tail}`, branches on `head` (a pattern binder, so a legal scrutinee), and recurses on the structural `tail`. One recursive def, structural termination, no computed-value match, no helpers.
+
+**Deliverables (`src/store.bend`)**
+- `empty()`, `set(s, k, v)` (persistent overwrite/insert), `get(s, k) -> Maybe<&2, List<&2, U32>>`, `relist`/`chunk_list` (`Array<U32>` → Data list via `Chunk.build`).
+- Insertion builds the single-child spine down to the 32-bit leaf; the "leaf met above depth 0" case is impossible by construction and handled defensively.
+
+**Golden test (`app/tests.bend`, T17)**
+- Seed a store with the 8 `chunk_keys()` (all corners plus interior/mixed — exercising shared prefixes); each `get` returns the full 4096-cell list equal to `Chunk.chunk_list(k)`.
+- An unstored key (`key(2,2,2)`) returns `None`.
+- Overwrite `key(0,0,0)` with another chunk and confirm the new value reads back.
+
+**Bend findings (M8b)**
+- `Word(n)` is a **type family**: matching `WNil{}`/`WCon{}` requires matching the `Nat` first (`match n: case 0n: … case 1n+p: match w:`). Threading the `Nat` and recur`.
+- A `Data` field cannot hold `List<U32>` (that defaults to the linear `&1` list, i.e. `Type`); use `List<&2, U32>`.
+- An imported type is qualified by the module alias in a consumer: `Store.Store`, not `Store`.
+- `match` on a returned `Maybe` is a computed scrutinee — route it through a helper that matches the parameter (same workaround as elsewhere).
+
+**Scope note.** M8b is a *store*, not yet a region engine: it does not assemble halos, run `Sim.tick`, or scatter results. That is M8c (`region tick equivalence`), which is independent of V2b; only M8d (sleeping/eviction) remains gated on V2b.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (27 laws); `bend src/store.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T17, ~2.28s.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
+
+**Recommended next:** **M8c** — region tick equivalence: assemble the fixed world from the store into an `Array<U32>`, run `Sim.tick`, compare to `Sim.tick` on `Sim.build()`, and (optionally) scatter back into the store.
