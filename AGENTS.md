@@ -42,6 +42,10 @@ machine-checked by `PROOF.bend`.
 - Milestones: implement what `PLAN.md` specifies, check boxes off as they land,
   and leave the repo runnable with the gate green after every step.
 - Parallelize the code whenever the work is balanced.
+- **Commit autonomy (granted):** the human has given standing permission to
+  commit autonomously at each step without asking first. Still run the gate
+  before every commit, keep each commit scoped with a message in repo style, and
+  never commit build artifacts (`bin`) or secrets.
 - Never rewrite human-owned text in place. Record status, results, and
   observations in `PLAN.md` Appendix A; if an appendix entry conflicts with the
   text above it, the appendix wins until the human folds it back in.
