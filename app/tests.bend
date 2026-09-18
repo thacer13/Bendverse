@@ -100,10 +100,20 @@ def terrain_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def terrain_bad() -> U32:
   terrain_go(U32.to_nat(4096), 0, 0)
 
+def build_go(fuel: Nat, +i: U32, cells: List<U32>, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          g = Worldgen.gen(Grid.ix(i), Grid.iy(i), Grid.iz(i), 42)
+          build_go(p, U32.add(i, 1), t, inc_if_false(U32.is_eq(h, g), bad))
+
 def build_bad() -> U32:
-  w = Worldgen.build()
-  v = Grid.value_at(w, Grid.index(32, 10, 32))
-  is_bad(U32.is_eq(v, Worldgen.gen(32, 10, 32, 42)))
+  build_go(U32.to_nat(262144), 0, Grid.to_list(Worldgen.build()), 0)
 
 def bool_eq(a: Bool, b: Bool) -> Bool:
   Bool.not(Bool.xor(a, b))
@@ -198,7 +208,7 @@ def main() -> IO(Unit):
     report("spike mul wrap", is_bad(U32.is_eq(U32.mul(4294967295, 2), 4294967294)))
     report("T6 gen determinism", gen_det_bad())
     report("T7 terrain structure", terrain_bad())
-    report("T8 build matches gen", build_bad())
+    report("T8 build matches gen (all cells)", build_bad())
     report("T10 parity flip + neighbor x", parity_bad())
     report("T11 low6 add independence + pm1 cancel", mod_bad())
     report("T12 dir phi cancellation", phi_bad())

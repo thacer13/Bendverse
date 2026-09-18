@@ -206,7 +206,7 @@ These carry the properties the engine claims and touch no runtime code; they are
 ### Scale (optional, droppable; M8 gated on V2)
 
 - [ ] **M7 Parallel track**: parallel calls in phase folds via `ANode` region splits (mind the linear-owner read problem — clone-per-region is the fallback); `!` GPU on pure kernels (worldgen/noise) first. Pair with **V3**. Accept: T1 still passes bit-for-bit on native `--threads` and any GPU path (CPU fallback here — no CUDA installed). Sharded, easiest → hardest:
-  - [ ] **M7a Parallel worldgen** (`build`) — pure, no shared linear state; smallest real speedup, zero semantic risk.
+  - [x] **M7a Parallel worldgen** (`build`) — pure, no shared linear state; smallest real speedup, zero semantic risk. (See A.18.)
   - [ ] **M7b GPU worldgen** (`!` on `hash`/`noise2`/`gen`) — same semantics, needs CUDA.
   - [ ] **M7c Parallel render** (`view`) — per-pixel, but shares the world `Array` → clone-per-region; independent of movement.
   - [ ] **M7d Parallel phase folds (CPU)** — region splits + clone + the §2.5 tie-break; gated on **V3c**.
@@ -687,3 +687,26 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
 
 **Recommended next:** **M7a** (parallel worldgen) per the A.12 interleave, or **V3c** (schedule invariance) — but V3c gates only M7d, whereas M7a needs nothing new.
+
+### A.18 — M7a complete: parallel worldgen (`build_at`)
+
+**Status:** M7a **complete** (§5 box checked). `src/worldgen.bend` rewritten; no new laws (engine-only, as M7a predicts). Engine semantics unchanged; gate green; fast and simulation suites pass on native `--threads 1` and `--threads 6`.
+
+**Deliverables**
+- `src/worldgen.bend`: the sequential `build_go`/`build` (fill a fresh `[0 : U32^18n]` by index) is replaced by
+  `build_at(depth, base)` — structural recursion on a `Nat` depth that builds the array tree directly: at `0n` an `ALeaf{gen(ix base, iy base, iz base, 42)}`, at `1n+ +p` the two halves
+  `xs ys = build_at(p, base) build_at(p, U32.add(base, U32.shln(1, p)))` followed by `ANode{xs, ys}`. The `ALeaf` site at `base` is flat index `base`, so in-order leaves match the flat-index scan exactly. `build()` is `build_at(18n, 0)`. No array is ever shared: each half owns its subtree, so the linear-owner problem does not arise (M7a's whole point).
+- `app/tests.bend`: **T8 strengthened** from a single spot check to an exhaustive check — every one of the 2^18 cells of `Worldgen.build()` is compared to `Worldgen.gen(ix, iy, iz, 42)`, the structural-refactor witness (in JS, which runs sequentially). Suite ~2.0s (was ~1.3s).
+
+**Why the tree rewrite rather than indexed writes.** An `Array<U32>` is linear, so a parallel `build` cannot have two branches write one shared array. Recursing on the array's own `ALeaf`/`ANode` shape gives each parallel branch an independently owned subtree, and the tree shape from `[v : T^n]` already matches `Array.index`/`Array.get`'s `h = n/2` split, so leaf order is the flat index order. The first prototype (which recurred over an existing array, matching it) was discarded in favour of building the structure from `depth` — no dummy array, and the termination is structural on `depth`.
+
+**Verification**
+- Prototype (in a throwaway `scratch.bend`, removed before commit): `build_at(18n, 0)` equals the old sequential `build()` over **all** 2^18 cells (0 mismatches), confirming the tree/leaf-order assumption before the edit landed.
+- Determinism / bit-for-bit: a 50× build-and-hash harness prints the identical `U32` under `--threads 1` and `--threads 6` (`1732778124`), so the parallel schedule does not perturb the world.
+- Speedup (honest, small as A.12 predicted): the same 50× harness is 0.80s (`--threads 1`) → 0.48s (`--threads 6`), ≈1.7× wall for the build+hash mix; a single build is only a few ms, so `app/simtests.bend` total time is unchanged (~4.3s — the 8 phase folds dominate and are still sequential). "Smallest real speedup, zero semantic risk", as planned.
+- `bend PROOF.bend` → `All terms check.` (25 laws); `bend src/worldgen.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. exhaustive T8, ~2.0s.
+- Native `bend app/simtests.bend -o bin && ./bin --threads 1` and `--threads 6` → T1, T2, T3, T4, T4b, T9 all PASS; T1's two builds share the parallel path and agree bit-for-bit.
+- `bend main.bend -o bin && ./bin` prints the before/after ASCII collapse as before.
+
+**Recommended next:** **M7c** (parallel render, clone-per-region; independent of movement) per the A.12 interleave, or **V2b-i** (`List.set` split/sum) if the scale track is paused. **M7b** (`!` GPU worldgen) still needs CUDA, which this machine lacks.

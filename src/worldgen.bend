@@ -74,18 +74,14 @@ def gen(+x: U32, +y: U32, +z: U32, s: U32) -> U32:
   border = Bool.or(Bool.or(b0, b1), Bool.or(Bool.or(b2, b3), Bool.or(b4, b5)))
   gen_if(border, x, y, z, s)
 
-def build_go(fuel: Nat, +i: U32, world: Array<U32>) -> Array<U32>:
-  match fuel:
+def build_at(depth: Nat, +base: U32) -> Array<U32>:
+  match depth:
     case 0n:
-      world
-    case 1n+p:
-      x = Grid.ix(i)
-      y = Grid.iy(i)
-      z = Grid.iz(i)
-      w = gen(x, y, z, 42)
-      world = world[i] <- w
-      build_go(p, U32.add(i, 1), world)
+      ALeaf{gen(Grid.ix(base), Grid.iy(base), Grid.iz(base), 42)}
+    case 1n+ +p:
+      +h = U32.shln(1, p)
+      xs ys = build_at(p, base) build_at(p, U32.add(base, h))
+      ANode{xs, ys}
 
 def build() -> Array<U32>:
-  world = [0 : U32^18n]
-  build_go(U32.to_nat(262144), 0, world)
+  build_at(18n, 0)
