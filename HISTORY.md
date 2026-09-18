@@ -1118,3 +1118,38 @@ validated by A.37 probe 1. Then step 3 (`G10` mirroring).
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (50 laws); fast 22/22; sim 8/8.
+
+### A.39 — The crush guard: non-rock targets are no longer crushed (step 2 of 3)
+
+**Status:** engine change at both crush sites, one new law
+(`guarded_crush_lowers_pot`); gate green (51 laws); both suites pass. This lands
+step 2 of the option-2 route: the guard whose proof A.38's reflection lemma
+unlocked.
+
+**What landed.**
+- `Ops.crush_if_rock(+w)`: `Bool.pick(U32, U32.is_eq(Cell.material(w), 3),
+  crush_word(w), w)` — the rule-8 impact/crumble material change, guarded to
+  rock. Non-rock keeps the field reset *out*: a target with no cohesion has no
+  threshold to cross, so the reset was never load-bearing (A.37 probe 1).
+- `Rules.step` sel 22 (impact target) and `Support.sup` sel 6 (crumble source)
+  now write `Ops.crush_if_rock(·)` instead of `Ops.crush_word(·)`. Behaviour is
+  identical to A.37 probe 1, which passed all sim tests.
+- `W.pot_crush_if` / `W.pot_crush_guarded`: the point-level theorem —
+  `pot_at(crush_if_rock(w), i) + (rock ? 50·L : 0) == pot_at(w, i)`. The guard
+  Bool is threaded as a parameter so both branches are definitional; the rock
+  branch reflects `U32.is_eq(material(w), 3) == True` to `material(w) == 3`
+  via `Word.u32_cmp_eq` (A.38) and applies `pot_crush_rock`. This is the first
+  use of the reflection lemma in a real engine-effect proof.
+
+**Why the guard is the right fix.** Rule 8's event converts rock (→ rubble) and
+drops cohesion; for a non-rock target there is nothing to convert and cohesion is
+already 0, so applying `crush_word` there was an oversight (A.37). Guarding keeps
+the rule's meaning and makes every actual crush argument provably rock — which is
+exactly the hypothesis `array_crumble_lowers_phi` already carries.
+
+**Next.** §5.2 step 3 (`G10`): mirror `Support.sup`/`Rules.step` on `PT`, where
+each crush write site now carries a guard Bool that the `pot_crush_if` pattern
+discharges.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (51 laws); fast 22/22; sim 8/8.

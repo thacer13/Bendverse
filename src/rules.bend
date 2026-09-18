@@ -132,7 +132,8 @@ def step(
               dmg = Bool.and(U32.is_ne(f, 0), Bool.and(Bool.not(tst), U32.is_ge(f, Cell.cohesion(b))))
               step(p, (world, b), Bool.pick(U32, dmg, 22, 23), i, c, w, 0)
             case 22:
-              world = world[Grid.below(i)] <- Ops.crush_word(gv)
+              crushed = Ops.crush_if_rock(gv)
+              world = world[Grid.below(i)] <- crushed
               world = Ops.wake(world, Grid.below(i))
               world = world[i] <- Ops.set_fall0(w)
               world = Ops.wake(world, i)

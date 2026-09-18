@@ -295,3 +295,8 @@ law u32_cmp_eq_reflect:
   for +b: U32
   for +h: {U32.is_eq(a, b) == True{} : Bool}
   {a == b : U32}
+
+law guarded_crush_lowers_pot:
+  for +w: U32
+  for +i: U32
+  {Nat.add(Settle.pot_at(Ops.crush_if_rock(w), i), Bool.pick(Nat, U32.is_eq(Cell.material(w), 3), Nat.mul(50n, U32.to_nat(Grid.iy(i))), 0n)) == Settle.pot_at(w, i) : Nat}

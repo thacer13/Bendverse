@@ -61,6 +61,15 @@ def crush_material(+m: U32) -> U32:
 def crush_word(+w: U32) -> U32:
   Cell.encode(crush_material(Cell.material(w)), 0, 0, 0, 0)
 
+# Site-level crush, guarded to rock. A rule-8 impact event only converts rock
+# (→ rubble) and drops cohesion; a target that is not rock has no cohesion
+# threshold to cross, so the field reset must not be applied. The `Bool.pick`
+# keeps the guard a testable value, so the write site is case-splittable in the
+# `PT` mirror (G10). Behaviour-witnessed by A.37 probe 1; proof-friendly form
+# landed in A.38.
+def crush_if_rock(+w: U32) -> U32:
+  Bool.pick(U32, U32.is_eq(Cell.material(w), 3), crush_word(w), w)
+
 def adjacent_static(+i: U32) -> Bool:
   +x = Grid.ix(i)
   +z = Grid.iz(i)

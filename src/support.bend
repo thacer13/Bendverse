@@ -50,7 +50,8 @@ def sup(
               q = Array.get(U32, world, i)
               sup(p, q, 9, i, 0, gated)
             case 6:
-              world = world[i] <- Ops.crush_word(w)
+              crushed = Ops.crush_if_rock(w)
+              world = world[i] <- crushed
               world = Ops.wake(world, i)
               q = Array.get(U32, world, i)
               sup(p, q, 9, i, 0, gated)

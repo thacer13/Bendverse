@@ -6,6 +6,8 @@ import ./rules.bend as Rules
 import ./settle.bend as S
 import ./grid.bend as Grid
 import ./potential.bend as Pot
+import ./nat.bend as NatL
+import ./word.bend as WR
 
 def enc_w(
   mw: Word(32n), cw: Word(32n), aw: Word(32n), sw: Word(32n), fw: Word(32n)
@@ -261,6 +263,24 @@ def pot_crush_rock(+w: U32, +i: U32, +h: {Cell.material(w) == 3 : U32})
       Pot.crumble_decreases(150n, 50n, L),
       Equal.sym(Nat, Nat.mul(Pot.dens(Cell.material(w)), L), Nat.mul(200n, L),
         Equal.cong(Nat, Nat, x => Nat.mul(x, L), Pot.dens(Cell.material(w)), 200n, d2))))
+
+# The guarded crush (`Ops.crush_if_rock`): the potential effect is the rock crush
+# (a decrease of `50 * L`) when the target is rock, and the identity otherwise.
+# The guard Bool is a parameter so the two cases are definitional; the rock branch
+# reflects it back to `material(w) == 3` with the `Word.cmp` reflection lemma
+# (A.38), which is what makes the guard provable at all.
+def pot_crush_if(+w: U32, +i: U32, z: Bool, hz: {z == U32.is_eq(Cell.material(w), 3) : Bool})
+  -> {Nat.add(S.pot_at(Bool.pick(U32, z, Ops.crush_word(w), w), i), Bool.pick(Nat, z, Nat.mul(50n, U32.to_nat(Grid.iy(i))), 0n)) == S.pot_at(w, i) : Nat}:
+  match z:
+    case True{}:
+      pot_crush_rock(w, i, WR.u32_cmp_eq(Cell.material(w), 3,
+        Equal.sym(Bool, True{}, U32.is_eq(Cell.material(w), 3), hz)))
+    case False{}:
+      NatL.n_add_zero_right(S.pot_at(w, i))
+
+def pot_crush_guarded(+w: U32, +i: U32)
+  -> {Nat.add(S.pot_at(Ops.crush_if_rock(w), i), Bool.pick(Nat, U32.is_eq(Cell.material(w), 3), Nat.mul(50n, U32.to_nat(Grid.iy(i))), 0n)) == S.pot_at(w, i) : Nat}:
+  pot_crush_if(w, i, U32.is_eq(Cell.material(w), 3), {==})
 
 # A whole-world point write that replaces a pot (v + g) by v lowers Phi by g.
 # This is the "composition of replace_decreases" building block: the list-level

@@ -176,3 +176,6 @@ def Laws.word_cmp_eq_reflect(n, x, y, h):
 
 def Laws.u32_cmp_eq_reflect(a, b, h):
   WR.u32_cmp_eq(a, b, h)
+
+def Laws.guarded_crush_lowers_pot(w, i):
+  WP.pot_crush_guarded(w, i)
