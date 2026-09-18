@@ -15,6 +15,7 @@ import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
 import ./src/count.bend as Count
+import ./src/word.bend as WR
 
 def Laws.sanity():
   {==}
@@ -169,3 +170,9 @@ def Laws.array_wake_write_preserves_count(t, n, i):
 
 def Laws.array_deactivate_write_preserves_count(t, n, i):
   Count.array_deactivate_write_preserves_count(t, n, i)
+
+def Laws.word_cmp_eq_reflect(n, x, y, h):
+  WR.w_cmp_eq(n, x, y, h)
+
+def Laws.u32_cmp_eq_reflect(a, b, h):
+  WR.u32_cmp_eq(a, b, h)

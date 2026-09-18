@@ -1079,3 +1079,42 @@ can be closed by *fixing the rule*, and `G10`'s crush sites stop being special.
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (48 laws); fast 22/22; sim 8/8.
+
+### A.38 — `Word.cmp` reflection: the G9/G10 unlock is proven (step 1 of 3)
+
+**Status:** new `src/word.bend`, two new laws (`word_cmp_eq_reflect`,
+`u32_cmp_eq_reflect`); gate green (50 laws); no engine change. This lands exactly
+the reflection lemma A.37 identified as the blocker, so material-guarded engine
+logic is now provable.
+
+**What landed.**
+- `b_cmp_eq`: the `Bool` base case —
+  `Cmp.is_eq(Bool.cmp(a, b)) == True → a == b`. The two impossible branches
+  (`False/True`, `True/False`) are closed directly: one returns the hypothesis
+  (its normal form is the goal), the other uses `Equal.sym`.
+- `w_cmp_fin_eq_bits` / `w_cmp_fin_eq_t`: split on `t` in `Word.cmp.fin`. The
+  `EQ` case is `b_cmp_eq` / reflexivity; the `LT`/`GT` cases are impossible — the
+  hypothesis normalizes to `{False == True}` — and are discharged by
+  `Equal.cong` along a `Bool.pick` motive, which transports the contradiction to
+  the arbitrary goal *without* needing the opaque `U32` to reduce.
+- `w_cmp_eq`: structural induction over the bit prefix. The recursive step
+  recovers the head bits (`w_cmp_fin_eq_bits`) and the tail comparison
+  (`w_cmp_fin_eq_t`), recurses, and glues the two `Equal.cong`s with
+  `Equal.trans`. Stated for general `n` (not just `32n`).
+- `u32_cmp_eq`: the `U32.is_eq` corollary, wrapping `w_cmp_eq` under
+  `U32{…}`.
+
+**Why it was hard (now resolved).** `U32.is_eq`/`Word.cmp` do not reduce for
+abstract arguments, and matching an opaque `U32` only refines it to a partial
+constructor (A.37). The trick is that the *hypothesis* carries the comparison
+result: matching on the `Cmp` value `t` passed as a parameter lets `Word.cmp.fin`
+and the hypothesis' type reduce together, and `Bool.pick` builds a motive that
+turns a stuck `{False == True}` into whatever goal a branch needs.
+
+**Next.** §5.2 step 2: guard the crush sites (`Rules.step` sel 22,
+`Support.sup` sel 6) to rock, using `u32_cmp_eq_reflect` to prove the guard
+(invoking `material(w) == 3` on the non-crumbling branch). Behaviour is already
+validated by A.37 probe 1. Then step 3 (`G10` mirroring).
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (50 laws); fast 22/22; sim 8/8.

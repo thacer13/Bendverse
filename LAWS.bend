@@ -282,3 +282,16 @@ law array_deactivate_write_preserves_count:
   for +n: U32
   for +i: U32
   {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Cell.deactivate(Tick.tget(t, n, i)))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+
+law word_cmp_eq_reflect:
+  for +n: Nat
+  for +x: Word(n)
+  for +y: Word(n)
+  for +h: {Cmp.is_eq(Word.cmp(n, x, y)) == True{} : Bool}
+  {x == y : Word(n)}
+
+law u32_cmp_eq_reflect:
+  for +a: U32
+  for +b: U32
+  for +h: {U32.is_eq(a, b) == True{} : Bool}
+  {a == b : U32}

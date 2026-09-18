@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 48 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 50 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -294,7 +294,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-48 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+50 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -356,7 +356,7 @@ an oversight to hide.
 | `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
 | `R10` | Determinism under any schedule | — (by construction) | T1 | sim |
 | `R11` | Worldgen is a pure seeding function | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
-| `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` | T5 spike bit31 spike mul wrap | bits grid cell nat |
+| `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
 
 Reading the `—` rows: R7 is test-witnessed only (recorded as `G6`); R2 now has
 the `V4` count laws (A.31–A.32, A.34).
@@ -421,15 +421,14 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   displacement identity, and `array_mov_swap_preserves_count` proves the
   **movement swap** (the two writes telescope). Rule 2 is fully law-covered.
 - [ ] **G9/G10 unlock (option-2 route)** — the current verification frontier.
-  1. Prove `Word.cmp` reflection
-     (`Cmp.is_eq(Word.cmp(32n, x, y)) == True → x == y`) and the `U32.is_eq`
-     corollary, in a new `src/word.bend` (mirror `order.cmp_fin_total`; Word's
-     `WCon{head, tail}` structure, LT/GT/EQ × head-bit cases).
+  1. [x] `Word.cmp` reflection proven (A.38): `word_cmp_eq_reflect` (general `n`,
+     not just `32n`) and `u32_cmp_eq_reflect` in `src/word.bend`, so
+     material-guarded engine logic is now provable.
   2. Guard the crush sites to rock (`Rules.step` sel 22, `Support.sup` sel 6);
      behaviour-validated by A.37 (non-rock field-reset is not load-bearing).
   3. Mirror `Support.sup`/`Rules.step` on `PT` for `G10`; every write site then
      has a provable Φ effect (table in A.36).
-  See `HISTORY.md` A.36–A.37 for the analysis and probes.
+  See `HISTORY.md` A.36–A.38 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -458,8 +457,8 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
-| `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 G10 | the `Word.cmp` reflection lemma (A.37, §5.2); runtime-witnessed by T19 |
-| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical) **and** resolve `G9`. The crush sites (`Rules.step` sel 22 on the impact target, `Support.sup` sel 6 on the crumble source) apply `crush_word` to a target that is not provably rock; **a behavior probe (A.37) shows the non-rock field-reset is not load-bearing** (all suites pass with non-rock `crush_word = identity`), so guarding the material change to rock is the right fix — but the proof of the guard needs *reflection* (`U32.is_eq(m,3) == True → m == 3`, equivalently `Cmp.is_eq(Word.cmp(32n,x,y)) == True → x == y`), which Base does not provide. Building that reflection lemma is the true unlock for `G9`, `G10`, and any material-guarded engine logic. Would also widen `M8d` eviction |
+| `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 G10 | the `Word.cmp` reflection lemma (**proven**, A.38: `word_cmp_eq_reflect`/`u32_cmp_eq_reflect`); the guard itself is landing next (§5.2 step 2). Runtime-witnessed by T19 |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical) **and** resolve `G9`. The crush sites (`Rules.step` sel 22 on the impact target, `Support.sup` sel 6 on the crumble source) apply `crush_word` to a target that is not provably rock; **a behavior probe (A.37) shows the non-rock field-reset is not load-bearing** (all suites pass with non-rock `crush_word = identity`), so guarding the material change to rock is the right fix. The reflection it needs — `U32.is_eq(m,3) == True → m == 3`, equivalently `Cmp.is_eq(Word.cmp(32n,x,y)) == True → x == y` — is **proven** (A.38), so the fix is now provable. Would also widen `M8d` eviction |
 
 ---
 
