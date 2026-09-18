@@ -976,3 +976,15 @@ A.31.) `G6` now reduces to rule 7 (support), which stays test-witnessed.
 - `bend PROOF.bend` → `All terms check.` (48 laws).
 - `bend app/tests.bend` (JS, tick-free) → 22/22.
 - Native `bend app/simtests.bend -o bin && ./bin` → 8/8.
+
+### A.35 — Correction to A.33 (the read-after-write route needed no validity/injectivity)
+
+A.33 claimed the read-after-write alternative "needs a carried validity invariant
+and U32 subtraction injectivity". That is **wrong**, and A.34 supersedes it: the
+read-back fact only needs **non-emptiness** (not value equality or `i ≠ j`), and
+`mov` preserves that, so no validity invariant, no index distinctness, and no
+subtraction injectivity are required. The only real obstacle was that `tget`/
+`swap_m` do not reduce through a `Bool.pick`; the fix is the (trivial)
+distribution lemma `tget_pick` plus inlining the written value as a
+`Bool.pick(zi, …)` in the induction. A.33's "decision-parameterized double swap"
+framing was an unnecessary detour.
