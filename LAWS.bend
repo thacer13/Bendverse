@@ -11,6 +11,7 @@ import ./src/refine.bend as Refine
 import ./src/ops.bend as Ops
 import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
+import ./src/tick.bend as Tick
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -201,3 +202,29 @@ law point_write_lowers:
   for +g: Nat
   for +r: +List<Nat>
   {Nat.add(Settle.suml(Settle.app(l, Settle.app([v], r))), g) == Settle.suml(Settle.app(l, Settle.app([v + g], r))) : Nat}
+
+law array_support_write_preserves_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +s: U32
+  {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Ops.set_support(Tick.tget(t, n, i), s))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law array_crumble_lowers_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +hm: {Cell.material(Tick.tget(t, n, i)) == 3 : U32}
+  {Nat.add(Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Ops.crush_word(Tick.tget(t, n, i)))), base, n)), Tick.crush_gap(t, base, n, i)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law wake_preserves_pot:
+  for +w: U32
+  for +i: U32
+  {Settle.pot_at(U32.or(w, 2048), i) == Settle.pot_at(w, i) : Nat}
+
+law deactivate_preserves_pot:
+  for +w: U32
+  for +i: U32
+  {Settle.pot_at(U32.and(w, 4294965247), i) == Settle.pot_at(w, i) : Nat}

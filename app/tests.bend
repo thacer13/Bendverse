@@ -7,6 +7,7 @@ import ../src/priority.bend as Priority
 import ../src/settle.bend as Settle
 import ../src/chunk.bend as Chunk
 import ../src/store.bend as Store
+import ../src/ops.bend as Ops
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -400,6 +401,30 @@ def store_bad() -> U32:
   U32.add(get_keys(U32.to_nat(8), chunk_keys(), base, 0),
     U32.add(missing_bad(base, 0), overwrite_bad(base, 0)))
 
+# T19 write->pot bridge: support writes preserve pot; crush_lowers for rock and
+# is the identity elsewhere (G9 witness; the last fact is not provable in Bend).
+def wp_check(+w: U32, +i: U32, bad: U32) -> U32:
+  ok0 = U32.is_eq(Cell.material(Ops.set_support(w, 21)), Cell.material(w))
+  bad0 = inc_if_false(ok0, bad)
+  +z = U32.is_eq(Cell.material(w), 3)
+  ok1 = U32.is_eq(Cell.material(Ops.crush_word(w)), Bool.pick(U32, z, 4, Cell.material(w)))
+  bad1 = inc_if_false(ok1, bad0)
+  +L = U32.to_nat(Grid.iy(i))
+  rok = Nat.is_eq(Nat.add(Settle.pot_at(Ops.crush_word(w), i), Nat.mul(50n, L)), Settle.pot_at(w, i))
+  non = Nat.is_eq(Settle.pot_at(Ops.crush_word(w), i), Settle.pot_at(w, i))
+  bad2 = inc_if_false(Bool.pick(Bool, z, rok, non), bad1)
+  bad2
+
+def wp_bad() -> U32:
+  wp_check(Cell.encode(0, 5, 1, 7, 3), Grid.index(1, 1, 1),
+    wp_check(Cell.encode(1, 63, 0, 31, 63), Grid.index(2, 1, 5),
+      wp_check(Cell.encode(2, 0, 1, 0, 0), Grid.index(3, 3, 7),
+        wp_check(Cell.encode(3, 48, 1, 15, 9), Grid.index(5, 2, 9),
+          wp_check(Cell.encode(4, 0, 0, 4, 2), Grid.index(4, 7, 3),
+            wp_check(Cell.encode(5, 10, 1, 2, 17), Grid.index(9, 63, 61),
+              wp_check(0, Grid.index(7, 33, 8),
+                wp_check(8388607, Grid.index(8, 5, 6), 0))))))))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -418,3 +443,4 @@ def main() -> IO(Unit):
     report("T16 chunk key/local roundtrip + gen", chunk_bad())
     report("T17 chunk store set/get/overwrite", store_bad())
     report("T18 store assemble == worldgen", assemble_bad())
+    report("T19 write->pot bridge", wp_bad())

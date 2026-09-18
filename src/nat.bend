@@ -135,3 +135,24 @@ def n_not_lt_zero(a: Nat) -> {Nat.is_lt(a, 0n) == False{} : Bool}:
       {==}
     case 1n+p:
       {==}
+
+def n_sub_add(+a: Nat, c: Nat) -> {Nat.sub(Nat.add(a, c), c) == a : Nat}:
+  match c:
+    case 0n:
+      Equal.trans(Nat, Nat.sub(Nat.add(a, 0n), 0n), Nat.add(a, 0n), a,
+        n_sub_zero(Nat.add(a, 0n)),
+        n_add_zero_right(a))
+    case 1n+ +p:
+      Equal.trans(Nat,
+        Nat.sub(Nat.add(a, 1n + p), 1n + p),
+        Nat.sub(1n + Nat.add(a, p), 1n + p),
+        a,
+        Equal.cong(Nat, Nat, x => Nat.sub(x, 1n + p), Nat.add(a, 1n + p), 1n + Nat.add(a, p), n_add_succ_right(a, p)),
+        n_sub_add(a, p))
+
+def n_add_cancel_right(a: Nat, +b: Nat, +c: Nat, +h: {Nat.add(a, c) == Nat.add(b, c) : Nat}) -> {a == b : Nat}:
+  Equal.trans(Nat, a, Nat.sub(Nat.add(a, c), c), b,
+    Equal.sym(Nat, Nat.sub(Nat.add(a, c), c), a, n_sub_add(a, c)),
+    Equal.trans(Nat, Nat.sub(Nat.add(a, c), c), Nat.sub(Nat.add(b, c), c), b,
+      Equal.cong(Nat, Nat, x => Nat.sub(x, c), Nat.add(a, c), Nat.add(b, c), h),
+      n_sub_add(b, c)))

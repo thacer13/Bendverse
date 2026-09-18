@@ -13,6 +13,7 @@ import ./src/refine.bend as Refine
 import ./src/ops.bend as Ops
 import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
+import ./src/tick.bend as Tick
 
 def Laws.sanity():
   {==}
@@ -131,3 +132,15 @@ def Laws.crumble_lowers_pot(w, i, h):
 
 def Laws.point_write_lowers(l, v, g, r):
   WP.point_write_lowers(l, v, g, r)
+
+def Laws.array_support_write_preserves_phi(t, base, n, i, s):
+  Tick.array_support_write(t, base, n, i, s)
+
+def Laws.array_crumble_lowers_phi(t, base, n, i, hm):
+  Tick.array_crumble_lowers(t, base, n, i, hm)
+
+def Laws.wake_preserves_pot(w, i):
+  WP.pot_or_hi(w, i)
+
+def Laws.deactivate_preserves_pot(w, i):
+  WP.pot_and_hi(w, i)

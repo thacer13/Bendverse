@@ -715,3 +715,31 @@ Wave 2 adds four tools:
 - `bend PROOF.bend` → `All terms check.` (36 laws).
 - `bend app/tests.bend` (JS, tick-free) → 16/16.
 - Native `bend app/simtests.bend -o bin && ./bin` → 7/7.
+
+### A.29 — V2b-iii complete: array-level write→Φ effects; `G2` closed, V2 complete
+
+**Status:** V2b-iii **complete**; `G2` closed; **V2 Global settling complete**, so `M8d` is ungated. **4 new laws** (40 total); one new test (T19). Engine untouched; gate green; fast (17/17) and simulation (7/7) suites pass.
+
+**What landed.**
+- `src/nat.bend`: `n_sub_add` (subtract-the-addend) and `n_add_cancel_right` — the cancellation needed to turn `Φ_new + P == Φ_old + P` into `Φ_new == Φ_old` (and the `+ gap` variant). Bend has no successor-injectivity, so cancellation is proved via truncated subtraction.
+- `src/writepot.bend`: the active-bit writes — `mat_or_hi`/`mat_and_hi` (material preserved) and `pot_or_hi`/`pot_and_hi`: `wake` (`or 2048`) and deactivate (`and ~2048`) preserve `pot_at`. With A.28's support/fall/mov lemmas, *every* material-preserving write in the engine is covered.
+- `src/tick.bend` (new): `tget` (the packed word at an index, same walk as `chg_m`), `crush_gap` (the leaf's `50·L`), `chg_support` (support write ⇒ old pot = new pot at the changed leaf), `array_support_write` (**`Array.swap.go` preserves Φ under a support write**), `chg_crush_rock` + `array_crumble_lowers` (**a rock crumble lowers Φ by `50·L` at the array level**).
+- `app/tests.bend`: **T19** — a runtime witness over sampled words/levels that support/active writes preserve material, rock crumble lowers pot, and non-rock crush is the identity.
+
+**Laws added:** `wake_preserves_pot`, `deactivate_preserves_pot`, `array_support_write_preserves_phi`, `array_crumble_lowers_phi`. §4 R6/R9 and §6 updated; §5.1/§5.2/§5.3 and `HISTORY.md` record completion.
+
+**Trust boundary after this.** `G2` is closed with two explicit accepted residuals:
+- `G9` — non-rock `crush_word` potential preservation. Bend **cannot** case-split the opaque `U32` in `Cell.density`/`crush_material`: the wildcard branch of `match m` refines `m` to a *partial* `Word` (`WCon{…, _69}`), not a literal, so the identity is not a theorem. It is semantically the identity and is runtime-witnessed by T19.
+- `G10` — the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; every primitive's effect is proven, so `Sim.tick` non-increase follows once that finite list is checked (and, for non-rock crushes, `G9`).
+
+**Bend findings (V2b-iii closure).**
+- **`Nat.sub` does not reduce with a stuck first argument.** `Nat.sub(Nat.add(a,0n),0n)` stays put, so subtraction facts must be rewritten explicitly (`n_sub_zero`) rather than expected definitionally.
+- **Reusable pattern tails.** `case 1n+p:` binds `p` affinely; a short recursive use needs `case 1n+ +p:`.
+- **Function-typed IHs.** To thread a leaf hypothesis through a `Bool.pick` split, pass the IH as a function `({material(...) == 3} -> {…})`; after matching `z` the *type* of the hypothesis normalizes to the branch fact, so `ihx(hm)` closes the branch.
+- **Wildcard on `U32` is partial.** `case _` refines the scrutinee to a `Word` with a variable tail, which is why arbitrary-material claims (G9) are out of reach.
+- **Literals normalize to definitions.** `2048 ≡ U32.shln(1,11n)` and `4294965247 ≡ U32.not(2048)` are definitional, so active-bit goals reduce when written as `shln`/`not` and closed with `and_shl_n`/`and` reductions.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (40 laws).
+- `bend app/tests.bend` (JS, tick-free) → 17/17 (incl. T19).
+- Native `bend app/simtests.bend -o bin && ./bin` → 7/7.

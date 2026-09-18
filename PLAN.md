@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 36 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 40 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -294,7 +294,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-36 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+40 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -319,7 +319,7 @@ mul-wrap spikes; T6 gen determinism; T7 terrain structure; T8 build = gen over
 all cells; T10 parity/neighbor-x; T11 low6 add + ∓1 cancel; T12 dir φ
 cancellation; T13 neighbor index cancellation; T14 scan-order totality; T15
 `List.set` split + sum; T16 chunk key/local roundtrip + gen; T17 chunk store
-set/get/overwrite; T18 store assemble = worldgen.
+set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`).
 
 Simulation, native-recommended (`app/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
@@ -349,10 +349,10 @@ an oversight to hide.
 | `R3` | Single-writer, deterministic tie-break | `scan_order_total` `neighbor_cancel` | T14 | order priority |
 | `R4` | Phase separation: no same-color neighbors | `neighbor_x_parity` `neighbor_y_parity` `neighbor_z_parity` `parity_flip_succ` `parity_flip_pred` | T10 | parity sim |
 | `R5` | Falling is universal (density rule) | `fall_decreases` `fall_lowers_potential` `sand_sinks_in_water` | T9 | rules potential |
-| `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `rock_crumbles_lighter` | T9 | support potential writepot |
+| `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `array_crumble_lowers_phi` `rock_crumbles_lighter` | T9 T19 | support potential writepot tick |
 | `R7` | Support recomputed, never cached | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
-| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `point_write_lowers` | T4 T4b | sim potential settle refine writepot |
+| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
 | `R10` | Determinism under any schedule | — (by construction) | T1 | sim |
 | `R11` | Worldgen is a pure seeding function | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
 | `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` | T5 spike bit31 spike mul wrap | bits grid cell nat |
@@ -383,7 +383,7 @@ R10 and R11 hold by construction and are witnessed by tests.
 | `V1` | Nat arithmetic + Φ-decrease / settling kernel | A.7 |
 | `V2b-i` | `List.set` split and sum lemmas | A.20 |
 | `V2b-ii` | array/model swap refinement + Φ-decrease under a point update | A.27 |
-| `V2b-iii` | word-level write→Φ bridge: material field, support/fall/mov preserve pot, crumble lowers pot, point-write composition | A.28 |
+| `V2b-iii` | write→Φ bridge complete (word and `Array.swap.go` level): material field, support/fall/mov/wake/deactivate preserve pot, crumble lowers pot, point-write composition | A.28–A.29 |
 | `V3a` | parity model + all-axis neighbor parity | A.13–A.14 |
 | `V3b` | packed-index neighbor cancel + total scan order | A.15–A.17 |
 | `—` | pi tooling: proof loop, lemma index, audit | A.24–A.25 |
@@ -396,16 +396,16 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   (A.27): a non-linear `PT` model with a machine-checked `Array.swap.go`
   refinement, the point-update pot list, and the Φ-decrease. Closes `G1`; the
   one phrasing linearity forbids is recorded as `G8`.
-- [ ] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` — **partly
-  landed** (A.28): the write→Φ effects are proven (`material_encode`,
-  `support_write_preserves_pot`, `fall_write_preserves_pot`, `mov_preserves_pot`,
-  `crumble_lowers_pot`) and the composition step is `point_write_lowers`. Still
-  open: enumerating the tick's write sites over the `Support.pass`/`Rules.step`
-  control flow and instantiating `point_write_lowers` at each. Closes `G2`.
-- [ ] **V2 Global settling** — complete when ii and iii land; then `M8d` is ungated.
+- [x] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` — landed
+  (A.28–A.29): every write primitive's Φ effect is machine-checked at both the
+  `Word`/`Cell` level and the array (`Array.swap.go`) level — support/fall/mov/
+  wake/deactivate preserve pot, rock crumble lowers it, swaps lower it — and
+  `point_write_lowers` is the composition step. Closes `G2`; the two residuals are
+  `G9` (non-rock crush) and `G10` (write-site enumeration).
+- [x] **V2 Global settling** — complete (ii and iii landed); `M8d` is ungated.
 - [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
   fold. Large and stall-prone; the fallback is V3a+V3b proven with `G3` kept open.
-- [ ] **M8d** Chunk sleeping/eviction — gated on V2.
+- [ ] **M8d** Chunk sleeping/eviction — ungated (V2 complete).
 - [ ] **M7d** Parallel phase folds (CPU) — gated on V3c.
 - [ ] **M7b** / **M7e** GPU worldgen / phases — blocked on a CUDA host (`G4`).
 
@@ -429,13 +429,15 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | ID | Kind | Unproven / assumed | Status | Gates | Closes by |
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
-| `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | open | M8d | write effects + `point_write_lowers` proven (A.28); remaining is enumerating the tick's writes (array-level tick blocked by `G8`) |
+| `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
 | `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven) |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
-| `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28); remaining instance is the tick write-site enumeration (`G2`) |
+| `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); remaining instance is the write-site enumeration (`G10`) |
 | `G6` | accepted | conservation (rule 2) and support (rule 7) are test-witnessed only | accepted | — | a count-invariant law over swap/transform ops |
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
+| `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | accepted | G2 | a decision procedure / refined match on `U32`; runtime-witnessed by T19 |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 M8d | mirror the control flow on `PT` (large, mechanical) |
 
 ---
 
@@ -463,6 +465,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `src/settle.bend` | settling lemmas (`suml`, `app`, `List.set` splits) |
 | `src/refine.bend` | array↔model refinement: `PT` model, pack/unpack, `Array.swap.go` correspondence, Φ decrease |
 | `src/writepot.bend` | write→Φ bridge: `Cell.encode` material field, write effects on `pot_at`, point-write composition |
+| `src/tick.bend` | array-level (`Array.swap.go` via `PT`) write effects: `tget`, support-write preservation, rock-crumble decrease |
 | `src/parity.bend` | rule 4/1: parity model, neighbor parity |
 | `src/mod.bend` | rule 1: modular-add independence, ∓1 cancel |
 | `src/priority.bend` | rule 1/3: `Dir` model, φ cancellation, neighbor cancel |
@@ -503,7 +506,7 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   are not proofs about the engine. `G1` (`Array.swap.go`) is now proven as explicit
   refinement lemmas (A.27) and the write→Φ effects are proven (A.28); `G8` records
   the linearity limit on how an array may be named in a statement. The remaining
-  instance is enumerating the tick's write sites (V2b-iii, `G2`).
+  instances are `G9` (non-rock crush) and `G10` (write-site enumeration); `G2` is closed.
   Mitigation throughout: explicit refinement lemmas, never assumptions.
 - **Schedule invariance (`G3`).** A region-split fold may differ from the
   sequential fold in tie-break corners. Mitigation: V3a+V3b stay proven; M7d

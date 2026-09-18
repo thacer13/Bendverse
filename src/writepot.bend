@@ -274,3 +274,64 @@ def point_write_lowers(+l: +List<Nat>, +v: Nat, +g: Nat, +r: +List<Nat>)
     Equal.cong(Nat, Nat, x => Nat.add(x, g), S.suml([v]), v, S.suml1(v)),
     Equal.sym(Nat, S.suml([v + g]), Nat.add(v, g), S.suml1(Nat.add(v, g))))
   S.replace_decreases(l, r, [v + g], [v], g, h)
+
+# Active-bit writes: set (wake) and clear (deactivate) touch bit 11 only.
+# 2048 == shln(1, 11) and ~2048 == not(2048) are definitional.
+
+def mat_or_hi(+w: U32) -> {Cell.material(U32.or(w, U32.shln(1, 11n))) == Cell.material(w) : U32}:
+  match w:
+    case U32{+x}:
+      +M5 = Bits.mask(32n, 5n)
+      +K = Bits.shl_n(32n, Bits.mask(32n, 1n), 11n)
+      +e1 = Bits.w_and_comm(32n, Word.or(32n, x, K), M5)
+      +e2 = Bits.w_and_or(32n, M5, x, K)
+      +e3 = shift5(11n, shr11(), Bits.mask(32n, 1n))
+      +e4 = Bits.w_or_zero(32n, Word.and(32n, M5, x))
+      +e5 = Bits.w_and_comm(32n, M5, x)
+      Equal.cong(Word(32n), U32, z => U32{z},
+        Word.and(32n, Word.or(32n, x, K), M5),
+        Word.and(32n, x, M5),
+        Equal.trans(Word(32n),
+          Word.and(32n, Word.or(32n, x, K), M5),
+          Word.or(32n, Word.and(32n, M5, x), Word.zero(32n)),
+          Word.and(32n, x, M5),
+          Equal.trans(Word(32n),
+            Word.and(32n, Word.or(32n, x, K), M5),
+            Word.and(32n, M5, Word.or(32n, x, K)),
+            Word.or(32n, Word.and(32n, M5, x), Word.zero(32n)),
+            e1,
+            Equal.trans(Word(32n),
+              Word.and(32n, M5, Word.or(32n, x, K)),
+              Word.or(32n, Word.and(32n, M5, x), Word.and(32n, M5, K)),
+              Word.or(32n, Word.and(32n, M5, x), Word.zero(32n)),
+              e2,
+              Equal.cong(Word(32n), Word(32n), y => Word.or(32n, Word.and(32n, M5, x), y),
+                Word.and(32n, M5, K), Word.zero(32n), e3))),
+          Equal.trans(Word(32n),
+            Word.or(32n, Word.and(32n, M5, x), Word.zero(32n)),
+            Word.and(32n, M5, x),
+            Word.and(32n, x, M5),
+            e4, e5)))
+
+def mat_and_hi(+w: U32) -> {Cell.material(U32.and(w, U32.not(U32.shln(1, 11n)))) == Cell.material(w) : U32}:
+  match w:
+    case U32{+x}:
+      +M5 = Bits.mask(32n, 5n)
+      +NOTK = Word.not(32n, Bits.shl_n(32n, Bits.mask(32n, 1n), 11n))
+      Equal.cong(Word(32n), U32, z => U32{z},
+        Word.and(32n, Word.and(32n, x, NOTK), M5),
+        Word.and(32n, x, M5),
+        Equal.trans(Word(32n),
+          Word.and(32n, Word.and(32n, x, NOTK), M5),
+          Word.and(32n, x, Word.and(32n, NOTK, M5)),
+          Word.and(32n, x, M5),
+          Bits.w_and_assoc(32n, x, NOTK, M5),
+          Equal.cong(Word(32n), Word(32n), y => Word.and(32n, x, y), Word.and(32n, NOTK, M5), M5, {==})))
+
+def pot_or_hi(+w: U32, +i: U32) -> {S.pot_at(U32.or(w, 2048), i) == S.pot_at(w, i) : Nat}:
+  Equal.cong(U32, Nat, m => Nat.mul(Pot.dens(m), U32.to_nat(Grid.iy(i))),
+    Cell.material(U32.or(w, 2048)), Cell.material(w), mat_or_hi(w))
+
+def pot_and_hi(+w: U32, +i: U32) -> {S.pot_at(U32.and(w, 4294965247), i) == S.pot_at(w, i) : Nat}:
+  Equal.cong(U32, Nat, m => Nat.mul(Pot.dens(m), U32.to_nat(Grid.iy(i))),
+    Cell.material(U32.and(w, 4294965247)), Cell.material(w), mat_and_hi(w))
