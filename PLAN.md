@@ -195,7 +195,7 @@ These carry the properties the engine claims and touch no runtime code; they are
 
 ### Visibility (independent of verification)
 
-- [ ] **M6** Windowed app: `App.run`, cross-section view, mouse/keyboard editing. Accept: interactive editing visibly disturbs and settles. May proceed in parallel with V2.
+- [x] **M6** Windowed app: `App.run`, cross-section view, mouse/keyboard editing. Accept: interactive editing visibly disturbs and settles. May proceed in parallel with V2. (See A.11; human to confirm interactively.)
 
 ### Scale (optional, droppable; M8 gated on V2)
 
@@ -478,3 +478,28 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - `bend app/tests.bend` (JS) → all PASS; native `app/simtests.bend` → all PASS. No engine code touched.
 
 **Recommended next:** attack (b) via the `Array.swap.go` induction plus the `List.set` split lemma (a real chunk of work), or pause V2 and start M6 (visibility; independent).
+
+### A.11 — M6 complete: windowed app (`App.run`, scaled cross-section, editing)
+
+**Status:** M6 complete. New `app/window.bend`; engine untouched; gate green; fast and simulation suites pass; native binary builds and runs.
+
+**Deliverables**
+- `app/window.bend` — the `App.run` app:
+  - State `St{w: Array<U32>, run: Bool, mx: U32, my: U32}` (world, running, last mouse).
+  - `view` renders the `z=32` x–y cross-section as a **256×256** `Image` quadtree (depth 8, each cell a 4×4 block). `render` descends the tile reading `Array.get` and emits one `Pix` per pixel; `group4`/`levels` assemble the quadtree. Colors are decimal `0xRRGGBB` values (the material table).
+  - `tick`: `step_events` folds events while threading a `St & Bool` alive flag (single def — no mutual recursion), then runs one `Sim.tick` when running and alive; `Close` quits.
+  - Editing: left mouse = Sand, right mouse = Rock, `e` = Empty (at last mouse), space = pause/resume. Paints write the cell with its default cohesion and `Ops.wake` the 26-neighbourhood, so the disturbance visibly collapses and settles.
+- Launch: `bend app/window.bend -o bin && ./bin` (native; the JS `Window.open` is a no-display stub). `main.bend` intentionally still delegates to the headless ASCII runner so `bend main.bend` works without a display. First cut was 64×64 (too small, cut off in the corner); now 256×256.
+
+**Bend findings (M6)**
+- No hex literals in 2.0.5 (`0x…` is rejected) — use decimal.
+- `U32.shr(a)` shifts right by **1**; use `U32.shrn(a, n)` for an `n`-bit shift.
+- `Event` fields must be matched in declaration order; matching two fields of an event requires routing them through a helper def whose parameter order matches (`handle_mouse`, `handle_key`). Matching a let-bound value or an out-of-order field is rejected.
+- Affine fields reused within a branch need `+` in the pattern (e.g. `+mx, +my`); construction sites take the plain names.
+- `List.reverse` needs the matching quantity (`&1` for the cons-built `List<Image>`).
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.`; `bend app/tests.bend` (JS) all PASS; native `app/simtests.bend` all PASS.
+- Native `app/window.bend` built and ran a full 6 s event loop under `DISPLAY=:0` with no crash; the human confirmed the window appears (and flagged the initial size, now fixed).
+
+**Recommended next:** continue V2 (b) `Array.set`/`to_pots`, or polish M6 (brush size, water). M7/M8 remain optional; M8 is gated on V2.
