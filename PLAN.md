@@ -196,7 +196,7 @@ These carry the properties the engine claims and touch no runtime code; they are
   - [ ] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` instances — including "support writes preserve Φ" and "the bedrock floor keeps every crumble at `L ≥ 1`".
 - [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test. Sharded:
   - [x] **V3a Parity independence** — same-color cells are never 26-neighbors (pure index/parity arithmetic on the existing bit model; small, provable now). (See A.13–A.14.)
-  - [ ] **V3b Priority is total and local** — among same-phase movers targeting one cell, scan order yields a unique winner and the losers observe it occupied; comparison radius ≤2 (medium). In progress: V3b-0 modular-add core landed (see A.15); V3b-1 locality and V3b-2 totality remain.
+  - [x] **V3b Priority is total and local** — among same-phase movers targeting one cell, scan order yields a unique winner and the losers observe it occupied; comparison radius ≤2 (medium). (See A.15–A.17.)
   - [ ] **V3c Schedule invariance** — a region-split fold equals the sequential fold; builds on V3a+V3b. Large and stall-prone: fallback is V3a+V3b proven with V3c kept as a documented gap.
 
 ### Visibility (independent of verification)
@@ -662,3 +662,28 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - `bend app/tests.bend` (JS, tick-free) → all PASS incl. T11, T12, ~1.2s.
 
 **Recommended next:** **V3b-1b** (packed-index radius-2 locality), then **V3b-2** (total order + unique winner); then M7a per A.12.
+
+### A.17 — V3b complete: index-level locality + total scan order
+
+**Status:** V3b **complete** (§5 box checked). `src/priority.bend` extended, new `src/order.bend`; **2 new laws** (25 total). Engine untouched; gate green; fast and simulation suites pass.
+
+**V3b-1b (packed-index cancel).** The A.16 plan predicted the real work was mask-18 assembly; in fact the cleaner route needed **no boundedness lemma**. `Grid.neighbor` is definitionally `Grid.index(masked sums)`, so:
+- Full-axis lemmas `u32_iy_neighbor_full` / `u32_iz_neighbor_full`: `iy`/`iz` of `neighbor(i, dx, dy, dz)` depend only on the matching offset and on `iy i`/`iz i` (lifted from `Parity.u32_index_iy`/`u32_index_iz`; `u32_ix_neighbor` was already full). These remove the off-axis offsets from the outer composition.
+- `index_rebuild(i)`: `Grid.index(ix i, iy i, iz i) = and(i, 262143)` (the reusable form of the `index_roundtrip` law).
+- Axis cancels `ix_cancel`/`iy_cancel`/`iz_cancel`: `and(and(x ∓ 1) ± 1, 63) = x` for an already-masked coordinate, from A.15/A.16. The `iy`/`iz` forms absorb against the shifted argument (`and63_absorb(U32.shrn(i, 12))` etc.).
+- `neighbor_cancel`: **`neighbor(neighbor(i, d), −d) = and(i, 262143)`** — the packed-index statement that a source is recovered from its destination by the opposite step. Proof: rewrite each coordinate of the outer neighbor through the inner neighbor and the axis cancel, then `Equal.cong` the three `Grid.index` arguments into `index_rebuild`.
+
+**V3b-2 (total scan order).** New `src/order.bend`. `cmp_fin_total` shows `Word.cmp.fin` returns one of `LT`/`EQ`/`GT` for any tail comparison (the `EQ` branch is the one 4-way `Bool` split), so the 32-bit comparison needs no induction: `cmp32_total` destructures one bit and delegates, and `u32_cmp_total` lifts. Law **`scan_order_total`**: `lt ∨ gt ∨ eq` is always `True`. Combined with locality, this is the "unique winner": for two *distinct* candidate indices `eq` is definitionally `False`, so a strict scan-order winner exists; `neighbor_cancel` bounds the comparison to the ≤27 cells `neighbor(d, Dir³)`, i.e. torus radius 2.
+
+**Laws appended (`LAWS.bend`; existing laws untouched)**
+- `neighbor_cancel`, `scan_order_total`. Runtime twins **T13** (six representative `Dir³` compositions over 4096 samples) and **T14** (totality over 4096 samples).
+
+**Scope note (honest).** "Losers observe the target occupied" is the sequential fold's behaviour, not a separate theorem; V3b proves the two properties a parallel fold must respect — the candidate set is local (`neighbor_cancel`) and the order is total (`scan_order_total`). V3c (schedule invariance) remains the large, stall-prone shard.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (25 laws).
+- `bend src/priority.bend` / `bend src/order.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T13, T14, ~1.3s.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
+
+**Recommended next:** **M7a** (parallel worldgen) per the A.12 interleave, or **V3c** (schedule invariance) — but V3c gates only M7d, whereas M7a needs nothing new.

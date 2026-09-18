@@ -8,6 +8,7 @@ import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
 import ./src/mod.bend as Mod
 import ./src/priority.bend as Priority
+import ./src/order.bend as Order
 
 def Laws.sanity():
   {==}
@@ -87,3 +88,9 @@ def Laws.low6_add_independent(a, b):
 
 def Laws.dir_phi_cancel(d, x):
   Priority.phi_cancel(d, x)
+
+def Laws.neighbor_cancel(i, a, b, c):
+  Priority.neighbor_cancel(i, a, b, c)
+
+def Laws.scan_order_total(a, b):
+  Order.u32_cmp_total(a, b)

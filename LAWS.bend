@@ -6,6 +6,7 @@ import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
 import ./src/mod.bend as Mod
 import ./src/priority.bend as Priority
+import ./src/order.bend as Order
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -110,3 +111,15 @@ law dir_phi_cancel:
   for d: Priority.Dir
   for x: U32
   {Priority.phi(Priority.dir_neg(d), Priority.phi(d, x)) == U32.and(x, 63) : U32}
+
+law neighbor_cancel:
+  for i: U32
+  for a: Priority.Dir
+  for b: Priority.Dir
+  for c: Priority.Dir
+  {Grid.neighbor(Grid.neighbor(i, Priority.dir_val(a), Priority.dir_val(b), Priority.dir_val(c)), Priority.dir_val(Priority.dir_neg(a)), Priority.dir_val(Priority.dir_neg(b)), Priority.dir_val(Priority.dir_neg(c))) == U32.and(i, 262143) : U32}
+
+law scan_order_total:
+  for a: U32
+  for b: U32
+  {Bool.or(Bool.or(U32.is_lt(a, b), U32.is_gt(a, b)), U32.is_eq(a, b)) == True{} : Bool}

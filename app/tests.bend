@@ -155,6 +155,41 @@ def phi_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def phi_bad() -> U32:
   phi_go(U32.to_nat(4096), 0, 0)
 
+def nc_check(+i: U32, +a: Priority.Dir, +b: Priority.Dir, +c: Priority.Dir) -> Bool:
+  U32.is_eq(
+    Grid.neighbor(Grid.neighbor(i, Priority.dir_val(a), Priority.dir_val(b), Priority.dir_val(c)),
+      Priority.dir_val(Priority.dir_neg(a)), Priority.dir_val(Priority.dir_neg(b)), Priority.dir_val(Priority.dir_neg(c))),
+    U32.and(i, 262143))
+
+def nc_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      o0 = nc_check(i, Priority.Dno{}, Priority.Dup{}, Priority.Ddn{})
+      o1 = nc_check(i, Priority.Dup{}, Priority.Ddn{}, Priority.Dno{})
+      o2 = nc_check(i, Priority.Ddn{}, Priority.Dno{}, Priority.Dup{})
+      o3 = nc_check(i, Priority.Dup{}, Priority.Dup{}, Priority.Dup{})
+      o4 = nc_check(i, Priority.Ddn{}, Priority.Ddn{}, Priority.Ddn{})
+      o5 = nc_check(i, Priority.Dno{}, Priority.Dno{}, Priority.Dno{})
+      all = Bool.and(Bool.and(Bool.and(o0, o1), Bool.and(o2, o3)), Bool.and(o4, o5))
+      nc_go(p, U32.add(i, 1), inc_if_false(all, bad))
+
+def nc_bad() -> U32:
+  nc_go(U32.to_nat(4096), 0, 0)
+
+def total_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +b = U32.mul(i, 2654435761)
+      all = Bool.or(Bool.or(U32.is_lt(i, b), U32.is_gt(i, b)), U32.is_eq(i, b))
+      total_go(p, U32.add(i, 1), inc_if_false(all, bad))
+
+def total_bad() -> U32:
+  total_go(U32.to_nat(4096), 0, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -167,3 +202,5 @@ def main() -> IO(Unit):
     report("T10 parity flip + neighbor x", parity_bad())
     report("T11 low6 add independence + pm1 cancel", mod_bad())
     report("T12 dir phi cancellation", phi_bad())
+    report("T13 neighbor index cancellation", nc_bad())
+    report("T14 scan order totality", total_bad())
