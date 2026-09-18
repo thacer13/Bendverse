@@ -21,17 +21,9 @@ def char_of(m: U32) -> String:
     case _:
       "?"
 
-def in_box(+x: U32, +y: U32, +z: U32) -> Bool:
-  Bool.and(
-    Bool.and(U32.is_ge(x, 30), U32.is_le(x, 34)),
-    Bool.and(
-      Bool.and(U32.is_ge(z, 30), U32.is_le(z, 34)),
-      Bool.and(U32.is_ge(y, 46), U32.is_le(y, 52))
-    )
-  )
-
-def box_word(+x: U32, +y: U32, +z: U32) -> U32:
-  Bool.pick(U32, in_box(x, y, z), 2, Worldgen.gen(x, y, z, 42))
+def pull_cell(+x: U32, +y: U32, +z: U32) -> U32:
+  hit = Bool.and(U32.is_eq(x, 32), Bool.and(U32.is_eq(y, 3), U32.is_eq(z, 32)))
+  Bool.pick(U32, hit, 0, Worldgen.gen(x, y, z, 42))
 
 def append_if(z: Bool, row: String, c: String) -> String:
   match z:
@@ -84,7 +76,7 @@ def gen_row(fuel: Nat, +x: U32, +y: U32, acc: String) -> String:
     case 0n:
       acc
     case 1n+p:
-      gen_row(p, U32.add(x, 1), y, acc ++ char_of(Cell.material(box_word(x, y, 32))))
+      gen_row(p, U32.add(x, 1), y, acc ++ char_of(Cell.material(pull_cell(x, y, 32))))
 
 def gen_rows(fuel: Nat, +y: U32, out: String) -> String:
   match fuel:
@@ -102,9 +94,9 @@ def ticks() -> Nat:
 
 def main() -> IO(Unit):
   do IO<Unit>:
-    world : Array<U32> = Worldgen.build()
-    world1 : Array<U32> = Sim.spawn(world)
-    IO.print("BEFORE (x-y at z=32, y=63 top; spawned sand block in air):")
+    world : Array<U32> = Sim.build()
+    world1 : Array<U32> = Sim.pull(world)
+    IO.print("BEFORE (x-y at z=32, y=63 top; one base rock cell pulled at x=32,y=3):")
     IO.print(render_gen())
     world2 : Array<U32> = Sim.ticks(ticks(), world1)
     IO.print("AFTER 14 ticks:")

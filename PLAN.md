@@ -306,3 +306,29 @@ All of `src/` is pure (zero IO). Runners are thin shells. Each module imports `B
 - **T4b**: hashing a settled world is identical with and without one extra tick — i.e. a tick over a settled world is a **fixed point / zero writes**.
 
 **Recommended next:** M5 (cohesion: support pass, crumble, impact crush Rock→Rubble, remove the cohesive-as-static interim). This is the last big rule-system piece; activity already gives it cheap incremental evaluation. Then M6 (windowed app). M1.5 bit-lemmas still queued (laws currently: `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`).
+
+### A.5 — M5 complete: support, crumble, impact
+
+**Status:** M5 complete.
+
+**Structure**
+- New `src/ops.bend`: shared world ops (`mark`/`wake` 26-neighbourhood, `set_support`, `set_fall0`, `crush_material`/`crush_word` rock→rubble, `adjacent_static`). `rules.bend` and `support.bend` both import it (avoids a rules↔support cycle).
+- New `src/support.bend`: `sup` state machine implements support **and** crumble in one y-ascending pass (`tick` calls it before the 8 movement phases). Order matters: `pass` (active-gated) during ticks, `pass_all` (non-gated) once at initialisation.
+- `src/rules.bend`: impact added at the "blocked" branch (`sel 8 → 21 → 22/23`): damage = fall distance; if target is non-static and `damage >= cohesion(target)` it is crushed (cohesion 0, Rock→Rubble, both sides woken), else the mover just stops; fall resets to 0. The interim is gone: cohesive cells still don't move individually, but support/crumble now converts unsupported Rock to Rubble, which then falls.
+- `src/sim.bend`: `tick = support pass + 8 phases`; `build()` = `Support.pass_all(Worldgen.build())`; `pull()` = demo disturbance (remove one base rock cell + wake).
+
+**Design decisions / deviations**
+- **Support initialisation is required.** Worldgen leaves every support field 0. Without a full initial pass, the first woken isolated Rock cell reads a stale `support(below)=0` and crumbles, and the wake cascade spreads across the map. `Sim.build()` runs the non-gated pass once. **All simulated worlds must use `Sim.build()`** (pure `Worldgen.build()` is still used only by the gen-equality test T8).
+- **Support is a derived field.** Because init writes support 31 into every cohesive cell, a settled world is not bit-identical to `gen`; T4 therefore compares material + cohesion + fall (ignoring support and active). `support ∈ {0,31}` in this ruleset (static-adjacency or straight-up propagation); sideways cohesion chains remain the documented upgrade path.
+- **The 6-neighbour "is static" test is `adjacent_static(i)` (coordinate check x∈{1,62}, z∈{1,62}, y∈{1,62}).** Exact today because the only static material is Bedrock, which worldgen places only on the shell and which no rule creates. If more static materials are ever added, this must become a real neighbour scan.
+- Impact re-evaluation is **deferred one tick** (crush, wake both cells, stop) rather than re-running steps 3–4 in the same tick. Behaviourally equivalent once the woken mover is processed next tick, and it keeps the state machine from re-entering the impact branch.
+
+**Bugs found and fixed during M5**
+- support pass read the *current* word where it needed *below* (added `sel 5` to fetch below) — this had crumbled ~71k cells at init.
+- `set_fall0` preserved the active bit, so every blocked cell re-activated itself each tick and never settled (500 cells stuck active). It now clears the active bit; a blocked, evaluated cell settles.
+
+**Golden tests (native, `app/simtests.bend`) — all PASS, ~4.3s**
+- T1, T2 (now spawns a disturbance first, so movement actually happens), T3, T4 (settles, zero active, far cells unchanged in material/cohesion/fall), T4b (settled world is a fixed point), **T9** (pull one base rock cell → after 5 ticks the Rock count is strictly lower — crumble worked).
+- Fast JS suite `app/tests.bend` (T5–T8) still passes in ~0.7s; `bend main.bend` = native pull-base collapse demo (before/after cross-section shows the column turn to rubble and fall into the hole). Gate green.
+
+**Recommended next:** M6 (windowed `App.run` app: cross-section view + mouse/keyboard editing, painting wakes the 26-neighbourhood). Then M7 (parallelism), M8 (chunks). M1.5 bit-lemmas still queued.
