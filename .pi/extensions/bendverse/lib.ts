@@ -236,6 +236,121 @@ export function signatureLines(baseNameText: string): string {
 	return out.join("\n");
 }
 
+// ---------------------------------------------------------------- proof frontier
+
+export interface Decl {
+	file: string;
+	line: number;
+	kind: string;
+	name: string;
+	sig: string;
+}
+
+/**
+ * Top-level `def`/`type`/`data`/`law` declarations in one file, keeping
+ * multi-line signatures whole (up to the `:` terminator) and 1-based lines.
+ */
+export function extractDecls(file: string, text: string): Decl[] {
+	const lines = text.split("\n");
+	const out: Decl[] = [];
+	let i = 0;
+	while (i < lines.length) {
+		const m = /^(def|type|data|law)\s+([A-Za-z0-9_.]+)/.exec(lines[i]);
+		if (!m) {
+			i++;
+			continue;
+		}
+		const start = i;
+		const sig = [lines[i]];
+		let j = i;
+		while (
+			!/:\s*$/.test(lines[j]) &&
+			j + 1 < lines.length &&
+			lines[j + 1].trim() !== "" &&
+			!/^(?:def|type|data|law|#|import)\s*/.test(lines[j + 1])
+		) {
+			j++;
+			sig.push(lines[j]);
+		}
+		out.push({ file, line: start + 1, kind: m[1], name: m[2], sig: sig.join("\n") });
+		i = j + 1;
+	}
+	return out;
+}
+
+/** Parameter names of `law <name>:` (from its `for x: T` lines), or undefined. */
+export function findLawParams(lawsText: string, name: string): string[] | undefined {
+	const lines = lawsText.split("\n");
+	const re = new RegExp(`^law\\s+${name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}\\s*:`);
+	const start = lines.findIndex((l) => re.test(l));
+	if (start < 0) return undefined;
+	const params: string[] = [];
+	for (let i = start + 1; i < lines.length; i++) {
+		const l = lines[i];
+		const m = /^\s*for\s+\+?([A-Za-z0-9_]+)\s*:/.exec(l);
+		if (m) {
+			params.push(m[1]);
+			continue;
+		}
+		if (/\{/.test(l) || l.trim() === "") break;
+	}
+	return params;
+}
+
+/** The `import ...` header lines of LAWS.bend, reused to build a goal scaffold. */
+export function lawImports(lawsText: string): string[] {
+	return lawsText.split("\n").filter((l) => /^import\s/.test(l));
+}
+
+/** Names of `def Laws.<name>` whose entire body is the reflexivity proof `{==}`. */
+export function trivialProofNames(proofText: string): string[] {
+	const lines = proofText.split("\n");
+	const out: string[] = [];
+	for (let i = 0; i < lines.length; i++) {
+		const m = /^def\s+Laws\.([A-Za-z0-9_]+)\s*\(/.exec(lines[i]);
+		if (!m) continue;
+		let j = i + 1;
+		while (j < lines.length && lines[j].trim() === "") j++;
+		if (lines[j]?.trim() === "{==}") out.push(m[1]);
+	}
+	return out;
+}
+
+/** The last `N laws` count asserted anywhere in PLAN.md, if any. */
+export function latestLawCountMention(planText: string): number | undefined {
+	const re = /(\d+)\s+laws\b/g;
+	let m: RegExpExecArray | null;
+	let last: number | undefined;
+	while ((m = re.exec(planText))) last = Number.parseInt(m[1], 10);
+	return last;
+}
+
+/**
+ * Consolidated view of the trust boundary: every line in PLAN.md that admits
+ * an assumption, gap, gate, downgrade, or fallback. Heuristic — a review aid,
+ * not a proof.
+ */
+export function extractGapLines(planText: string, max = 30): Array<{ heading: string; text: string }> {
+	const kw =
+		/(refinement gap|documented gap|remaining wall|gated on|stall-prone|not claimed|not machine-checked|downgrade|no CUDA|fallback|remains gated|assumption|not formalized|remaining work)/i;
+	const lines = planText.split("\n");
+	const hs = headings(planText);
+	const out: Array<{ heading: string; text: string }> = [];
+	for (let i = 0; i < lines.length; i++) {
+		if (!kw.test(lines[i])) continue;
+		if (/^#{1,6}\s/.test(lines[i])) continue; // skip heading echoes
+		let heading = "(top)";
+		for (const h of hs) {
+			if (h.line <= i) heading = h.title;
+			else break;
+		}
+		const t = lines[i].replace(/^\s*[-*]\s*/, "").replace(/\s+/g, " ").trim();
+		out.push({ heading, text: t.length > 220 ? `${t.slice(0, 220)}…` : t });
+		if (out.length >= max) break;
+	}
+	return out;
+}
+
 /** Newest mtime (ms) among `exts` files under `dir`, recursively. */
 export async function newestMtime(dir: string, exts = [".bend"]): Promise<number> {
 	let newest = 0;

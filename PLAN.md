@@ -854,3 +854,23 @@ Added a project-local pi extension at `.pi/extensions/bendverse/` (`index.ts` + 
 - `bend_status` — git HEAD/dirty, open §5 milestones, law list, newest Appendix A entry.
 
 All bend invocations are serialized (each saturates the cores). Pure helpers were unit-tested against the real docs and every tool was exercised end-to-end through a stubbed-`pi` harness. Activation: project-local extensions load once the project is trusted (`~/.pi/agent/trust.json`); `/reload` or restart picks them up in a running session.
+
+### A.25 — pi tooling, wave 2: proof-frontier and trust-boundary tools
+
+**Status:** developer-experience only. Engine, laws, and gate untouched; gate green (27 laws), fast and sim suites pass.
+
+**Motivation (honest).** A.24 wrapped command output — the cheapest layer. Re-examining where value and risk actually sit surfaced two pools the first wave ignored:
+
+1. **The proof frontier** (V2b-ii, V2b-iii, V3c) is the only remaining meaningful work, and A.24 gave it nothing.
+2. **The trust boundary** — proven vs. test-witnessed vs. assumed — is prose spread across §3, §5, §7 and 23 Appendix entries, and nothing derives it.
+
+Wave 2 adds four tools:
+
+- `bend_goal <law>` — prints the *elaborated* goal and context for a named law by generating a scratch proof ending in Bend's `?hole` goal printer. This is the missing proof loop; `neighbor_cancel`'s elaborated goal is otherwise impractical to reconstruct by hand.
+- `bend_spike <code>` — typechecks/runs a throwaway snippet at the project root (relative `./src/...` imports work), returns non-zero output as text (so `?hole` is readable), and deletes it. The scratch-spike pattern of A.14/A.18 is now first-class and auto-cleaned (`.bendverse-*.bend` gitignored).
+- `bend_lemmas [query]` — signature index of the project's own `src/*.bend` (77 decls in `bits.bend`, 68 in `parity.bend`, 30 in `settle.bend`). Proof reuse needs discoverability, and `bend_api` only covers Base; this is the project's own `bend base`.
+- `bend_audit` — one trust-boundary view: gate status, proof burden (6 trivial refl / 21 induction), PLAN law-count claims vs. actual (27 ✓), §5 open count, and every assumption/gap/downgrade/fallback line in PLAN.md labelled by section.
+
+**Deliberately not built (verified first).** A claims↔proofs integrity checker would be redundant: the gate already enforces it — deleting one `def Laws.<x>` yields `1 TODO found`. And `bend PROOF.bend --checkup` is unsound here (it checks `LAWS.bend` alone and reports "27 TODOs"), so it is not used for localization.
+
+**Caveat.** `bend_audit`'s gap list is heuristic prose extraction — a review aid, not a proof. The durable fix is a machine-readable gap registry plus a coreidea-rule ↔ law ↔ test traceability matrix, so status is *derived* rather than narrated. That touches human-owned text and awaits a decision.

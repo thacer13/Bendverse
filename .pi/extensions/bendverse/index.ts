@@ -18,13 +18,18 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { StringEnum } from "@earendil-works/pi-ai";
 import { Type } from "typebox";
-import { mkdir, readFile } from "node:fs/promises";
+import { mkdir, readFile, readdir, unlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { tmpdir } from "node:os";
 import {
 	capLines,
+	extractDecls,
+	extractGapLines,
+	findLawParams,
 	grepContext,
 	headings,
+	lawImports,
+	latestLawCountMention,
 	newestMtime,
 	numberedOutline,
 	parseAppendix,
@@ -37,6 +42,7 @@ import {
 	stripBendNoise,
 	tailLines,
 	toc,
+	trivialProofNames,
 } from "./lib.ts";
 
 const DEFAULT_TIMEOUT = 240_000;
@@ -398,6 +404,182 @@ export default function bendverse(pi: ExtensionAPI) {
 				`last appendix: ${lastAppendix}`,
 			];
 			return text(out.join("\n"));
+		},
+	});
+
+	// ---------------------------------------------------------------- lemmas
+	pi.registerTool({
+		name: "bend_lemmas",
+		label: "project lemma index",
+		description:
+			"Index the project's own `src/*.bend` declarations with signatures and line numbers, so a new proof can reuse what is already proven instead of re-deriving it. No query lists per-file counts; a query returns matching signatures (e.g. `swap`, `set`, `mask`, `parity`).",
+		promptSnippet: "Search the project's own src/ lemmas and signatures (proof reuse).",
+		promptGuidelines: [
+			"Use bend_lemmas to find existing proven lemmas in src/ before writing a new proof; use bend_api for Base, bend_lemmas for this project.",
+		],
+		parameters: Type.Object({
+			query: Type.Optional(Type.String({ description: "Case-insensitive text to match against names/signatures." })),
+			module: Type.Optional(Type.String({ description: "Restrict to one src file, e.g. bits, settle, parity." })),
+		}),
+		async execute(_id, params, _signal, _onUpdate, ctx) {
+			const dir = join(ctx.cwd, "src");
+			const files = (await readdir(dir).catch(() => [] as string[]))
+				.filter((f) => f.endsWith(".bend"))
+				.filter((f) => !params.module || f.includes(params.module))
+				.sort();
+
+			const decls: Array<{ file: string; line: number; kind: string; name: string; sig: string }> = [];
+			for (const f of files) {
+				const text = await readFile(join(dir, f), "utf8").catch(() => "");
+				decls.push(...extractDecls(f, text));
+			}
+
+			if (!params.query) {
+				const byFile = new Map<string, { defs: number; laws: number; types: number }>();
+				for (const d of decls) {
+					const e = byFile.get(d.file) ?? { defs: 0, laws: 0, types: 0 };
+					if (d.kind === "def") e.defs++;
+					else if (d.kind === "law") e.laws++;
+					else e.types++;
+					byFile.set(d.file, e);
+				}
+				const rows = [...byFile.entries()]
+					.sort((a, b) => a[0].localeCompare(b[0]))
+					.map(([f, e]) => `${f.padEnd(16)} ${String(e.defs).padStart(3)} defs  ${String(e.laws).padStart(2)} laws  ${e.types} types`);
+				return text(`# src/ declaration index\n${rows.join("\n")}\n\npass query=<text> to search signatures.`);
+			}
+
+			const q = params.query.toLowerCase();
+			const hits = decls
+				.filter((d) => d.name.toLowerCase().includes(q) || d.sig.toLowerCase().includes(q))
+				.sort((a, b) => Number(!a.name.toLowerCase().includes(q)) - Number(!b.name.toLowerCase().includes(q)));
+			if (hits.length === 0) return text(`No src/ declaration matches "${params.query}".`);
+			const shown = hits.slice(0, 40);
+			const blocks = shown.map((d) => `src/${d.file}:${d.line}\n${d.sig}`);
+			const more = hits.length > shown.length ? `\n\n… ${hits.length - shown.length} more matches` : "";
+			return text(blocks.join("\n\n") + more);
+		},
+	});
+
+	// ---------------------------------------------------------------- goal
+	pi.registerTool({
+		name: "bend_goal",
+		label: "show proof goal",
+		description:
+			"Print the elaborated goal and context for a named law in LAWS.bend. It generates a scratch proof ending in `?hole` (Bend's goal printer) and returns the compiler's goal output. Use this before writing or repairing a proof.",
+		promptSnippet: "Print the elaborated goal/context for a named law (proof-development loop).",
+		promptGuidelines: [
+			"Use bend_goal to see a law's elaborated goal before proving it, and bend_spike to print sub-goals by placing ?hole inside a candidate proof.",
+		],
+		parameters: Type.Object({
+			law: Type.String({ description: "Law name as declared in LAWS.bend, e.g. index_roundtrip." }),
+		}),
+		async execute(_id, params, signal, _onUpdate, ctx) {
+			return withBendLock(async () => {
+				const lawsText = await readFile(join(ctx.cwd, "LAWS.bend"), "utf8").catch(() => "");
+				const argNames = findLawParams(lawsText, params.law);
+				if (argNames === undefined) return text(`No law "${params.law}" declared in LAWS.bend.`);
+
+				const src = [
+					...new Set(["import Base", "import ./LAWS.bend as Laws", ...lawImports(lawsText)]),
+					"",
+					`def Laws.${params.law}(${argNames.join(", ")}):`,
+					"  ?hole",
+					"",
+				].join("\n");
+				const file = join(ctx.cwd, ".bendverse-goal.bend");
+				await writeFile(file, src, "utf8");
+				try {
+					const r = await execBend([basename(file)], ctx.cwd, signal, 120_000);
+					return text(r.out || "(bend produced no output)");
+				} finally {
+					await unlink(file).catch(() => undefined);
+				}
+			});
+		},
+	});
+
+	// ---------------------------------------------------------------- spike
+	pi.registerTool({
+		name: "bend_spike",
+		label: "run a scratch spike",
+		description:
+			"Typecheck/run a throwaway Bend snippet at the project root (relative imports like ./src/x.bend work), then delete it. Non-zero exit is returned as text, not an error, so `?hole` goal output is readable. Use for isolated lemma spikes and sub-goal probing.",
+		promptSnippet: "Run a throwaway Bend snippet at the project root and return its output.",
+		promptGuidelines: [
+			"Use bend_spike for isolated proof spikes and sub-goals; it cleans up after itself so nothing is left to commit.",
+		],
+		parameters: Type.Object({
+			code: Type.String({ description: "Full Bend source; may use ./src/... imports from the project root." }),
+			tail: Type.Optional(Type.Number({ description: "Return only the last N output lines (default: all)." })),
+		}),
+		async execute(_id, params, signal, _onUpdate, ctx) {
+			return withBendLock(async () => {
+				const file = join(ctx.cwd, ".bendverse-spike.bend");
+				await writeFile(file, params.code, "utf8");
+				try {
+					const r = await execBend([basename(file)], ctx.cwd, signal, 120_000);
+					let body = r.out || "(bend produced no output)";
+					if (params.tail) body = tailLines(body, params.tail).text;
+					return text(`$ bend .bendverse-spike.bend — exit ${r.code}\n\n${body}`);
+				} finally {
+					await unlink(file).catch(() => undefined);
+				}
+			});
+		},
+	});
+
+	// ---------------------------------------------------------------- audit
+	pi.registerTool({
+		name: "bend_audit",
+		label: "trust-boundary audit",
+		description:
+			"A review view of what the project actually guarantees: gate status, proof burden (trivial vs real), PLAN claims vs the machine artifacts, and every assumption/gap/downgrade/fallback admitted anywhere in PLAN.md, consolidated in one place. Heuristic prose extraction, clearly labelled.",
+		promptSnippet: "Audit the trust boundary: gate, proof burden, and all documented gaps.",
+		promptGuidelines: [
+			"Use bend_audit when planning verification work or deciding what is actually safe to build on; it lists the documented gaps in one place.",
+		],
+		parameters: Type.Object({}),
+		async execute(_id, _params, signal, _onUpdate, ctx) {
+			return withBendLock(async () => {
+				const [gate, lawsText, proofText, planText] = await Promise.all([
+					execBend(["PROOF.bend"], ctx.cwd, signal, 120_000),
+					readFile(join(ctx.cwd, "LAWS.bend"), "utf8").catch(() => ""),
+					readFile(join(ctx.cwd, "PROOF.bend"), "utf8").catch(() => ""),
+					readFile(join(ctx.cwd, "PLAN.md"), "utf8").catch(() => ""),
+				]);
+
+				const green = gate.code === 0 && /All terms check\./.test(gate.out);
+				const laws = parseLaws(lawsText);
+				const proofNames = extractDecls("PROOF.bend", proofText)
+					.filter((d) => d.kind === "def" && d.name.startsWith("Laws."))
+					.map((d) => d.name.slice("Laws.".length));
+				const proofSet = new Set(proofNames);
+				const missing = laws.filter((l) => !proofSet.has(l));
+				const extra = proofNames.filter((p) => !laws.includes(p));
+				const trivial = trivialProofNames(proofText);
+
+				const milestones = sectionByTitle(planText, "5. Milestones", 100000) ?? planText;
+				const { open, done } = parseMilestones(milestones);
+				const claimed = latestLawCountMention(planText);
+
+				const gaps = extractGapLines(planText, 40);
+				const out = [
+					"# Bendverse audit — trust boundary",
+					`gate:         ${green ? "green (All terms check.)" : `RED (exit ${gate.code})`}`,
+					`laws:         ${laws.length} declared; completeness is gate-enforced (a missing proof gives '1 TODO found')`,
+					`proof burden: ${trivial.length} trivial (refl), ${laws.length - trivial.length} by induction/rewrite`,
+					`  trivial:    ${trivial.join(", ") || "(none)"}`,
+					`  → confirm each trivial claim is a closed computation, not a weakened statement`,
+					`plan (§5):    ${done.length} done, ${open.length} open`,
+					`law counts:   PLAN last says ${claimed ?? "?"}; actual ${laws.length}${claimed === laws.length ? " ✓" : "  ← DRIFT"}`,
+				];
+				if (missing.length) out.push(`MISSING PROOFS: ${missing.join(", ")}`);
+				if (extra.length) out.push(`ORPHAN PROOFS:  ${extra.join(", ")}`);
+				out.push("", `## documented gaps / assumptions (heuristic; ${gaps.length} hits)`, "This is what is NOT guaranteed — review it.");
+				for (const g of gaps) out.push(`- [${g.heading}] ${g.text}`);
+				return text(out.join("\n"));
+			});
 		},
 	});
 }
