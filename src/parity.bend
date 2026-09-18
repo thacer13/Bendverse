@@ -566,3 +566,305 @@ def shr_shl1212(+u: Word(32n)) -> {Bits.shr_n(32n, 12n, Bits.shl_n(32n, Word.and
     Word.and(32n, u, m6()),
     shr_shl_kmask(12n, Word.and(32n, u, m6())),
     and_m6_kmask12(u))
+
+def pack6(+x: Word(32n), +y: Word(32n), +z: Word(32n)) -> Word(32n):
+  Word.or(32n,
+    Word.or(32n, Word.and(32n, x, m6()), Bits.shl_n(32n, Word.and(32n, z, m6()), 6n)),
+    Bits.shl_n(32n, Word.and(32n, y, m6()), 12n))
+
+def kmask6_comm() -> {Word.and(32n, kmask(6n), m6()) == m6() : Word(32n)}:
+  Equal.trans(Word(32n),
+    Word.and(32n, kmask(6n), m6()),
+    Word.and(32n, m6(), kmask(6n)),
+    m6(),
+    Bits.w_and_comm(32n, kmask(6n), m6()),
+    m6_kmask6())
+
+def shl_n_split(+W: Word(32n)) -> {Bits.shl_n(32n, W, 12n) == Bits.shl_n(32n, Bits.shl_n(32n, W, 6n), 6n) : Word(32n)}:
+  {==}
+
+def shr126_low6_zero(+W: Word(32n)) -> {Word.and(32n, Bits.shr_n(32n, 6n, Bits.shl_n(32n, W, 12n)), m6()) == Word.zero(32n) : Word(32n)}:
+  +e1 = shr_shl_kmask(6n, Bits.shl_n(32n, W, 6n))
+  +kw = Word.and(32n, Bits.shl_n(32n, W, 6n), kmask(6n))
+  +s1 = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 6n, Bits.shl_n(32n, W, 12n)),
+    Bits.shr_n(32n, 6n, Bits.shl_n(32n, Bits.shl_n(32n, W, 6n), 6n)),
+    kw,
+    Equal.cong(Word(32n), Word(32n), v => Bits.shr_n(32n, 6n, v),
+      Bits.shl_n(32n, W, 12n), Bits.shl_n(32n, Bits.shl_n(32n, W, 6n), 6n), shl_n_split(W)),
+    e1)
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 6n, Bits.shl_n(32n, W, 12n)), m6()),
+    Word.and(32n, kw, m6()),
+    Word.zero(32n),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, m6()),
+      Bits.shr_n(32n, 6n, Bits.shl_n(32n, W, 12n)), kw, s1),
+    Equal.trans(Word(32n),
+      Word.and(32n, kw, m6()),
+      Word.and(32n, Bits.shl_n(32n, W, 6n), m6()),
+      Word.zero(32n),
+      Equal.trans(Word(32n),
+        Word.and(32n, kw, m6()),
+        Word.and(32n, Bits.shl_n(32n, W, 6n), Word.and(32n, kmask(6n), m6())),
+        Word.and(32n, Bits.shl_n(32n, W, 6n), m6()),
+        Bits.w_and_assoc(32n, Bits.shl_n(32n, W, 6n), kmask(6n), m6()),
+        Equal.cong(Word(32n), Word(32n), v => Word.and(32n, Bits.shl_n(32n, W, 6n), v),
+          Word.and(32n, kmask(6n), m6()), m6(), kmask6_comm())),
+      and_shift_zero6(W)))
+
+def and_m6_shA6(+x: Word(32n)) -> {Word.and(32n, m6(), Bits.shr_n(32n, 6n, Word.and(32n, x, m6()))) == Word.zero(32n) : Word(32n)}:
+  Equal.trans(Word(32n),
+    Word.and(32n, m6(), Bits.shr_n(32n, 6n, Word.and(32n, x, m6()))),
+    Word.and(32n, m6(), Word.zero(32n)),
+    Word.zero(32n),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, m6(), v),
+      Bits.shr_n(32n, 6n, Word.and(32n, x, m6())), Word.zero(32n), shr6_and_m6_zero(x)),
+    Bits.w_and_zero(32n, m6()))
+
+def and_m6_shB6(+z: Word(32n)) -> {Word.and(32n, m6(), Bits.shr_n(32n, 6n, Bits.shl_n(32n, Word.and(32n, z, m6()), 6n))) == Word.and(32n, z, m6()) : Word(32n)}:
+  Equal.trans(Word(32n),
+    Word.and(32n, m6(), Bits.shr_n(32n, 6n, Bits.shl_n(32n, Word.and(32n, z, m6()), 6n))),
+    Word.and(32n, m6(), Word.and(32n, z, m6())),
+    Word.and(32n, z, m6()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, m6(), v),
+      Bits.shr_n(32n, 6n, Bits.shl_n(32n, Word.and(32n, z, m6()), 6n)), Word.and(32n, z, m6()), shr_shl66(z)),
+    and_m6_absorb(z))
+
+def shr6_high_zero(+z: Word(32n)) -> {Bits.shr_n(32n, 12n, Bits.shl_n(32n, Word.and(32n, z, m6()), 6n)) == Word.zero(32n) : Word(32n)}:
+  +W = Word.and(32n, z, m6())
+  +inner = Word.and(32n, W, kmask(6n))
+  +e1 = shr_shl_kmask(6n, W)
+  +s1 = Equal.cong(Word(32n), Word(32n), v => Bits.shr_n(32n, 6n, v),
+    Bits.shr_n(32n, 6n, Bits.shl_n(32n, W, 6n)), inner, e1)
+  +s2 = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 6n, inner),
+    Word.and(32n, Bits.shr_n(32n, 6n, W), Bits.shr_n(32n, 6n, kmask(6n))),
+    Word.zero(32n),
+    Bits.shr_n_and(32n, 6n, W, kmask(6n)),
+    Equal.trans(Word(32n),
+      Word.and(32n, Bits.shr_n(32n, 6n, W), Bits.shr_n(32n, 6n, kmask(6n))),
+      Word.and(32n, Word.zero(32n), Bits.shr_n(32n, 6n, kmask(6n))),
+      Word.zero(32n),
+      Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, Bits.shr_n(32n, 6n, kmask(6n))),
+        Bits.shr_n(32n, 6n, W), Word.zero(32n), shr6_and_m6_zero(z)),
+      and_zero_l(32n, Bits.shr_n(32n, 6n, kmask(6n)))))
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 12n, Bits.shl_n(32n, W, 6n)),
+    Bits.shr_n(32n, 6n, inner),
+    Word.zero(32n),
+    s1, s2)
+
+def or_zero_l(+a: Word(32n)) -> {Word.or(32n, Word.zero(32n), a) == a : Word(32n)}:
+  Equal.trans(Word(32n),
+    Word.or(32n, Word.zero(32n), a),
+    Word.or(32n, a, Word.zero(32n)),
+    a,
+    Bits.w_or_comm(32n, Word.zero(32n), a),
+    Bits.w_or_zero(32n, a))
+
+def mid6_pack(+x: Word(32n), +y: Word(32n), +z: Word(32n)) -> {Word.and(32n, Bits.shr_n(32n, 6n, pack6(x, y, z)), m6()) == Word.and(32n, z, m6()) : Word(32n)}:
+  +A = Word.and(32n, x, m6())
+  +B = Bits.shl_n(32n, Word.and(32n, z, m6()), 6n)
+  +Cc = Bits.shl_n(32n, Word.and(32n, y, m6()), 12n)
+  +shA = Bits.shr_n(32n, 6n, A)
+  +shB = Bits.shr_n(32n, 6n, B)
+  +shC = Bits.shr_n(32n, 6n, Cc)
+  +d1 = Bits.shr_n_or(32n, 6n, Word.or(32n, A, B), Cc)
+  +d2 = Bits.shr_n_or(32n, 6n, A, B)
+  +dsh = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 6n, Word.or(32n, Word.or(32n, A, B), Cc)),
+    Word.or(32n, Bits.shr_n(32n, 6n, Word.or(32n, A, B)), shC),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    d1,
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, shC), Bits.shr_n(32n, 6n, Word.or(32n, A, B)), Word.or(32n, shA, shB), d2))
+  +ea = and_m6_shA6(x)
+  +eb = and_m6_shB6(z)
+  +ec = Equal.trans(Word(32n),
+    Word.and(32n, m6(), shC),
+    Word.and(32n, shC, m6()),
+    Word.zero(32n),
+    Bits.w_and_comm(32n, m6(), shC),
+    shr126_low6_zero(Word.and(32n, y, m6())))
+  +eab_i = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, m6(), shB)),
+    Word.and(32n, m6(), shA), Word.zero(32n), ea)
+  +eab = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, m6(), shC)),
+    Word.or(32n, Word.and(32n, m6(), shA), Word.and(32n, m6(), shB)),
+    Word.or(32n, Word.zero(32n), Word.and(32n, m6(), shB)),
+    eab_i)
+  +ebc = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), v), Word.and(32n, m6(), shC)),
+    Word.and(32n, m6(), shB), Word.and(32n, z, m6()), eb)
+  +ecc = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, z, m6())), v),
+    Word.and(32n, m6(), shC), Word.zero(32n), ec)
+  +e1 = Equal.trans(Word(32n),
+    Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), m6()),
+    Word.and(32n, m6(), Word.or(32n, Word.or(32n, shA, shB), shC)),
+    Word.or(32n, Word.or(32n, Word.and(32n, m6(), shA), Word.and(32n, m6(), shB)), Word.and(32n, m6(), shC)),
+    Bits.w_and_comm(32n, Word.or(32n, Word.or(32n, shA, shB), shC), m6()),
+    Equal.sym(Word(32n),
+      Word.or(32n, Word.or(32n, Word.and(32n, m6(), shA), Word.and(32n, m6(), shB)), Word.and(32n, m6(), shC)),
+      Word.and(32n, m6(), Word.or(32n, Word.or(32n, shA, shB), shC)),
+      Bits.and_factor_l(32n, m6(), shA, shB, shC)))
+  +e2 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, Word.and(32n, m6(), shA), Word.and(32n, m6(), shB)), Word.and(32n, m6(), shC)),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, m6(), shB)), Word.and(32n, m6(), shC)),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, z, m6())), Word.zero(32n)),
+    eab, Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, m6(), shB)), Word.and(32n, m6(), shC)),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, z, m6())), Word.and(32n, m6(), shC)),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, z, m6())), Word.zero(32n)),
+      ebc, ecc))
+  +e3 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, z, m6())), Word.zero(32n)),
+    Word.or(32n, Word.zero(32n), Word.and(32n, z, m6())),
+    Word.and(32n, z, m6()),
+    Bits.w_or_zero(32n, Word.or(32n, Word.zero(32n), Word.and(32n, z, m6()))),
+    or_zero_l(Word.and(32n, z, m6())))
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 6n, Word.or(32n, Word.or(32n, A, B), Cc)), m6()),
+    Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), m6()),
+    Word.and(32n, z, m6()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, m6()),
+      Bits.shr_n(32n, 6n, Word.or(32n, Word.or(32n, A, B), Cc)), Word.or(32n, Word.or(32n, shA, shB), shC), dsh),
+    Equal.trans(Word(32n),
+      Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), m6()),
+      Word.or(32n, Word.or(32n, Word.and(32n, m6(), shA), Word.and(32n, m6(), shB)), Word.and(32n, m6(), shC)),
+      Word.and(32n, z, m6()),
+      e1, Equal.trans(Word(32n),
+        Word.or(32n, Word.or(32n, Word.and(32n, m6(), shA), Word.and(32n, m6(), shB)), Word.and(32n, m6(), shC)),
+        Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, z, m6())), Word.zero(32n)),
+        Word.and(32n, z, m6()),
+        e2, e3)))
+
+def high6_pack(+x: Word(32n), +y: Word(32n), +z: Word(32n)) -> {Bits.shr_n(32n, 12n, pack6(x, y, z)) == Word.and(32n, y, m6()) : Word(32n)}:
+  +A = Word.and(32n, x, m6())
+  +B = Bits.shl_n(32n, Word.and(32n, z, m6()), 6n)
+  +Cc = Bits.shl_n(32n, Word.and(32n, y, m6()), 12n)
+  +shA = Bits.shr_n(32n, 12n, A)
+  +shB = Bits.shr_n(32n, 12n, B)
+  +shC = Bits.shr_n(32n, 12n, Cc)
+  +d1 = Bits.shr_n_or(32n, 12n, Word.or(32n, A, B), Cc)
+  +d2 = Bits.shr_n_or(32n, 12n, A, B)
+  +dsh = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 12n, Word.or(32n, Word.or(32n, A, B), Cc)),
+    Word.or(32n, Bits.shr_n(32n, 12n, Word.or(32n, A, B)), shC),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    d1,
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, shC), Bits.shr_n(32n, 12n, Word.or(32n, A, B)), Word.or(32n, shA, shB), d2))
+  +eA = shr12_and_m6_zero(x)
+  +eB = shr6_high_zero(z)
+  +eC = shr_shl1212(y)
+  +s1 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    Word.or(32n, Word.or(32n, Word.zero(32n), shB), shC),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, y, m6())),
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, v, shB), shC), shA, Word.zero(32n), eA),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.zero(32n), shB), shC),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), shC),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, y, m6())),
+      Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), v), shC), shB, Word.zero(32n), eB),
+      Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), v), shC, Word.and(32n, y, m6()), eC)))
+  +s2 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, y, m6())),
+    Word.or(32n, Word.zero(32n), Word.and(32n, y, m6())),
+    Word.and(32n, y, m6()),
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, y, m6())), Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.zero(32n), or_zero_l(Word.zero(32n))),
+    or_zero_l(Word.and(32n, y, m6())))
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 12n, Word.or(32n, Word.or(32n, A, B), Cc)),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    Word.and(32n, y, m6()),
+    dsh,
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, shA, shB), shC),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, y, m6())),
+      Word.and(32n, y, m6()),
+      s1, s2))
+
+def u32_index_iz(+x: U32, +y: U32, +z: U32) -> {Grid.iz(Grid.index(x, y, z)) == U32.and(z, 63) : U32}:
+  match x:
+    case U32{+wx}:
+      match y:
+        case U32{+wy}:
+          match z:
+            case U32{+wz}:
+              Equal.cong(Word(32n), U32, t => U32{t},
+                Word.and(32n, Bits.shr_n(32n, 6n, pack6(wx, wy, wz)), Bits.mask(32n, 6n)),
+                Word.and(32n, wz, Bits.mask(32n, 6n)),
+                mid6_pack(wx, wy, wz))
+
+def u32_index_iy(+x: U32, +y: U32, +z: U32) -> {Grid.iy(Grid.index(x, y, z)) == U32.and(y, 63) : U32}:
+  match x:
+    case U32{+wx}:
+      match y:
+        case U32{+wy}:
+          match z:
+            case U32{+wz}:
+              Equal.cong(Word(32n), U32, t => U32{t},
+                Word.and(32n, Bits.shr_n(32n, 12n, pack6(wx, wy, wz)), Bits.mask(32n, 6n)),
+                Word.and(32n, wy, Bits.mask(32n, 6n)),
+                Equal.trans(Word(32n),
+                  Word.and(32n, Bits.shr_n(32n, 12n, pack6(wx, wy, wz)), Bits.mask(32n, 6n)),
+                  Word.and(32n, Word.and(32n, wy, Bits.mask(32n, 6n)), Bits.mask(32n, 6n)),
+                  Word.and(32n, wy, Bits.mask(32n, 6n)),
+                  Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, Bits.mask(32n, 6n)),
+                    Bits.shr_n(32n, 12n, pack6(wx, wy, wz)), Word.and(32n, wy, Bits.mask(32n, 6n)), high6_pack(wx, wy, wz)),
+                  Bits.w_and_absorb(32n, wy, Bits.mask(32n, 6n))))
+
+def u32_iz_neighbor(+i: U32, +dz: U32) -> {Grid.iz(Grid.neighbor(i, 0, 0, dz)) == U32.and(U32.add(Grid.iz(i), dz), 63) : U32}:
+  +x = U32.and(U32.add(Grid.ix(i), 0), 63)
+  +y = U32.and(U32.add(Grid.iy(i), 0), 63)
+  +z = U32.and(U32.add(Grid.iz(i), dz), 63)
+  +e1 = u32_index_iz(x, y, z)
+  +e2 = and63_absorb(U32.add(Grid.iz(i), dz))
+  Equal.trans(U32,
+    Grid.iz(Grid.index(x, y, z)),
+    U32.and(z, 63),
+    U32.and(U32.add(Grid.iz(i), dz), 63),
+    e1, e2)
+
+def u32_iy_neighbor(+i: U32, +dy: U32) -> {Grid.iy(Grid.neighbor(i, 0, dy, 0)) == U32.and(U32.add(Grid.iy(i), dy), 63) : U32}:
+  +x = U32.and(U32.add(Grid.ix(i), 0), 63)
+  +y = U32.and(U32.add(Grid.iy(i), dy), 63)
+  +z = U32.and(U32.add(Grid.iz(i), 0), 63)
+  +e1 = u32_index_iy(x, y, z)
+  +e2 = and63_absorb(U32.add(Grid.iy(i), dy))
+  Equal.trans(U32,
+    Grid.iy(Grid.index(x, y, z)),
+    U32.and(y, 63),
+    U32.and(U32.add(Grid.iy(i), dy), 63),
+    e1, e2)
+
+def neighbor_z_par(+i: U32, +dz: U32) -> {par32(Grid.iz(Grid.neighbor(i, 0, 0, dz))) == Bool.xor(par32(Grid.iz(i)), par32(dz)) : Bool}:
+  +izn = Grid.iz(Grid.neighbor(i, 0, 0, dz))
+  +addv = U32.add(Grid.iz(i), dz)
+  +e1 = u32_iz_neighbor(i, dz)
+  +e2 = par32_mask6(addv)
+  +e3 = par32_add(Grid.iz(i), dz)
+  Equal.trans(Bool,
+    par32(izn),
+    par32(U32.and(addv, 63)),
+    Bool.xor(par32(Grid.iz(i)), par32(dz)),
+    Equal.cong(U32, Bool, v => par32(v), izn, U32.and(addv, 63), e1),
+    Equal.trans(Bool,
+      par32(U32.and(addv, 63)),
+      par32(addv),
+      Bool.xor(par32(Grid.iz(i)), par32(dz)),
+      e2, e3))
+
+def neighbor_y_par(+i: U32, +dy: U32) -> {par32(Grid.iy(Grid.neighbor(i, 0, dy, 0))) == Bool.xor(par32(Grid.iy(i)), par32(dy)) : Bool}:
+  +iyn = Grid.iy(Grid.neighbor(i, 0, dy, 0))
+  +addv = U32.add(Grid.iy(i), dy)
+  +e1 = u32_iy_neighbor(i, dy)
+  +e2 = par32_mask6(addv)
+  +e3 = par32_add(Grid.iy(i), dy)
+  Equal.trans(Bool,
+    par32(iyn),
+    par32(U32.and(addv, 63)),
+    Bool.xor(par32(Grid.iy(i)), par32(dy)),
+    Equal.cong(U32, Bool, v => par32(v), iyn, U32.and(addv, 63), e1),
+    Equal.trans(Bool,
+      par32(U32.and(addv, 63)),
+      par32(addv),
+      Bool.xor(par32(Grid.iy(i)), par32(dy)),
+      e2, e3))

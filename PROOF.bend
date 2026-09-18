@@ -73,3 +73,9 @@ def Laws.parity_flip_pred(x):
 
 def Laws.neighbor_x_parity(i, dx):
   Parity.neighbor_x_par(i, dx)
+
+def Laws.neighbor_y_parity(i, dy):
+  Parity.neighbor_y_par(i, dy)
+
+def Laws.neighbor_z_parity(i, dz):
+  Parity.neighbor_z_par(i, dz)

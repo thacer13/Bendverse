@@ -88,3 +88,13 @@ law neighbor_x_parity:
   for i: U32
   for dx: U32
   {Parity.par32(Grid.ix(Grid.neighbor(i, dx, 0, 0))) == Bool.xor(Parity.par32(Grid.ix(i)), Parity.par32(dx)) : Bool}
+
+law neighbor_y_parity:
+  for i: U32
+  for dy: U32
+  {Parity.par32(Grid.iy(Grid.neighbor(i, 0, dy, 0))) == Bool.xor(Parity.par32(Grid.iy(i)), Parity.par32(dy)) : Bool}
+
+law neighbor_z_parity:
+  for i: U32
+  for dz: U32
+  {Parity.par32(Grid.iz(Grid.neighbor(i, 0, 0, dz))) == Bool.xor(Parity.par32(Grid.iz(i)), Parity.par32(dz)) : Bool}

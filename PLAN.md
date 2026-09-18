@@ -195,7 +195,7 @@ These carry the properties the engine claims and touch no runtime code; they are
   - [ ] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — the tree induction; the risky one.
   - [ ] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` instances — including "support writes preserve Φ" and "the bedrock floor keeps every crumble at `L ≥ 1`".
 - [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test. Sharded:
-  - [ ] **V3a Parity independence** — same-color cells are never 26-neighbors (pure index/parity arithmetic on the existing bit model; small, provable now).
+  - [x] **V3a Parity independence** — same-color cells are never 26-neighbors (pure index/parity arithmetic on the existing bit model; small, provable now). (See A.13–A.14.)
   - [ ] **V3b Priority is total and local** — among same-phase movers targeting one cell, scan order yields a unique winner and the losers observe it occupied; comparison radius ≤2 (medium).
   - [ ] **V3c Schedule invariance** — a region-split fold equals the sequential fold; builds on V3a+V3b. Large and stall-prone: fallback is V3a+V3b proven with V3c kept as a documented gap.
 
@@ -569,3 +569,38 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 - Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
 
 **Recommended next:** finish V3a's z/y extraction (small, same technique), then V3b (total/local priority). The alternative is to defer y/z and start **V3b**, then circle back; the interleave in A.12 favours finishing V3a first.
+
+### A.14 — V3a complete: y/z field extraction + all-axis neighbor parity
+
+**Status:** V3a **complete** (§5 box checked). Continues A.13 (x-axis + parity bit model). New laws in `LAWS.bend`; `src/parity.bend` and `src/bits.bend` extended. Engine untouched; gate green; fast and simulation suites pass.
+
+**What A.13 left open.** The y/z fields (bits 12–17 / 6–11 of the packed index) force `shr_n`, and `Word.shl`/`Word.shr` are pattern-match definitions that get *stuck* on the symbolic `Word.and(u, mask(n,6))`. `{==}` cannot close the extraction; a shift/mask induction library is required.
+
+**Deliverables (`src/bits.bend`, general shift lemmas)**
+- `shr_pad_and` / `shr_and`: one-step `shr` distributes over `and` (pointwise, via `shr.pad`).
+- `shr_n_and` / `shr_n_or` / `shr_n_zero`: iterated versions (the `or` form restates Base `shl/shr` distributivity at `shr_n`).
+- `shr_pad_shl_put` / `shr_shl_one`: the one-step shift-cancel `Word.shr(Word.shl(w)) == Word.and(w, mask(n, n-1))`, proved via a padded helper rather than a direct induction.
+- `and_ones`: `Word.and(w, mask(n,n)) == w`.
+
+**Deliverables (`src/parity.bend`, clear-top mask library)**
+- `kmask(k)` — the recursive "top k bits cleared" mask (`kmask(0)` all ones, `kmask(1+q)=shr(kmask(q))`), with `mask31_eq_kmask1`, `shr_kmask`, `shr_kmask1`, `kmask_nest`, and the concrete `kmask(6) = mask(32,26)`, `kmask(12) = mask(32,20)`.
+- `shr_shl_kmask(k, X)`: **the spike that unblocked V3a** — `shr_n(k, shl_n(X,k)) == and(X, kmask(k))` for arbitrary `X`. Induction uses `shr_shl_one` + `shr_n_and` + `shr_kmask` + `kmask_nest`, and works because the clear-top masks nest (`kmask(k+1) ⊆ kmask(k)`).
+- `shr_shl66` / `shr_shl1212`: the masked-aligned cases `shr_n(k, shl_n(and(u,6),k)) = and(u,6)` for k = 6, 12.
+- `pack6`; `mid6_pack` (`and(shr_n(pack6,6),6) = and(z,6)`) and `high6_pack` (`shr_n(pack6,12) = and(y,6)`), assembled from `shr_n_or`, the aligned cancellations, and the "shifted-out contribution is zero" facts (`shr126_low6_zero`, `shr6_high_zero`).
+- U32 lifts `u32_index_iz` / `u32_index_iy` and `u32_iz_neighbor` / `u32_iy_neighbor`, mirroring `u32_ix_neighbor`.
+- `neighbor_z_par` / `neighbor_y_par`: `par32(iz(neighbor(i,0,0,dz))) == xor(par32(iz(i)), par32(dz))`, likewise y.
+
+**Laws appended (21 total; existing laws untouched)**
+- `neighbor_y_parity`, `neighbor_z_parity` (x was `neighbor_x_parity` in A.13). Runtime twin **T10** extended to all three axes (4096 samples).
+
+**Why V3a is now complete.** The phase color is exactly `(x&1) | ((y&1)<<1) | ((z&1)<<2)`, i.e. the three coordinate parities; `neighbor_*_parity` says an odd delta in an axis flips that axis's color bit. Since every 26-neighbor differs by `±1` in some coordinate and `par32(±1) = True`, any two 26-neighbors differ in at least one color bit. Same-color cells therefore cannot be 26-neighbors, which is the non-adjacency premise behind the §2.4 phase argument and §2.5 single-writer tie-break. (The corollary "color words differ", from a differing parity bit, is the immediate contrapositive of `Equal.cong`; no packed-component reasoning is needed.)
+
+**Process note.** This was executed exactly as sharded in A.13/A.14 planning: YZ-0 and YZ-1 (distribution + mask-to-zero) landed and committed first; YZ-2's shift-cancel was treated as an isolated spike in a throwaway `scratch.bend`, and the clear-top `kmask` route closed it before any extraction work began. The stop rule (fall back to a documented gap if the spike stalled) was not needed.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (21 laws).
+- `bend src/parity.bend` / `bend src/bits.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T10, ~1.2s.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
+
+**Recommended next:** **V3b** (priority is total and local: unique scan-order winner among same-phase movers, comparison radius ≤2), then **M7a** (parallel worldgen) per the A.12 interleave.

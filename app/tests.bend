@@ -115,7 +115,9 @@ def parity_go(fuel: Nat, +i: U32, bad: U32) -> U32:
       o1 = bool_eq(Parity.par32(U32.add(i, 1)), Bool.not(Parity.par32(i)))
       o2 = bool_eq(Parity.par32(U32.add(i, 4294967295)), Bool.not(Parity.par32(i)))
       o3 = bool_eq(Parity.par32(Grid.ix(Grid.neighbor(i, i, 0, 0))), Bool.xor(Parity.par32(Grid.ix(i)), Parity.par32(i)))
-      all = Bool.and(Bool.and(o1, o2), o3)
+      o4 = bool_eq(Parity.par32(Grid.iy(Grid.neighbor(i, 0, i, 0))), Bool.xor(Parity.par32(Grid.iy(i)), Parity.par32(i)))
+      o5 = bool_eq(Parity.par32(Grid.iz(Grid.neighbor(i, 0, 0, i))), Bool.xor(Parity.par32(Grid.iz(i)), Parity.par32(i)))
+      all = Bool.and(Bool.and(Bool.and(Bool.and(o1, o2), o3), o4), o5)
       parity_go(p, U32.add(i, 1), inc_if_false(all, bad))
 
 def parity_bad() -> U32:
