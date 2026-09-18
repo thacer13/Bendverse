@@ -369,3 +369,35 @@ def neighbor_x_par(+i: U32, +dx: U32) -> {par32(Grid.ix(Grid.neighbor(i, dx, 0, 
       par32(addv),
       Bool.xor(par32(Grid.ix(i)), par32(dx)),
       e2, e3))
+
+def shr6_and_m6_zero(+u: Word(32n)) -> {Bits.shr_n(32n, 6n, Word.and(32n, u, Bits.mask(32n, 6n))) == Word.zero(32n) : Word(32n)}:
+  +a = Bits.shr_n(32n, 6n, u)
+  +mid = Word.and(32n, a, Bits.shr_n(32n, 6n, Bits.mask(32n, 6n)))
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 6n, Word.and(32n, u, Bits.mask(32n, 6n))),
+    mid,
+    Word.zero(32n),
+    Bits.shr_n_and(32n, 6n, u, Bits.mask(32n, 6n)),
+    Equal.trans(Word(32n),
+      mid,
+      Word.and(32n, a, Word.zero(32n)),
+      Word.zero(32n),
+      Equal.cong(Word(32n), Word(32n), v => Word.and(32n, a, v),
+        Bits.shr_n(32n, 6n, Bits.mask(32n, 6n)), Word.zero(32n), shr6_m6()),
+      Bits.w_and_zero(32n, a)))
+
+def shr12_and_m6_zero(+u: Word(32n)) -> {Bits.shr_n(32n, 12n, Word.and(32n, u, Bits.mask(32n, 6n))) == Word.zero(32n) : Word(32n)}:
+  +a = Bits.shr_n(32n, 12n, u)
+  +mid = Word.and(32n, a, Bits.shr_n(32n, 12n, Bits.mask(32n, 6n)))
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 12n, Word.and(32n, u, Bits.mask(32n, 6n))),
+    mid,
+    Word.zero(32n),
+    Bits.shr_n_and(32n, 12n, u, Bits.mask(32n, 6n)),
+    Equal.trans(Word(32n),
+      mid,
+      Word.and(32n, a, Word.zero(32n)),
+      Word.zero(32n),
+      Equal.cong(Word(32n), Word(32n), v => Word.and(32n, a, v),
+        Bits.shr_n(32n, 12n, Bits.mask(32n, 6n)), Word.zero(32n), shr12_m6()),
+      Bits.w_and_zero(32n, a)))
