@@ -4,6 +4,7 @@ import ./src/bits.bend as Bits
 import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
 import ./src/potential.bend as Pot
+import ./src/settle.bend as Settle
 
 def Laws.sanity():
   {==}
@@ -47,3 +48,18 @@ def Laws.crumble_decreases(d, G, L):
 
 def Laws.budget_exhausts(m):
   Pot.spend_exhausts(m)
+
+def Laws.potential_additive(xs, ys):
+  Settle.suml_append(xs, ys)
+
+def Laws.fall_lowers_potential(l, r, D, G, L):
+  Settle.fall_lowers_world(l, r, D, G, L)
+
+def Laws.crumble_lowers_potential(l, r, d, G, L):
+  Settle.crumble_lowers_world(l, r, d, G, L)
+
+def Laws.strict_events_bounded(xs):
+  Settle.suml_incs(xs)
+
+def Laws.settling_budget(p):
+  Settle.burn_exhausts(p)

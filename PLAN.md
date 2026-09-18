@@ -190,7 +190,7 @@ Milestone IDs (`M0`–`M5`, `V1`…) are **stable historical labels**, not a man
 These carry the properties the engine claims and touch no runtime code; they are scheduled by what they unlock, not by number.
 
 - [x] **V1** Stability kernel: proven Nat-arithmetic library + Φ-decrease for fall/crumble + budget exhaustion. Formalizes the settling assumption M4/M8 rest on. See A.7.
-- [ ] **V2 Global settling** (recommended next): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle.
+- [ ] **V2 Global settling** (in progress — measure kernel + global composition landed, `Array` refinement gap documented; see A.9): a `Sim.tick` model whose Φ-measure decreases on every activity-producing event, refined — or with the refinement gap explicitly documented — against the `Array` implementation. Certifies M4's zero-write fixed point and **gates M8**, since chunk sleeping is unsound if a disturbance need not settle.
 - [ ] **V3 Order-independence** (only with M7, optional): a phase fold's result is invariant across the schedules M7 admits, given the §2.5 priority. Turns M7's correctness into a theorem instead of a bit-for-bit test.
 
 ### Visibility (independent of verification)
@@ -425,3 +425,32 @@ Then every swap changes Φ by `−(d_heavy − d_light) < 0`, and every crumble 
 - **§5** regrouped. Milestone IDs (`M0`–`M5`, `V1`…) are now stated to be **stable historical labels, not execution order**; the list is grouped by purpose (Foundation / Verification layers / Visibility / Scale) with gates explicit. **V2 (global settling) is recommended next and gates M8**; **V3 (order-independence)** is introduced as M7's enabling lemma; **M6 may run in parallel with V2**; M7/M8 remain droppable.
 - **Rationale:** settling is the only claimed property with a known refinement gap, and it is load-bearing for the M4 zero-write claim (T4b is currently the only witness) and for M8 chunk sleeping. This follows the A.7 recommendation and the surrounding human discussion; the previous strictly linear M6 → M7 → M8 ordering had implied that scale could precede its own soundness argument.
 - **No behavior change:** gate green, `app/tests.bend` and `app/simtests.bend` unchanged.
+
+### A.9 — V2 in progress: potential-sum model, global composition, event bound
+
+**Status:** in progress (not checked off). New `src/settle.bend`; **5 new laws** (16 total). Gate green; engine untouched; all tests pass. Scoped as the "documented refinement gap" branch of V2's acceptance, not the full `Array` refinement.
+
+**Motivation / scope.** A.7 proved the per-event Φ kernel but left the *global composition* as a documented gap (that a whole tick is a sum of such decreases over the array). This entry makes the composition concrete at the level of a formal world-as-sum model and states exactly what remains to link it to `Array<U32>`.
+
+**Deliverables**
+- `src/settle.bend`:
+  - `suml` — the potential of a finite world represented as a `List<Nat>` of per-site potentials (`density · level`).
+  - `suml_append`, `suml_mid` — additivity over concatenation and over a middle segment.
+  - `replace_decreases` — **the composition theorem**: if a middle segment `before` is replaced by `after` with `suml(after) + G == suml(before)`, the whole world's potential drops by exactly `G`. This is the missing "local event ⇒ global decrease" step (all other cells untouched).
+  - `fall_before` / `fall_after` / `swap_segment_decreases` / `fall_lowers_world` — instantiate the two-site vertical swap with the real density table (heavy at level `1+L`, light at `L`; drop = density gap `G`), reusing `Pot.fall_decreases`.
+  - `crumble_segment_decreases` / `crumble_lowers_world` — single-site density drop at level `L` (drop = `G·L`), reusing `Pot.crumble_decreases`.
+  - `incs` / `len` / `suml_incs` — encode each strict event's drop as `1+e`; proves total drop `== len + slack`, i.e. **#events ≤ total drop**, bounding the event count by the initial potential.
+  - `burn` / `burn_exhausts` — the conservative "one unit per active tick" budget: `burn(p, p) == 0`, i.e. after `p` non-stuttering ticks the potential is exhausted and every later tick stutters.
+- `LAWS.bend` (appended): `potential_additive`, `fall_lowers_potential`, `crumble_lowers_potential`, `strict_events_bounded`, `settling_budget`.
+- `PROOF.bend`: the five proofs delegate to the module lemmas.
+
+**Proven vs. remaining gap (honest scope)**
+- **Proven:** additivity of the potential; a local swap/crumble decreases the global potential by the exact density gap; every strict event is a ≥1 drop, so the event count over any run is at most the initial potential; the unit-drop budget exhausts.
+- **Remaining (refinement gap, same kind as A.6/A.7):** the model world is a `List<Nat>` of site potentials, not `Array<U32>`. Not yet formalized: (a) `Sim`'s actual global Φ as a fold over `ALeaf`/`ANode` equal to `suml` on the corresponding list; (b) that each `Rules.step` write is exactly one `replace_decreases` instance and every non-written cell is untouched; (c) that `Support.pass` writes change no potential (material, hence density, is preserved) and that the bedrock floor keeps every crumble at level `L ≥ 1`, so its drop is strict; (d) monotonicity of `burn` in drop size (a real tick drops by ≥1, which only settles faster). Items (a)–(b) are the modeling work to reach an end-to-end `Sim` settling theorem.
+- **Consequence:** V2's weaker acceptance branch ("refinement gap explicitly documented") is met; the stronger "refined against the `Array` implementation" branch is not. Keep V2 open until (a)–(b) land; M8 remains gated on it.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (16 laws); `bend src/settle.bend` → `All terms check.`
+- `bend app/tests.bend` (JS) → all PASS; native `app/simtests.bend` → T1, T2, T3, T4, T4b, T9 all PASS. No engine code touched.
+
+**Recommended next:** continue V2 toward the `Array`/tick refinement ((a)–(b) above), or begin M6 in parallel (visibility; independent).

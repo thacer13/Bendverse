@@ -2,6 +2,7 @@ import Base
 import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
 import ./src/potential.bend as Pot
+import ./src/settle.bend as Settle
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -44,3 +45,32 @@ law crumble_decreases:
 law budget_exhausts:
   for m: Nat
   {Pot.spend(m, m) == 0n : Nat}
+
+law potential_additive:
+  for +xs: +List<Nat>
+  for +ys: +List<Nat>
+  {Settle.suml(Settle.app(xs, ys)) == Nat.add(Settle.suml(xs), Settle.suml(ys)) : Nat}
+
+law fall_lowers_potential:
+  for +l: +List<Nat>
+  for +r: +List<Nat>
+  for D: Nat
+  for G: Nat
+  for L: Nat
+  {Nat.add(Settle.suml(Settle.app(l, Settle.app(Settle.fall_after(D, G, L), r))), G) == Settle.suml(Settle.app(l, Settle.app(Settle.fall_before(D, G, L), r))) : Nat}
+
+law crumble_lowers_potential:
+  for +l: +List<Nat>
+  for +r: +List<Nat>
+  for d: Nat
+  for G: Nat
+  for L: Nat
+  {Nat.add(Settle.suml(Settle.app(l, Settle.app([Pot.phi(d, L)], r))), Pot.phi(G, L)) == Settle.suml(Settle.app(l, Settle.app([Pot.phi(Nat.add(d, G), L)], r))) : Nat}
+
+law strict_events_bounded:
+  for +xs: +List<Nat>
+  {Settle.suml(Settle.incs(xs)) == Nat.add(Settle.len(xs), Settle.suml(xs)) : Nat}
+
+law settling_budget:
+  for p: Nat
+  {Settle.burn(p, p) == 0n : Nat}
