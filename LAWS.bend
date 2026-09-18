@@ -3,6 +3,7 @@ import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
 import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
+import ./src/parity.bend as Parity
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -74,3 +75,16 @@ law strict_events_bounded:
 law settling_budget:
   for p: Nat
   {Settle.burn(p, p) == 0n : Nat}
+
+law parity_flip_succ:
+  for x: U32
+  {Parity.par32(U32.add(x, 1)) == Bool.not(Parity.par32(x)) : Bool}
+
+law parity_flip_pred:
+  for x: U32
+  {Parity.par32(U32.add(x, 4294967295)) == Bool.not(Parity.par32(x)) : Bool}
+
+law neighbor_x_parity:
+  for i: U32
+  for dx: U32
+  {Parity.par32(Grid.ix(Grid.neighbor(i, dx, 0, 0))) == Bool.xor(Parity.par32(Grid.ix(i)), Parity.par32(dx)) : Bool}

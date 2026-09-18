@@ -2,6 +2,7 @@ import Base
 import ../src/grid.bend as Grid
 import ../src/cell.bend as Cell
 import ../src/worldgen.bend as Worldgen
+import ../src/parity.bend as Parity
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -103,6 +104,23 @@ def build_bad() -> U32:
   v = Grid.value_at(w, Grid.index(32, 10, 32))
   is_bad(U32.is_eq(v, Worldgen.gen(32, 10, 32, 42)))
 
+def bool_eq(a: Bool, b: Bool) -> Bool:
+  Bool.not(Bool.xor(a, b))
+
+def parity_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      o1 = bool_eq(Parity.par32(U32.add(i, 1)), Bool.not(Parity.par32(i)))
+      o2 = bool_eq(Parity.par32(U32.add(i, 4294967295)), Bool.not(Parity.par32(i)))
+      o3 = bool_eq(Parity.par32(Grid.ix(Grid.neighbor(i, i, 0, 0))), Bool.xor(Parity.par32(Grid.ix(i)), Parity.par32(i)))
+      all = Bool.and(Bool.and(o1, o2), o3)
+      parity_go(p, U32.add(i, 1), inc_if_false(all, bad))
+
+def parity_bad() -> U32:
+  parity_go(U32.to_nat(4096), 0, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -112,3 +130,4 @@ def main() -> IO(Unit):
     report("T6 gen determinism", gen_det_bad())
     report("T7 terrain structure", terrain_bad())
     report("T8 build matches gen", build_bad())
+    report("T10 parity flip + neighbor x", parity_bad())

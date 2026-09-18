@@ -5,6 +5,7 @@ import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
 import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
+import ./src/parity.bend as Parity
 
 def Laws.sanity():
   {==}
@@ -63,3 +64,12 @@ def Laws.strict_events_bounded(xs):
 
 def Laws.settling_budget(p):
   Settle.burn_exhausts(p)
+
+def Laws.parity_flip_succ(x):
+  Parity.u32_add_one_flips(x)
+
+def Laws.parity_flip_pred(x):
+  Parity.u32_add_ones_flips(x)
+
+def Laws.neighbor_x_parity(i, dx):
+  Parity.neighbor_x_par(i, dx)

@@ -536,3 +536,36 @@ or its segment form `l ++ [pot_at(v,i)] ++ r`. Proving it needs: (i) an inductio
 **GPU expectation (recorded).** For the current 64³ world a GPU is unlikely to help: too little work, discrete VRAM transfer cost, and divergent cellular work vs. the GPU's uniform-numeric sweet spot. Worldgen/noise are the compelling GPU kernels; real payoff is at M8 scale. Near-term wins are expected from CPU forks (M7a/M7c).
 
 **Not in scope / left as-is:** window centering (Bend's `window_open.c` creates at `(0,0)` with fixed size hints; a Hyprland rule experiment was reverted and the config left clean) and window sizing (draggable, left small).
+
+### A.13 — V3a in progress: parity bit model + x-axis neighbor parity proven
+
+**Status:** V3a **partial** (checkbox in §5 left unchecked). New `src/parity.bend`; **3 new laws** (19 total). `src/bits.bend` gained the generic `b_and_assoc` / `w_and_assoc`. Engine untouched; gate green; fast and simulation suites pass.
+
+**Motivation.** §5 sequences **V3a** first ("same-color cells are never 26-neighbors"). The mathematical content is parity: the phase color is `(x&1) | ((y&1)<<1) | ((z&1)<<2)`, and a 26-neighbor differs by `±1` in some coordinate, which flips that coordinate's low bit. This entry lands the parity arithmetic and one full axis end-to-end; the other two axes remain.
+
+**Deliverables (`src/parity.bend`)**
+- Word-level low bit `bit0` and the carry facts: `adc_con_head` (head of `Word.adc.con` is the sum bit), `full_add_fst_true` (`full_add(a,True,False)`'s sum is `not a`), `full_add_fst_xor` (sum is `xor`).
+- `add_one_flips` / `add_ones_flips`: `bit0(add(a, one(n))) == not(bit0 a)` and the same for `ones(n)` (all-ones). These are the +1 / −1 engine deltas.
+- `lsb_add`: **general** — `bit0(Word.add(a,b)) == xor(bit0 a, bit0 b)`. Consequence: adding an odd word flips the low bit; the LSB of a sum is the xor of the LSBs (the carry-in is always 0 at bit 0).
+- `par32` (`U32` low bit) with `par32_add`, and the U32 laws `u32_add_one_flips` / `u32_add_ones_flips`.
+- Mask/parity: `bit0_and_mask6` (`par32(and(w,63)) == par32(w)`).
+- Index extraction: the bit library `low6_pack` proves the low six bits of the packed index are exactly the x field, with supporting lemmas (`and_zero_l`, `shl_zero`, `and_shift_zero6/12`, `and_m6_absorb`, `and_m6_shift6/12_zero`, `or_zero_zero`). `u32_index_ix` lifts it to `U32`, so `Grid.ix(Grid.index(x,y,z)) == and(x,63)`.
+- Engine-level: `u32_ix_neighbor` (`Grid.ix(Grid.neighbor(i,dx,dy,dz)) == and(add(Grid.ix(i),dx),63)`) and `neighbor_x_par`: **`par32(Grid.ix(Grid.neighbor(i,dx,0,0))) == xor(par32(Grid.ix(i)), par32(dx))`**.
+
+**Laws appended (`LAWS.bend`; existing laws untouched)**
+- `parity_flip_succ` — `par32(U32.add(x,1)) == not(par32(x))`.
+- `parity_flip_pred` — `par32(U32.add(x,0xFFFFFFFF)) == not(par32(x))`.
+- `neighbor_x_parity` — the x-axis neighbor parity law above. A runtime twin was added to `app/tests.bend` as **T10** (4096 samples).
+
+**What is proven vs. remaining (honest scope)**
+- **Proven:** the LSB arithmetic (sum-LSB is xor; ±1 and any odd delta flip it), the x-field extraction from the packed index, and the x-axis neighbor parity law. Since an odd `dx` flips the x color bit, two x-neighbors cannot share a color.
+- **Remaining for full V3a:** the analogous **z** and **y** field extractions (`Grid.iz`/`Grid.iy` of `Grid.index`), which need `shr` to distribute over the packed `or` (`shr_n_or`), `shr ∘ and` (`shr_and`), and cancellation of `shr_n ∘ shl_n` under the 6-bit masks. These are the same style of bit induction as `low6_pack`; once landed, the 26-neighborhood corollary follows because a nonzero delta in `{−1,0,1}³` has an odd component. Until then the full "same-color ⇒ not neighbor" statement is **not** machine-checked on all axes; only the x-axis is.
+- **Also not machine-checked:** the link from `par32(Grid.ix(·))` to the packed color word being unequal (trivial — bit 0 of `color_of` is `and(ix,1)`, whose LSB is the x parity; the remaining composition is a one-line `Equal.cong` once the other axes land).
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (19 laws).
+- `bend src/parity.bend` → `All terms check.`
+- `bend app/tests.bend` (JS, tick-free) → all PASS incl. T10, ~1s.
+- Native `bend app/simtests.bend -o bin && ./bin` → T1, T2, T3, T4, T4b, T9 all PASS. Engine untouched.
+
+**Recommended next:** finish V3a's z/y extraction (small, same technique), then V3b (total/local priority). The alternative is to defer y/z and start **V3b**, then circle back; the interleave in A.12 favours finishing V3a first.

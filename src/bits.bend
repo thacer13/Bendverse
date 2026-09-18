@@ -233,6 +233,35 @@ def and_shl(n: Nat, w: Word(n), m: Word(n)) -> {Word.and(n, w, Word.shl(n, m)) =
           %b_and_false(wh) : {WCon{Bool.and(wh, False{}), Word.and(p2, wt, Word.shl.put(p2, mh, mt))} == WCon{_, Word.and(p2, wt, Word.shl.put(p2, mh, mt))} : Word.Con<p2>}
           {==}
 
+def b_and_assoc(a: Bool, b: Bool, c: Bool) -> {Bool.and(Bool.and(a, b), c) == Bool.and(a, Bool.and(b, c)) : Bool}:
+  match a b c:
+    case False{} False{} False{}: {==}
+    case False{} False{} True{}: {==}
+    case False{} True{} False{}: {==}
+    case False{} True{} True{}: {==}
+    case True{} False{} False{}: {==}
+    case True{} False{} True{}: {==}
+    case True{} True{} False{}: {==}
+    case True{} True{} True{}: {==}
+
+def w_and_assoc(+n: Nat, +a: Word(n), +b: Word(n), +c: Word(n)) -> {Word.and(n, Word.and(n, a, b), c) == Word.and(n, a, Word.and(n, b, c)) : Word(n)}:
+  match n:
+    case 0n:
+      match a b c: case WNil{} WNil{} WNil{}: {==}
+    case 1n+p:
+      match a b c:
+        case WCon{+ah, +at} WCon{+bh, +bt} WCon{+ch, +ct}:
+          +T1 = Word.and(p, Word.and(p, at, bt), ct)
+          +T2 = Word.and(p, at, Word.and(p, bt, ct))
+          +ba = b_and_assoc(ah, bh, ch)
+          +ih = w_and_assoc(p, at, bt, ct)
+          Equal.trans(Word(1n+p),
+            WCon{Bool.and(Bool.and(ah, bh), ch), T1},
+            WCon{Bool.and(Bool.and(ah, bh), ch), T2},
+            WCon{Bool.and(ah, Bool.and(bh, ch)), T2},
+            Equal.cong(Word(p), Word(1n+p), t => WCon{Bool.and(Bool.and(ah, bh), ch), t}, T1, T2, ih),
+            Equal.cong(Bool, Word(1n+p), h => WCon{h, T2}, Bool.and(Bool.and(ah, bh), ch), Bool.and(ah, Bool.and(bh, ch)), ba))
+
 def b_and_or(a: Bool, b: Bool, c: Bool) -> {Bool.and(a, Bool.or(b, c)) == Bool.or(Bool.and(a, b), Bool.and(a, c)) : Bool}:
   match a b c:
     case False{} False{} False{}: {==}
