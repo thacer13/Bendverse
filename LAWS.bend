@@ -238,6 +238,13 @@ law array_point_write_preserves_count:
   for +h: {Count.nempty(v) == Count.nempty(Tick.tget(t, n, i)) : Nat}
   {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, v)))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
 
+law array_point_write_count_balance:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +v: U32
+  {Nat.add(Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, v)))), Refine.nfst(Count.cnt_chg_m(t, n, i, v))) == Nat.add(Settle.suml(Count.to_counts(Refine.pack(t))), Refine.nsnd(Count.cnt_chg_m(t, n, i, v))) : Nat}
+
 law array_support_write_preserves_count:
   for +t: Refine.PT
   for +n: U32

@@ -1,4 +1,5 @@
 import Base
+import ./nat.bend as NatL
 import ./cell.bend as Cell
 import ./settle.bend as S
 import ./refine.bend as R
@@ -77,6 +78,183 @@ def cnts_m(t: R.PT) -> +List<Nat>:
     case R.PN{+xs, +ys}:
       S.app(cnts_m(xs), cnts_m(ys))
 
+# The written list and the (displaced, written) count pair, mirroring
+# `pots_swap_m`/`chg_m` but with no positional dependence (counts need no base).
+def cnts_swap_m(t: R.PT, +n: U32, +i: U32, +v: U32) -> +List<Nat>:
+  match t:
+    case R.PL{x}:
+      [nempty(v)]
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      +z = U32.is_lt(i, h)
+      Bool.pick(List<&2, Nat>, z,
+        S.app(cnts_swap_m(xs, h, i, v), cnts_m(ys)),
+        S.app(cnts_m(xs), cnts_swap_m(ys, h, U32.sub(i, h), v)))
+
+def cnt_chg_m(t: R.PT, +n: U32, +i: U32, +v: U32) -> Nat & Nat:
+  match t:
+    case R.PL{x}:
+      (nempty(x), nempty(v))
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      +z = U32.is_lt(i, h)
+      Bool.pick(Nat & Nat, z,
+        cnt_chg_m(xs, h, i, v),
+        cnt_chg_m(ys, h, U32.sub(i, h), v))
+
+# The written count list equals the model swap's count list.
+def cnts_corr_if(
+  +xs: R.PT, +ys: R.PT, +n: U32, +i: U32, +v: U32, +z: Bool,
+  ihx: {cnts_m(R.swap_m(xs, U32.shr(n), i, v)) == cnts_swap_m(xs, U32.shr(n), i, v) : +List<Nat>},
+  ihy: {cnts_m(R.swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)) == cnts_swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v) : +List<Nat>}
+) -> {cnts_m(Bool.pick(R.PT, z, R.PN{R.swap_m(xs, U32.shr(n), i, v), ys}, R.PN{xs, R.swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)}))
+    == Bool.pick(List<&2, Nat>, z,
+        S.app(cnts_swap_m(xs, U32.shr(n), i, v), cnts_m(ys)),
+        S.app(cnts_m(xs), cnts_swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)))
+    : +List<Nat>}:
+  match z:
+    case True{}:
+      Equal.cong(List<&2, Nat>, List<&2, Nat>,
+        x => S.app(x, cnts_m(ys)),
+        cnts_m(R.swap_m(xs, U32.shr(n), i, v)),
+        cnts_swap_m(xs, U32.shr(n), i, v), ihx)
+    case False{}:
+      Equal.cong(List<&2, Nat>, List<&2, Nat>,
+        x => S.app(cnts_m(xs), x),
+        cnts_m(R.swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)),
+        cnts_swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v), ihy)
+
+def cnts_corr(t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {cnts_m(R.swap_m(t, n, i, v)) == cnts_swap_m(t, n, i, v) : +List<Nat>}:
+  match t:
+    case R.PL{x}:
+      {==}
+    case R.PN{+xs, +ys}:
+      +z = U32.is_lt(i, U32.shr(n))
+      cnts_corr_if(xs, ys, n, i, v, z,
+        cnts_corr(xs, U32.shr(n), i, v),
+        cnts_corr(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))
+
+# The count balance: a point write displaces `old` and inserts `new`, so the new
+# count plus the displaced count equals the old count plus the written count.
+def cnt_balance_if(
+  +xs: R.PT, +ys: R.PT, +n: U32, +i: U32, +v: U32, +z: Bool,
+  ihx: {Nat.add(S.suml(cnts_swap_m(xs, U32.shr(n), i, v)), R.nfst(cnt_chg_m(xs, U32.shr(n), i, v))) == Nat.add(S.suml(cnts_m(xs)), R.nsnd(cnt_chg_m(xs, U32.shr(n), i, v))) : Nat},
+  ihy: {Nat.add(S.suml(cnts_swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)), R.nfst(cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))) == Nat.add(S.suml(cnts_m(ys)), R.nsnd(cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))) : Nat}
+) -> {Nat.add(S.suml(Bool.pick(List<&2, Nat>, z,
+        S.app(cnts_swap_m(xs, U32.shr(n), i, v), cnts_m(ys)),
+        S.app(cnts_m(xs), cnts_swap_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v)))),
+      R.nfst(Bool.pick(Nat & Nat, z, cnt_chg_m(xs, U32.shr(n), i, v), cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))))
+    == Nat.add(S.suml(S.app(cnts_m(xs), cnts_m(ys))),
+      R.nsnd(Bool.pick(Nat & Nat, z, cnt_chg_m(xs, U32.shr(n), i, v), cnt_chg_m(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))))
+    : Nat}:
+  match z:
+    case True{}:
+      +h = U32.shr(n)
+      +BX = S.suml(cnts_m(xs))
+      +R = S.suml(cnts_m(ys))
+      +OLD = R.nfst(cnt_chg_m(xs, h, i, v))
+      +NEW = R.nsnd(cnt_chg_m(xs, h, i, v))
+      +ea = S.suml_append(cnts_swap_m(xs, h, i, v), cnts_m(ys))
+      +eb = S.suml_append(cnts_m(xs), cnts_m(ys))
+      +s1 = S.swap_add(S.suml(cnts_swap_m(xs, h, i, v)), R, OLD)
+      +s2 = Equal.cong(Nat, Nat, x => Nat.add(x, R),
+        Nat.add(S.suml(cnts_swap_m(xs, h, i, v)), OLD), Nat.add(BX, NEW), ihx)
+      +s3 = Equal.sym(Nat, Nat.add(Nat.add(BX, R), NEW), Nat.add(Nat.add(BX, NEW), R), S.swap_add(BX, R, NEW))
+      Equal.trans(Nat,
+        Nat.add(S.suml(S.app(cnts_swap_m(xs, h, i, v), cnts_m(ys))), OLD),
+        Nat.add(Nat.add(BX, R), NEW),
+        Nat.add(S.suml(S.app(cnts_m(xs), cnts_m(ys))), NEW),
+        Equal.trans(Nat,
+          Nat.add(S.suml(S.app(cnts_swap_m(xs, h, i, v), cnts_m(ys))), OLD),
+          Nat.add(Nat.add(S.suml(cnts_swap_m(xs, h, i, v)), R), OLD),
+          Nat.add(Nat.add(BX, R), NEW),
+          Equal.cong(Nat, Nat, s => Nat.add(s, OLD),
+            S.suml(S.app(cnts_swap_m(xs, h, i, v), cnts_m(ys))),
+            Nat.add(S.suml(cnts_swap_m(xs, h, i, v)), R), ea),
+          Equal.trans(Nat,
+            Nat.add(Nat.add(S.suml(cnts_swap_m(xs, h, i, v)), R), OLD),
+            Nat.add(Nat.add(BX, NEW), R),
+            Nat.add(Nat.add(BX, R), NEW),
+            Equal.trans(Nat,
+              Nat.add(Nat.add(S.suml(cnts_swap_m(xs, h, i, v)), R), OLD),
+              Nat.add(Nat.add(S.suml(cnts_swap_m(xs, h, i, v)), OLD), R),
+              Nat.add(Nat.add(BX, NEW), R),
+              s1, s2),
+            s3)),
+        Equal.sym(Nat,
+          Nat.add(S.suml(S.app(cnts_m(xs), cnts_m(ys))), NEW),
+          Nat.add(Nat.add(BX, R), NEW),
+          Equal.cong(Nat, Nat, s => Nat.add(s, NEW),
+            S.suml(S.app(cnts_m(xs), cnts_m(ys))),
+            Nat.add(BX, R), eb)))
+    case False{}:
+      +h = U32.shr(n)
+      +AX = S.suml(cnts_m(xs))
+      +BY = S.suml(cnts_m(ys))
+      +OLD = R.nfst(cnt_chg_m(ys, h, U32.sub(i, h), v))
+      +NEW = R.nsnd(cnt_chg_m(ys, h, U32.sub(i, h), v))
+      +ea = S.suml_append(cnts_m(xs), cnts_swap_m(ys, h, U32.sub(i, h), v))
+      +eb = S.suml_append(cnts_m(xs), cnts_m(ys))
+      +s1 = NatL.n_add_assoc(AX, S.suml(cnts_swap_m(ys, h, U32.sub(i, h), v)), OLD)
+      +s2 = Equal.cong(Nat, Nat, x => Nat.add(AX, x),
+        Nat.add(S.suml(cnts_swap_m(ys, h, U32.sub(i, h), v)), OLD), Nat.add(BY, NEW), ihy)
+      +s3 = NatL.n_add_assoc(AX, BY, NEW)
+      Equal.trans(Nat,
+        Nat.add(S.suml(S.app(cnts_m(xs), cnts_swap_m(ys, h, U32.sub(i, h), v))), OLD),
+        Nat.add(AX, Nat.add(BY, NEW)),
+        Nat.add(S.suml(S.app(cnts_m(xs), cnts_m(ys))), NEW),
+        Equal.trans(Nat,
+          Nat.add(S.suml(S.app(cnts_m(xs), cnts_swap_m(ys, h, U32.sub(i, h), v))), OLD),
+          Nat.add(AX, Nat.add(S.suml(cnts_swap_m(ys, h, U32.sub(i, h), v)), OLD)),
+          Nat.add(AX, Nat.add(BY, NEW)),
+          Equal.trans(Nat,
+            Nat.add(S.suml(S.app(cnts_m(xs), cnts_swap_m(ys, h, U32.sub(i, h), v))), OLD),
+            Nat.add(Nat.add(AX, S.suml(cnts_swap_m(ys, h, U32.sub(i, h), v))), OLD),
+            Nat.add(AX, Nat.add(S.suml(cnts_swap_m(ys, h, U32.sub(i, h), v)), OLD)),
+            Equal.cong(Nat, Nat, s => Nat.add(s, OLD),
+              S.suml(S.app(cnts_m(xs), cnts_swap_m(ys, h, U32.sub(i, h), v))),
+              Nat.add(AX, S.suml(cnts_swap_m(ys, h, U32.sub(i, h), v))), ea),
+            s1),
+          s2),
+        Equal.sym(Nat,
+          Nat.add(S.suml(S.app(cnts_m(xs), cnts_m(ys))), NEW),
+          Nat.add(AX, Nat.add(BY, NEW)),
+          Equal.trans(Nat,
+            Nat.add(S.suml(S.app(cnts_m(xs), cnts_m(ys))), NEW),
+            Nat.add(Nat.add(AX, BY), NEW),
+            Nat.add(AX, Nat.add(BY, NEW)),
+            Equal.cong(Nat, Nat, s => Nat.add(s, NEW),
+              S.suml(S.app(cnts_m(xs), cnts_m(ys))),
+              Nat.add(AX, BY), eb),
+            s3)))
+
+def cnt_balance(t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {Nat.add(S.suml(cnts_swap_m(t, n, i, v)), R.nfst(cnt_chg_m(t, n, i, v))) == Nat.add(S.suml(cnts_m(t)), R.nsnd(cnt_chg_m(t, n, i, v))) : Nat}:
+  match t:
+    case R.PL{+x}:
+      Equal.trans(Nat,
+        Nat.add(S.suml([nempty(v)]), nempty(x)),
+        Nat.add(nempty(v), nempty(x)),
+        Nat.add(S.suml([nempty(x)]), nempty(v)),
+        Equal.cong(Nat, Nat, s => Nat.add(s, nempty(x)),
+          S.suml([nempty(v)]), nempty(v), S.suml1(nempty(v))),
+        Equal.trans(Nat,
+          Nat.add(nempty(v), nempty(x)),
+          Nat.add(nempty(x), nempty(v)),
+          Nat.add(S.suml([nempty(x)]), nempty(v)),
+          NatL.n_add_comm(nempty(v), nempty(x)),
+          Equal.sym(Nat,
+            Nat.add(S.suml([nempty(x)]), nempty(v)),
+            Nat.add(nempty(x), nempty(v)),
+            Equal.cong(Nat, Nat, s => Nat.add(s, nempty(v)),
+              S.suml([nempty(x)]), nempty(x), S.suml1(nempty(x))))))
+    case R.PN{+xs, +ys}:
+      +z = U32.is_lt(i, U32.shr(n))
+      cnt_balance_if(xs, ys, n, i, v, z,
+        cnt_balance(xs, U32.shr(n), i, v),
+        cnt_balance(ys, U32.shr(n), U32.sub(i, U32.shr(n)), v))
+
 def to_counts_pack(t: R.PT) -> {to_counts(R.pack(t)) == cnts_m(t) : +List<Nat>}:
   match t:
     case R.PL{x}:
@@ -128,6 +306,59 @@ def cnts_same(+t: R.PT, +n: U32, +i: U32, +v: U32, +h: {nempty(v) == nempty(T.tg
         h)
 
 # ------------------------- array-level conservation -------------------------
+
+def array_swap_counts(+t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {to_counts(R.afst(Array.swap.go(U32, R.pack(t), n, i, v))) == cnts_swap_m(t, n, i, v) : +List<Nat>}:
+  +ea = Equal.sym(Array<U32>,
+    R.pack(R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))),
+    R.afst(Array.swap.go(U32, R.pack(t), n, i, v)),
+    R.pack_unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v))))
+  +eb = Equal.cong(R.PT, Array<U32>, t2 => R.pack(t2),
+    R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v))), R.swap_m(t, n, i, v),
+    R.swap_ref(t, n, i, v))
+  +e1 = Equal.cong(Array<U32>, +List<Nat>, a => to_counts(a),
+    R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), R.pack(R.swap_m(t, n, i, v)),
+    Equal.trans(Array<U32>,
+      R.afst(Array.swap.go(U32, R.pack(t), n, i, v)),
+      R.pack(R.unpack(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))),
+      R.pack(R.swap_m(t, n, i, v)),
+      ea, eb))
+  Equal.trans(+List<Nat>,
+    to_counts(R.afst(Array.swap.go(U32, R.pack(t), n, i, v))),
+    to_counts(R.pack(R.swap_m(t, n, i, v))),
+    cnts_swap_m(t, n, i, v),
+    e1,
+    Equal.trans(+List<Nat>,
+      to_counts(R.pack(R.swap_m(t, n, i, v))),
+      cnts_m(R.swap_m(t, n, i, v)),
+      cnts_swap_m(t, n, i, v),
+      to_counts_pack(R.swap_m(t, n, i, v)),
+      cnts_corr(t, n, i, v)))
+
+def array_point_write_count_balance(+t: R.PT, +n: U32, +i: U32, +v: U32)
+  -> {Nat.add(S.suml(to_counts(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))), R.nfst(cnt_chg_m(t, n, i, v))) == Nat.add(S.suml(to_counts(R.pack(t))), R.nsnd(cnt_chg_m(t, n, i, v))) : Nat}:
+  +e1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+    to_counts(R.afst(Array.swap.go(U32, R.pack(t), n, i, v))),
+    cnts_swap_m(t, n, i, v), array_swap_counts(t, n, i, v))
+  +e2 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+    to_counts(R.pack(t)), cnts_m(t), to_counts_pack(t))
+  Equal.trans(Nat,
+    Nat.add(S.suml(to_counts(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))), R.nfst(cnt_chg_m(t, n, i, v))),
+    Nat.add(S.suml(cnts_swap_m(t, n, i, v)), R.nfst(cnt_chg_m(t, n, i, v))),
+    Nat.add(S.suml(to_counts(R.pack(t))), R.nsnd(cnt_chg_m(t, n, i, v))),
+    Equal.cong(Nat, Nat, x => Nat.add(x, R.nfst(cnt_chg_m(t, n, i, v))),
+      S.suml(to_counts(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)))),
+      S.suml(cnts_swap_m(t, n, i, v)), e1),
+    Equal.trans(Nat,
+      Nat.add(S.suml(cnts_swap_m(t, n, i, v)), R.nfst(cnt_chg_m(t, n, i, v))),
+      Nat.add(S.suml(cnts_m(t)), R.nsnd(cnt_chg_m(t, n, i, v))),
+      Nat.add(S.suml(to_counts(R.pack(t))), R.nsnd(cnt_chg_m(t, n, i, v))),
+      cnt_balance(t, n, i, v),
+      Equal.cong(Nat, Nat, x => Nat.add(x, R.nsnd(cnt_chg_m(t, n, i, v))),
+        S.suml(cnts_m(t)), S.suml(to_counts(R.pack(t))),
+        Equal.sym(Nat, S.suml(to_counts(R.pack(t))), S.suml(cnts_m(t)), e2))))
+
+# ------------------------- instances for the engine's writes -------------------------
 
 def array_point_write_preserves_count(
   +t: R.PT, +n: U32, +i: U32, +v: U32,

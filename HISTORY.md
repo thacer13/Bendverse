@@ -859,3 +859,45 @@ stays open for it (and for rule 7 support).
 - `bend PROOF.bend` → `All terms check.` (46 laws).
 - `bend app/tests.bend` (JS, tick-free) → 22/22 (incl. T20, T21).
 - Native `bend app/simtests.bend -o bin && ./bin` → 8/8.
+
+### A.32 — V4 balance: the point-write count balance (the swap primitive)
+
+**Status:** the conservation count *balance* landed; **1 new law** (47 total).
+Engine untouched; gate green; fast (22/22) and simulation (8/8) suites pass.
+
+**What landed (`src/count.bend`).**
+- `cnts_swap_m` / `cnt_chg_m` — the written count list and the (displaced,
+  written) count pair, mirroring `pots_swap_m`/`chg_m` with no positional base.
+- `cnts_corr` (the written list equals the model swap's count list) and
+  `cnt_balance` / `cnt_balance_if` — the count analog of `dec`/`dec_if`: for a
+  point write, `suml(cnts_swap_m) + nempty(old) == suml(cnts_m) + nempty(new)`.
+- `array_swap_counts` (lift through `swap_ref`/`swap_refines_array`, as
+  `array_swap_pots` does) and `array_point_write_count_balance` — the array-level
+  balance law.
+- `LAWS.bend`/`PROOF.bend`: `array_point_write_count_balance`.
+
+**Interpretation (scope, honestly).** This is the identity that makes a *swap*
+conservative: a read-modify-write changes the count by exactly
+`nempty(written) - nempty(displaced)`, so a swap (write the displaced value back)
+nets zero. It is the count analogue of `array_swap_decreases`. What is **not**
+yet a theorem is the engine's *two-write* movement composition: applying the
+balance at the target and then at the source leaves one residual term,
+`nempty(tget(swap_m(t, n, j, v), n, i))`, which must be shown to equal
+`nempty(tget(t, n, i))` when `i ≠ j` — a read-after-write/valid-index lemma. That
+lemma needs U32 subtraction injectivity (a swap at `j` does not disturb a distinct
+valid index `i`) plus a carried validity invariant through the tree descent, none
+of which exists yet. `G6` therefore stays open for the composition (and rule 7
+support); the balance primitive is landed and reusable.
+
+**Bend findings (V4 balance).**
+- **Mirroring works, but argument arity is the trap.** `cnts_m(t)` takes no index
+  (unlike `pots_m(t, base, n)`); carrying the `pots`-shaped call `cnts_m(xs, h)`
+  type-checks as `(cnts_m xs) h` and fails with a misleading "expected a function
+  type". Strip positional arguments when mirroring a base-dependent fold.
+- **The balance proof is `dec_if` with `chg_m` → `cnt_chg_m`** and no `base`; the
+  `S.swap_add`/`suml_append`/`NatL.n_add_assoc` skeleton transfers verbatim.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (47 laws).
+- `bend app/tests.bend` (JS, tick-free) → 22/22.
+- Native `bend app/simtests.bend -o bin && ./bin` → 8/8.
