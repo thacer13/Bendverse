@@ -179,3 +179,6 @@ def Laws.u32_cmp_eq_reflect(a, b, h):
 
 def Laws.guarded_crush_lowers_pot(w, i):
   WP.pot_crush_guarded(w, i)
+
+def Laws.array_guarded_crush_lowers_phi(t, base, n, i):
+  Tick.array_guarded_crush_lowers_auto(t, base, n, i)

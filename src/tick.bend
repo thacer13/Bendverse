@@ -6,6 +6,7 @@ import ./nat.bend as NatL
 import ./ops.bend as Ops
 import ./grid.bend as Grid
 import ./cell.bend as Cell
+import ./word.bend as WR
 
 # The packed-index word at position i of a PT tree, following the same
 # `is_lt(i, shr n)` walk as swap_m / chg_m.
@@ -82,6 +83,11 @@ def crush_gap(t: R.PT, +base: U32, +n: U32, +i: U32) -> Nat:
         crush_gap(xs, base, h, i),
         crush_gap(ys, U32.add(base, h), h, U32.sub(i, h)))
 
+# The Φ slack of a guarded crush at index i: the rock gap when the target is
+# rock, and 0 otherwise (a non-rock "crush" writes the value back unchanged).
+def guard_gap(+t: R.PT, +base: U32, +n: U32, +i: U32) -> Nat:
+  Bool.pick(Nat, U32.is_eq(Cell.material(tget(t, n, i)), 3), crush_gap(t, base, n, i), 0n)
+
 def chg_crush_if(
   +xs: R.PT, +ys: R.PT, +base: U32, +h: U32, +i: U32, +z: Bool,
   hm: {Cell.material(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))) == 3 : U32},
@@ -131,3 +137,78 @@ def array_crumble_lowers(+t: R.PT, +base: U32, +n: U32, +i: U32, +hm: {Cell.mate
   +e7 = Equal.trans(Nat, Nat.add(Nat.add(after, g), w2), Nat.add(after, Nat.add(w2, g)), Nat.add(before, w2),
     Equal.sym(Nat, Nat.add(after, Nat.add(w2, g)), Nat.add(Nat.add(after, g), w2), mid), e2)
   NatL.n_add_cancel_right(Nat.add(after, g), before, w2, e7)
+
+# ------------------------------------------------------------------ guarded crush
+# A guarded crush (`Ops.crush_if_rock`) writes `crush_word(v)` when the target is
+# rock and `v` unchanged otherwise. At the array level its Φ slack is exactly
+# `guard_gap` (the rock gap, or 0), so it never raises Φ — this is the write-site
+# theorem for both machinery crush sites (`Rules.step` sel 22, `Support.sup`
+# sel 6) and the array-level closure of `G9`.
+
+# Writing the current value back is the identity at the pot level.
+def pots_write_same_if(
+  +xs: R.PT, +ys: R.PT, +base: U32, +h: U32, +i: U32, +z: Bool,
+  ihx: {R.pots_swap_m(xs, base, h, i, tget(xs, h, i)) == R.pots_m(xs, base, h) : +List<Nat>},
+  ihy: {R.pots_swap_m(ys, U32.add(base, h), h, U32.sub(i, h), tget(ys, h, U32.sub(i, h))) == R.pots_m(ys, U32.add(base, h), h) : +List<Nat>}
+) -> {Bool.pick(List<&2, Nat>, z,
+        S.app(R.pots_swap_m(xs, base, h, i, Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))), R.pots_m(ys, U32.add(base, h), h)),
+        S.app(R.pots_m(xs, base, h), R.pots_swap_m(ys, U32.add(base, h), h, U32.sub(i, h), Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h))))))
+     == S.app(R.pots_m(xs, base, h), R.pots_m(ys, U32.add(base, h), h)) : +List<Nat>}:
+  match z:
+    case True{}:
+      Equal.cong(List<&2, Nat>, List<&2, Nat>,
+        x => S.app(x, R.pots_m(ys, U32.add(base, h), h)),
+        R.pots_swap_m(xs, base, h, i, tget(xs, h, i)), R.pots_m(xs, base, h), ihx)
+    case False{}:
+      Equal.cong(List<&2, Nat>, List<&2, Nat>,
+        x => S.app(R.pots_m(xs, base, h), x),
+        R.pots_swap_m(ys, U32.add(base, h), h, U32.sub(i, h), tget(ys, h, U32.sub(i, h))),
+        R.pots_m(ys, U32.add(base, h), h), ihy)
+
+def pots_write_same(t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {R.pots_swap_m(t, base, n, i, tget(t, n, i)) == R.pots_m(t, base, n) : +List<Nat>}:
+  match t:
+    case R.PL{x}:
+      {==}
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      +z = U32.is_lt(i, h)
+      pots_write_same_if(xs, ys, base, h, i, z,
+        pots_write_same(xs, base, h, i),
+        pots_write_same(ys, U32.add(base, h), h, U32.sub(i, h)))
+
+def array_guarded_crush_lowers(
+  +t: R.PT, +base: U32, +n: U32, +i: U32, +z: Bool,
+  hz: {z == U32.is_eq(Cell.material(tget(t, n, i)), 3) : Bool}
+) -> {Nat.add(S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i,
+        Bool.pick(U32, z, Ops.crush_word(tget(t, n, i)), tget(t, n, i)))), base, n)),
+      Bool.pick(Nat, z, crush_gap(t, base, n, i), 0n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  match z:
+    case True{}:
+      array_crumble_lowers(t, base, n, i,
+        WR.u32_cmp_eq(Cell.material(tget(t, n, i)), 3,
+          Equal.sym(Bool, True{}, U32.is_eq(Cell.material(tget(t, n, i)), 3), hz)))
+    case False{}:
+      +after = S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, tget(t, n, i))), base, n))
+      +before = S.suml(S.to_pots(R.pack(t), base, n))
+      +s1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+        S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, tget(t, n, i))), base, n),
+        R.pots_swap_m(t, base, n, i, tget(t, n, i)),
+        R.array_swap_pots(t, base, n, i, tget(t, n, i)))
+      +s2 = Equal.trans(Nat, after, S.suml(R.pots_swap_m(t, base, n, i, tget(t, n, i))), S.suml(R.pots_m(t, base, n)),
+        s1,
+        Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+          R.pots_swap_m(t, base, n, i, tget(t, n, i)), R.pots_m(t, base, n),
+          pots_write_same(t, base, n, i)))
+      +s3 = Equal.trans(Nat, after, S.suml(R.pots_m(t, base, n)), before,
+        s2,
+        Equal.sym(Nat, before, S.suml(R.pots_m(t, base, n)),
+          Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+            S.to_pots(R.pack(t), base, n), R.pots_m(t, base, n), R.to_pots_pack(t, base, n))))
+      Equal.trans(Nat, Nat.add(after, 0n), after, before, NatL.n_add_zero_right(after), s3)
+
+def array_guarded_crush_lowers_auto(+t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {Nat.add(S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i,
+        Ops.crush_if_rock(tget(t, n, i)))), base, n)),
+      guard_gap(t, base, n, i)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  array_guarded_crush_lowers(t, base, n, i, U32.is_eq(Cell.material(tget(t, n, i)), 3), {==})

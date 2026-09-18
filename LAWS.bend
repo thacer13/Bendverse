@@ -300,3 +300,10 @@ law guarded_crush_lowers_pot:
   for +w: U32
   for +i: U32
   {Nat.add(Settle.pot_at(Ops.crush_if_rock(w), i), Bool.pick(Nat, U32.is_eq(Cell.material(w), 3), Nat.mul(50n, U32.to_nat(Grid.iy(i))), 0n)) == Settle.pot_at(w, i) : Nat}
+
+law array_guarded_crush_lowers_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  {Nat.add(Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Ops.crush_if_rock(Tick.tget(t, n, i)))), base, n)), Tick.guard_gap(t, base, n, i)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}

@@ -1153,3 +1153,40 @@ discharges.
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (51 laws); fast 22/22; sim 8/8.
+
+### A.40 — G9 closed: the guarded crush has an unconditional Φ theorem
+
+**Status:** two new laws (`array_guarded_crush_lowers_phi`, and the reuse lemma
+`pots_write_same` as a non-law helper); gate green (52 laws); both suites pass.
+The write primitive at both crush sites is now fully proven, so `G9` is closed
+and `G10`'s hard case is gone.
+
+**What landed (`src/tick.bend`).**
+- `pots_write_same`: writing the current value back is the identity at the pot
+  level (`pots_swap_m(t, base, n, i, tget(t, n, i)) == pots_m(t, base, n)`).
+  This is the non-rock branch of a guarded crush. Proved by structural induction:
+  `pots_swap_m` and `tget` make the same `is_lt` decision, so the two sides reduce
+  together (`pots_write_same_if`).
+- `guard_gap`: the Φ slack of a guarded crush — `crush_gap` for rock, `0`
+  otherwise.
+- `array_guarded_crush_lowers`: the guarded write's array-level Φ effect, with the
+  guard Bool threaded as a parameter and a hypothesis tying it to
+  `material(tget) == 3`. Case split: *rock* → reflect the guard with
+  `Word.u32_cmp_eq` (A.38) and apply `array_crumble_lowers`; *non-rock* → the
+  value is `tget` (definitional), `pots_write_same` collapses it, arithmetic
+  closes. `array_guarded_crush_lowers_auto` is the wrapper over
+  `Ops.crush_if_rock`/`guard_gap`.
+
+**Why this closes `G9`.** `G9` was "non-rock crush is not a theorem". The engine
+no longer crushes non-rock (A.39), and the new array law covers the guarded write
+*without* a `material(w) == 3` hypothesis — rock and non-rock are both proven,
+with the gap exactly `guard_gap`. So no crush site carries an unproven premise.
+
+**Remaining `G10`.** Proving the write-*site enumeration* still means mirroring
+`Support.sup`/`Rules.step` on `PT` along their fuel loops and composing the proven
+primitives (`set_support`/`set_fall0`/`activate` preserve; `mov`/diagonal swap
+decrease via `array_swap_decreases`; guarded crush decreases via
+`array_guarded_crush_lowers_phi`). That mirror is the last mechanical piece.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (52 laws); fast 22/22; sim 8/8.
