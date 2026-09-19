@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 54 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 56 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -296,7 +296,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-54 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+56 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -381,7 +381,7 @@ an oversight to hide.
 | `R2` | Conservation: swap/transform only | `array_point_write_preserves_count` `array_point_write_count_balance` `array_mov_swap_preserves_count` `array_support_write_preserves_count` `array_fall_write_preserves_count` `array_mov_write_preserves_count` `array_wake_write_preserves_count` `array_deactivate_write_preserves_count` | T2 T21 | count rules ops |
 | `R3` | Single-writer, deterministic tie-break | `scan_order_total` `neighbor_cancel` | T14 | order priority |
 | `R4` | Phase separation: no same-color neighbors | `neighbor_x_parity` `neighbor_y_parity` `neighbor_z_parity` `parity_flip_succ` `parity_flip_pred` | T10 | parity sim |
-| `R5` | Falling is universal (density rule) | `fall_decreases` `fall_lowers_potential` `sand_sinks_in_water` | T9 | rules potential |
+| `R5` | Falling is universal (density rule) | `fall_decreases` `fall_lowers_potential` `sand_sinks_in_water` `array_mov_cross` `array_mov_lowers_phi` | T9 | rules potential fall |
 | `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `guarded_crush_lowers_pot` `array_crumble_lowers_phi` `array_guarded_crush_lowers_phi` `rock_crumbles_lighter` | T9 T19 | support potential writepot tick |
 | `R7` | Support recomputed, never cached | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
@@ -471,15 +471,17 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      normalisation cliff). The full `sup_m` + `sup_m_preserves` is landed (A.48),
      with the `SupSel` selector, the abstract wake fuel, the top-level
      `sup_pass_m`, and law `sup_mirror_preserves_phi`; the `Support.sup` half of
-     the write-site enumeration is now machine-checked. Remaining: mirror
-     `Rules.step`; its `deactivate` (sel 18) and `set_fall0` (sel 22/23) write
-     primitives are proven at the array level (`array_deactivate_write`,
-     `array_fall_write`, A.49), so the movement (sel 6/12) is the last missing
-     piece — and it is a Φ *decrease* by the drop, not a preserve (A.51), so
-     `step_m` accumulates a fall gap as well as the crush gap. That decrease is
-     now a registered gap (`G11`, A.52): the size-free `PT` model blocks the
-     `chg_m` projection the telescope needs.
-  See `HISTORY.md` A.36–A.48 for the analysis and probes.
+     the write-site enumeration is now machine-checked. The `Rules.step`
+     movement write site is now proven (A.53): `leaf_base` restores the
+     size-free `chg_m` projection A.52 said was missing, so the two
+     `array_swap_decreases` balances telescope into the unconditional
+     `array_mov_cross`, and `array_mov_lowers_phi` gives the Φ drop by
+     `fall_gap` under the fall-regime hypothesis (`G11` closed). Remaining:
+     the `Rules.step` fuel-loop mirror `step_m` itself; it accumulates the
+     crush gap and the fall gap, and must discharge that hypothesis
+     (`mov_T + fall_gap == mov_S`) from the engine's fall condition and the
+     `below`/`diag` index relation.
+  See `HISTORY.md` A.36–A.53 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -509,8 +511,8 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | closed | G2 G10 | closed (A.38–A.40): `Word.cmp` reflection (A.38) makes the guard provable; the engine guards both crush sites with `Ops.crush_if_rock` (A.39); `array_guarded_crush_lowers_phi` (A.40) proves the guarded write's Φ effect at every index — rock: `crush_gap`, non-rock: identity — with no `material(w) == 3` hypothesis. Runtime-witnessed by T19 |
-| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical). **`G9` is resolved** (A.38–A.40): the guarded-crush write site now has an unconditional Φ theorem (`array_guarded_crush_lowers_phi`), so no crush site carries an unproven hypothesis. The `Support.sup` fuel-loop mirror is landed (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`) and an abstract wake fuel, plus law `sup_mirror_preserves_phi`. Remaining: the `Rules.step` fuel-loop mirror; unlike the support pass it also accumulates a **fall gap** (a movement lowers Φ by `(dens(w) − dens(gv)) · (iy(i) − iy(j))`, A.51), so it needs a `fall_gap` and the fall condition. Would also widen `M8d` eviction |
-| `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | open | G10 M8d | a `fall_gap` + `array_mov_lowers_phi`. **Obstacle (A.52):** `PT` is size-free, so `chg_m`'s leaf base cannot be projected to `pot_at(tget(t,n,i), base+i)` — the `PL` case ignores `i`, and the projection fails on `iy(base) = iy(base+i)` (failed spike). Individual swaps can *raise* Φ, so only the net over the pair decreases. Routes: a `leaf_base` function + `chg_m` projection, a size-indexed `PT`, or a direct list-surgery proof against `fall_before`/`fall_after` |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical). **`G9` is resolved** (A.38–A.40): the guarded-crush write site now has an unconditional Φ theorem (`array_guarded_crush_lowers_phi`), so no crush site carries an unproven hypothesis. The `Support.sup` fuel-loop mirror is landed (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`) and an abstract wake fuel, plus law `sup_mirror_preserves_phi`. The `Rules.step` **movement** write site is landed (A.53, `G11` closed): `array_mov_cross` telescopes the two swap balances and `array_mov_lowers_phi` gives the Φ drop by `fall_gap` under the fall-regime hypothesis. Remaining: the `Rules.step` fuel-loop mirror `step_m`, which accumulates the crush gap and the fall gap and must discharge that regime hypothesis (`mov_T + fall_gap == mov_S`) from the engine's fall condition and index relation. Would also widen `M8d` eviction |
+| `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | closed | G10 M8d | **closed (A.53):** a `leaf_base(t,base,n,i)` function gives the leaf index `chg_m` actually uses, so `nfst`/`nsnd(chg_m)` project onto `pot_at(tget(..), leaf_base(..))` — definitional at `PL`, where A.52's `base+i` form was false. `swap_balance` then gives one write's `new − old` at that leaf, and the two balances telescope into the unconditional cross law `array_mov_cross` (the residuals `p+q` and `r+s` are the pre/post potentials of the two leaves). `fall_gap := mov_S − mov_T` and `array_mov_lowers_phi` give the decrease under the fall-regime hypothesis `mov_T + fall_gap == mov_S`; discharging that hypothesis from the engine's fall condition and index relation is the remaining `G10` `step_m` arithmetic |
 
 ---
 

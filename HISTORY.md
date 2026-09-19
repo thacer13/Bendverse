@@ -1630,3 +1630,50 @@ write primitives for `deactivate` (sel 18) and `set_fall0` (sel 22/23) (A.49).
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (54 laws); projection spike fails at
   `PL` as described; no code changed.
+
+### A.53 — `G11` closed: `leaf_base` unblocks the movement Φ telescope
+
+**Status:** proof. Gate green (56 laws). Adds `src/fall.bend` and the laws
+`array_mov_cross` and `array_mov_lowers_phi`; closes `G11` and the movement
+write site of `G10`.
+
+**The fix.** A.52 located the blocker in the size-free `chg_m` projection.
+`leaf_base(t, base, n, i)` returns the index of the `ALeaf` holding `i` — the
+base `chg_m` actually uses — so `nfst`/`nsnd(chg_m(t, base, n, i, v))` project
+onto `pot_at(tget(t, n, i), leaf_base(...))` / `pot_at(v, leaf_base(...))`, and
+the `PL` case is *definitional* (the failed `base + i` form was not). `swap_balance`
+then turns `dec` (V2b) into the one-write balance `Φ(swap) + old == Φ + new` at
+that leaf, and two of them compose:
+
+    Φ(t2) + (p + q) == Φ(t) + (r + s)
+
+with `p, q` the source/target pots at their own levels and `r, s` the same words
+at the swapped levels. This is the telescope A.52 said was missing: the two
+single-write balances *do* combine; the residual is exactly the pair's net pot
+change, not a per-step gap. A read at `i` after a write at `j` is handled by
+`pot_swap` (the write either misses `i` or writes `mov(w)`, whose material is
+`w`'s), mirroring the count-level `nempty_tget_swap_mov`.
+
+**What landed.** `src/fall.bend`: `leaf_base` plus its shape-invariance under
+`swap_m`, the `chg_m` projections, `swap_balance`, `pot_swap`, `mov_m`, and the
+`pots_m`-level cross law `mov_cross`; array-level `mov_array` and
+`array_mov_cross`. Then `mov_S`/`mov_T` name the two cross terms,
+`fall_gap := mov_S − mov_T`, and `array_mov_lowers_phi` gives
+`Φ(mov_array) + fall_gap == Φ` under the fall-regime hypothesis
+`mov_T + fall_gap == mov_S`. The hypothesis is a law parameter, not a gap: it
+is the statement that the move is a fall (the target leaf is not heavier and not
+higher), which the engine's `can` check supplies.
+
+**Residual (recorded under `G10`, not a new gap).** Discharging
+`mov_T + fall_gap == mov_S` from `dens(gv) ≤ dens(w)` and
+`iy(leaf_base j) ≤ iy(leaf_base i)` is Nat arithmetic (`T + (S − T) = S` for
+`T ≤ S`) that `src/nat.bend` does not yet provide; `step_m` (the remaining
+`Rules.step` fuel-loop mirror) needs it, and accumulates the crush gap and the
+fall gap together. The movement *write site* itself is proven, so `G11` is
+closed.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (56 laws).
+- `bend test/tests.bend` → all PASS (JS, T5–T21).
+- `bend test/simtests.bend -o /tmp/bendverse/Bendverse-simtests && ./…` →
+  T1, T2, T3, T4, T4b, T9, T18, T20 all PASS.

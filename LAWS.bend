@@ -13,6 +13,7 @@ import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
 import ./src/count.bend as Count
+import ./src/fall.bend as Fall
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -321,3 +322,20 @@ law sup_mirror_preserves_phi:
   for +n: U32
   for +gated: Bool
   {Tick.sup_phi(Tick.sup_pass_m(fuel, t, n, gated), 0, n) == Settle.suml(Settle.to_pots(Refine.pack(t), 0, n)) : Nat}
+
+law array_mov_cross:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +j: U32
+  {Nat.add(Settle.suml(Settle.to_pots(Fall.mov_array(t, n, i, j), base, n)), Fall.mov_S(t, base, n, i, j)) == Nat.add(Settle.suml(Settle.to_pots(Refine.pack(t), base, n)), Fall.mov_T(t, base, n, i, j)) : Nat}
+
+law array_mov_lowers_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +j: U32
+  for +hg: {Nat.add(Fall.mov_T(t, base, n, i, j), Fall.fall_gap(t, base, n, i, j)) == Fall.mov_S(t, base, n, i, j) : Nat}
+  {Nat.add(Settle.suml(Settle.to_pots(Fall.mov_array(t, n, i, j), base, n)), Fall.fall_gap(t, base, n, i, j)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}

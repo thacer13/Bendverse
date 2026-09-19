@@ -30,7 +30,7 @@ machine-checked by `PROOF.bend`.
   `ops` (shared world ops), `sim` (tick pipeline), `chunk`/`store` (M8 chunk
   key/gen + radix store), `bits`/`nat`/`potential` (verified lemma + evaluation
   kernels), `settle`/`parity`/`mod`/`priority`/`order` (V1–V3 verification
-  layers).
+  layers), `fall` (the movement/fall-gap Φ telescope).
 - `runners/` — **thin front-ends**, visibility only, not part of the engine:
   `ascii.bend` (headless cross-section scenario), `window.bend` (`App.run` UI, M6).
 - `test/` — **verification witnesses**, not front-end: `tests.bend` (fast,

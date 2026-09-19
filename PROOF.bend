@@ -15,6 +15,7 @@ import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
 import ./src/count.bend as Count
+import ./src/fall.bend as Fall
 import ./src/word.bend as WR
 
 def Laws.sanity():
@@ -188,3 +189,9 @@ def Laws.array_activate_write_preserves_phi(t, base, n, i):
 
 def Laws.sup_mirror_preserves_phi(fuel, t, n, gated):
   Tick.sup_m_preserves(fuel, t, Tick.tget(t, n, 0), Tick.S0{}, 0, gated, n, U32.to_nat(3), 0)
+
+def Laws.array_mov_cross(t, base, n, i, j):
+  Fall.array_mov_cross(t, base, n, i, j)
+
+def Laws.array_mov_lowers_phi(t, base, n, i, j, hg):
+  Fall.array_mov_lowers_phi(t, base, n, i, j, hg)
