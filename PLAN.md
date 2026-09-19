@@ -426,6 +426,7 @@ R10 and R11 hold by construction and are witnessed by tests.
 | `—` | pi tooling: proof loop, lemma index, audit | A.24–A.25 |
 | `G9`/`G10` | engine write-site enumeration complete: `Rules.step` mirrored on `PT` (`step_m`, pair invariant, all-fuel `step_preserves`, law `step_mirror_balance`), joining the `Support.sup` mirror; closes `G10`/`G2`'s last residual | A.48, A.56 |
 | `V3c-0` | engine-level write-target separation, partial: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`) — the `Rules`-level form of V3a | A.58 |
+| `M9` | CPU perf pass: cell-resolution render, settled-world tick fixpoint, color-restricted phase scan (active tick ≈ 21→4.5 ms, settled ≈ 0.09 ms), T25 | A.59 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -457,14 +458,25 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   eviction to all sleeping chunks needs the sleep-invariance proof (`G10`).
 - [ ] **M7d** Parallel phase folds (CPU) — gated on V3c.
 - [ ] **M7b** / **M7e** GPU worldgen / phases — blocked on a CUDA host (`G4`).
-- [ ] **M9 CPU perf pass (measured, cheap, unblocked)** — native at 64³:
-  `Sim.build()` ≈ 7 ms; a tick is **≈ 21 ms and flat** whether the world is
-  settled or active, so the cost is the 262144-cell × ~9-pass scan (support + 8
-  phases), not per-cell work. Wins in order: (1) render at cell resolution (64²
-  vs the current 256², ~16× fewer `Array.get`s); (2) settled-world tick fast
-  path (nothing active ⇒ no-op); (3) skip sleeping regions in the scan (reuses
-  the M8 store). Independent of V3c. CUDA stays deferred: it needs CUDA 12 at
-  `/usr/local/cuda` (absent here) and only pays off at M8 scale.
+- [x] **M9 CPU perf pass** — landed (A.59). Native at 64³, before: a tick was
+  **≈ 21 ms and flat** (settled or active) because every pass scanned all
+  262144 cells. Landed wins: (1) **cell-resolution render** —
+  `runners/window.bend` builds a 64×64 quadtree (one leaf per cell) and lets the
+  window scale it, 16× fewer `Array.get`s and ~16× fewer `Qua`/`Pix` per frame;
+  (2) **settled-world tick fixpoint** — `Sim.any_active` scans for the active
+  bit and `tick` returns unchanged when none is set (≈ 21 ms → ≈ 0.09 ms per
+  settled tick); (3) **color-restricted phase scan** — `Grid.color_at`/
+  `next_color`/`color_last` enumerate a phase color's 32768 cells in flat-index
+  order and `Rules.step`/`Sim.phase` visit only those (the same acted-on cells,
+  in the same order, so it is semantics-preserving), active tick ≈ 21 → ≈ 4.5
+  ms; `build+pull+30 ticks` 0.62 s → 0.036 s. T25 witnesses the sublattice.
+  **Correction to the original win list:** the literal "skip sleeping regions in
+  the scan" is *not* semantics-preserving on its own — T24 shows `Ops.wake`
+  activates same-color cells later in scan order that the phase must still
+  evaluate, so a pre-phase activity snapshot needs a worklist or a neighbourhood
+  margin and belongs with `V3c`/`G3`, not M9. Independent of V3c in the form
+  landed. CUDA stays deferred: it needs CUDA 12 at `/usr/local/cuda` (absent
+  here) and only pays off at M8 scale.
 - [x] **V4 (conservation)** — landed (A.31–A.32, A.34): every material-preserving
   write preserves the count, `array_point_write_count_balance` gives the exact
   displacement identity, and `array_mov_swap_preserves_count` proves the
@@ -512,7 +524,8 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   See `HISTORY.md` A.36–A.56 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
-`M9` (CPU perf) is independent and unblocked.
+`M9` (CPU perf) has landed (A.59); its remaining scale lever (region-skipping
+in the scan) is tied to `V3c`/`G3` rather than independent.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
 Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the
 settling guarantee.

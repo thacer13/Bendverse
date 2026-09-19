@@ -1,5 +1,6 @@
 import Base
 import ./cell.bend as Cell
+import ./grid.bend as Grid
 import ./rules.bend as Rules
 import ./support.bend as Support
 import ./worldgen.bend as Worldgen
@@ -35,9 +36,10 @@ def any_active(world: Array<U32>) -> Array<U32> & Bool:
   q = Array.get(U32, world, 0)
   any_active_go(U32.to_nat(262143), 0, False{}, q)
 
-def phase(world: Array<U32>, c: U32) -> Array<U32>:
-  q = Array.get(U32, world, 0)
-  Rules.step(U32.to_nat(16777216), q, 0, 0, c, 0, 0)
+def phase(world: Array<U32>, +c: U32) -> Array<U32>:
+  +i0 = Grid.color_base(c)
+  q = Array.get(U32, world, i0)
+  Rules.step(U32.to_nat(16777216), q, 0, i0, c, 0, 0)
 
 def tick_active(world: Array<U32>) -> Array<U32>:
   world = Support.pass(world)

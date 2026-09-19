@@ -518,6 +518,37 @@ def mov_bad() -> U32:
   mov_case(Cell.encode(2, 0, 1, 0, 0), Cell.encode(0, 0, 0, 0, 0), i, j, 100n,
     mov_case(Cell.encode(2, 0, 1, 0, 0), Cell.encode(5, 0, 0, 0, 0), i, j, 20n, 0))
 
+# T25 phase color sub-lattice (M9): the cells of phase color `c`, enumerated by
+# `Grid.color_at(0..32767, c)`, are exactly the cells with `color_of == c`, in
+# strictly increasing flat-index order, and `Grid.next_color` is the successor on
+# that sublattice ending at `Grid.color_last(c)`. This is what lets a phase scan
+# visit its own color only without changing the set or order it acts on.
+def color_c(fuel: Nat, +s: U32, +c: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +i = Grid.color_at(s, c)
+      +n = Grid.color_at(U32.add(s, 1), c)
+      b0 = inc_if_false(U32.is_eq(Rules.color_of(i), c), bad)
+      b1 = inc_if_false(U32.is_eq(Grid.next_color(i, c), n), b0)
+      b2 = inc_if_false(U32.is_gt(n, i), b1)
+      color_c(p, U32.add(s, 1), c, b2)
+
+def color_all(fuel: Nat, +c: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +b0 = color_c(U32.to_nat(32767), 0, c, bad)
+      +last = U32.is_eq(Grid.color_last(c), Grid.color_at(32767, c))
+      +b1 = inc_if_false(U32.is_eq(Rules.color_of(Grid.color_last(c)), c),
+        inc_if_false(last, b0))
+      color_all(p, U32.add(c, 1), b1)
+
+def color_bad() -> U32:
+  color_all(U32.to_nat(8), 0, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -543,3 +574,4 @@ def main() -> IO(Unit):
     report("T20d sleeping/gen-eq predicates", ev_pred_bad())
     report("T21 conservation of non-Empty writes", cnt_bad())
     report("T22 movement Phi cross + fall account", mov_bad())
+    report("T25 phase color sub-lattice + successor", color_bad())

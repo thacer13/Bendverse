@@ -1938,3 +1938,78 @@ that was cleanly provable.
 - `bend PROOF.bend` → `All terms check.` (59 laws).
 - `bend test/tests.bend` → 23/23 PASS.
 - `bend test/simtests.bend` native → 10/10 PASS (A.57 witnesses included).
+
+### A.59 — M9 CPU perf pass: render resolution, settled fixpoint, color-restricted phases
+
+**Status:** performance. Gate green (59 laws; no law changed). Touches the
+imperative engine (`src/sim.bend`, `src/rules.bend` scan advance, `src/grid.bend`
+helpers) and the window runner; adds the fast-suite witness T25. No proof burden
+added — this is a deliberate stop on proof work, so the change is
+behaviour-preserving by construction and witnessed by the existing golden/sim
+suites plus T25.
+
+**Baseline (native, 64³).** Before this entry a tick was **≈ 21 ms and flat**:
+`Sim.build()` ≈ 7 ms, and a tick cost the same whether the world was settled or
+active. The cost was the 262144-cell × ~9-pass scan (support + 8 color phases),
+not per-cell work. The landed entry-level measurement was in `PLAN.md` §5.2.
+
+**Win 1 — render at cell resolution (`runners/window.bend`).** The view built a
+256×256 quadtree whose every 4×4 leaf block read the same cell, then grouped
+65536 leaves up to a root. It now builds a 64×64 quadtree (one leaf per cell) and
+lets `Window.frame` scale it: 16× fewer `Array.get`s and ~16× fewer `Qua`/`Pix`
+nodes per frame. The leaf index changed from
+`index(x0>>2, 63-(y0>>2))` at depth 8 to `index(x0, 63-y0)` at depth 6; the
+`render` recursion (which fixes the quadtree orientation for `levels`) is
+untouched, so the 64² image is exactly the 256² image downsampled by 4.
+
+**Win 2 — settled-world tick fixpoint (`src/sim.bend`).** Rule 9's active bit
+gates both passes: `Support.pass` is activity-gated and `Rules.step` skips
+inactive cells, so a world with no active cell is a whole-tick identity.
+`Sim.any_active` walks the flat array with an OR accumulator (carrying the
+`(world, value)` pair and `i+1` the way `Rules.step` threads state) and `tick`
+returns the world unchanged when the accumulator is false. Measured: settled
+tick **≈ 21 ms → ≈ 0.09 ms** (1000 settled ticks in 89 ms excluding build). The
+scan is one pass and effectively free next to a running tick.
+
+**Win 3 — color-restricted phase scan (`src/grid.bend`, `src/rules.bend`).** A
+phase `c` acts only on cells with `color_of(i) == c`; the other 7/8 of the flat
+scan were visited and skipped. `Grid.color_at(s, c)` enumerates the color-c
+sublattice in strictly increasing flat-index order — with `cx = c&1`,
+`cy = (c>>1)&1`, `cz = (c>>2)&1`, `base(c) = cx | (cz<<6) | (cy<<12)`, the
+sublattice is `base + 2*(s&31) + 128*((s>>5)&31) + 8192*(s>>10)` for
+`s ∈ [0, 32768)` — and `next_color`/`color_last` are its successor and terminal.
+`Sim.phase` starts at `Grid.color_base(c)`; `Rules.step`'s advance cases 14/16
+now test `i == color_last(c)` and step to `next_color(i, c)`. The machine still
+visits the *same acted-on cells in the same order* (a color mismatch was already
+a no-op), so the fold is unchanged; it just visits 32768 cells per phase instead
+of 262144. Measured: active tick **≈ 21 ms → ≈ 4.5 ms**; `build+pull+30 ticks`
+0.62 s → 0.036 s (the settled tail is now ~0.09 ms each). T25 checks the
+sublattice (every `color_at(s,c)` is color `c`, `next_color` is the successor,
+the order is strictly increasing, and `color_last(c)` is the last cell).
+
+**Correction to the planned win list (honest).** `PLAN.md` had listed win 3 as
+"skip sleeping regions in the scan (reuses the M8 store)". That is **not**
+semantics-preserving on its own: T24 (A.57) shows a phase's `Ops.wake` activates
+same-color cells *later in scan order*, which the same phase then evaluates — so
+a pre-phase activity snapshot would drop real work. A sound region skip needs a
+worklist updated by `wake`, or a neighbourhood margin (a chunk whose 3×3×3
+neighbourhood is inactive cannot be written this tick), and the intra-phase
+activation question is exactly `V3c`/`G3`. The color scan gives the dominant part
+of the scan win without touching that semantics, and it is independent of V3c.
+Region-level skipping is therefore folded into the `V3c`/`G3` track rather than
+landed here.
+
+**Mirror note (G5).** `src/step.bend`'s `step_m` mirror still scans the flat
+index space (`i+1`, terminal 262144); only the engine's advance changed. The
+mirror's per-write-site Φ balances are unaffected (they are per-site, not per
+scan domain), but the "by inspection" scan correspondence is now coarser. This is
+recorded, not closed.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (59 laws; gate unchanged).
+- `bend test/tests.bend` → 24/24 PASS (T25 added).
+- `bend test/simtests.bend` native → 10/10 PASS (T23/T24 included, so the
+  ordered-cascade and intra-phase-activation witnesses still hold).
+- `bend_canary` → 6 ok, 0 bad.
+- Native 64³: settled tick ≈ 0.09 ms (was ≈ 21 ms); active tick ≈ 4.5 ms (was
+  ≈ 21 ms); `build+pull+30 ticks` 0.62 s → 0.036 s.

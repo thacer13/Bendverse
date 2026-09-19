@@ -144,11 +144,13 @@ def step(
               q = Array.get(U32, world, i)
               step(p, q, 14, i, c, 0, 0)
             case 14:
-              step(p, (world, gv), Bool.pick(U32, U32.is_eq(U32.add(i, 1), 262144), 15, 16), i, c, 0, 0)
+              step(p, (world, gv), Bool.pick(U32, U32.is_eq(i, Grid.color_last(c)), 15, 16), i, c, 0, 0)
             case 15:
               world
             case 16:
-              +ni = U32.add(i, 1)
+              # Advance to the next cell of this phase's color, not the next
+              # flat index: the whole phase scan is color-restricted (M9).
+              +ni = Grid.next_color(i, c)
               q = Array.get(U32, world, ni)
               step(p, q, 0, ni, c, 0, 0)
             case _:

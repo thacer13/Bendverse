@@ -60,3 +60,43 @@ def south(i: U32) -> U32:
 
 def north(i: U32) -> U32:
   neighbor(i, 0, 0, 1)
+
+# ---------------------------------------------------------- color sub-lattice
+# `Rules.color_of(i) = (ix&1) | ((iy&1)<<1) | ((iz&1)<<2)` partitions the flat
+# index space into 8 phase colors. The cells of color `c`, in increasing flat
+# index order, are exactly `color_at(0 .. 32767, c)` (M9: a phase scan need only
+# visit its own color instead of all 262144 cells and skipping 7/8 of them).
+#
+# With `cx = c&1`, `cy = (c>>1)&1`, `cz = (c>>2)&1` and the packed-index strides
+# (x: 1, z: 64, y: 4096), the color-`c` sub-lattice is `base(c) + 2*(s&31) +
+# 128*((s>>5)&31) + 8192*(s>>10)`, where `base(c) = cx | (cz<<6) | (cy<<12)`.
+def color_base(+c: U32) -> U32:
+  cx = U32.and(c, 1)
+  cy = U32.and(U32.shrn(c, 1n), 1)
+  cz = U32.and(U32.shrn(c, 2n), 1)
+  U32.or(U32.or(cx, U32.shln(cz, 6n)), U32.shln(cy, 12n))
+
+def color_at(+s: U32, +c: U32) -> U32:
+  U32.add(
+    color_base(c),
+    U32.add(
+      U32.add(U32.shln(U32.and(s, 31), 1n), U32.shln(U32.and(U32.shrn(s, 5n), 31), 7n)),
+      U32.shln(U32.shrn(s, 10n), 13n)
+    )
+  )
+
+def color_last(+c: U32) -> U32:
+  U32.add(color_base(c), 257982)
+
+# color_s is the inverse of color_at on a color-c index.
+def color_s(+i: U32, +c: U32) -> U32:
+  cx = U32.and(c, 1)
+  cy = U32.and(U32.shrn(c, 1n), 1)
+  cz = U32.and(U32.shrn(c, 2n), 1)
+  a = U32.shrn(U32.sub(ix(i), cx), 1n)
+  b = U32.shrn(U32.sub(iz(i), cz), 1n)
+  d = U32.shrn(U32.sub(iy(i), cy), 1n)
+  U32.add(U32.add(a, U32.shln(b, 5n)), U32.shln(d, 10n))
+
+def next_color(+i: U32, +c: U32) -> U32:
+  color_at(U32.add(color_s(i, c), 1), c)
