@@ -457,6 +457,14 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   eviction to all sleeping chunks needs the sleep-invariance proof (`G10`).
 - [ ] **M7d** Parallel phase folds (CPU) — gated on V3c.
 - [ ] **M7b** / **M7e** GPU worldgen / phases — blocked on a CUDA host (`G4`).
+- [ ] **M9 CPU perf pass (measured, cheap, unblocked)** — native at 64³:
+  `Sim.build()` ≈ 7 ms; a tick is **≈ 21 ms and flat** whether the world is
+  settled or active, so the cost is the 262144-cell × ~9-pass scan (support + 8
+  phases), not per-cell work. Wins in order: (1) render at cell resolution (64²
+  vs the current 256², ~16× fewer `Array.get`s); (2) settled-world tick fast
+  path (nothing active ⇒ no-op); (3) skip sleeping regions in the scan (reuses
+  the M8 store). Independent of V3c. CUDA stays deferred: it needs CUDA 12 at
+  `/usr/local/cuda` (absent here) and only pays off at M8 scale.
 - [x] **V4 (conservation)** — landed (A.31–A.32, A.34): every material-preserving
   write preserves the count, `array_point_write_count_balance` gives the exact
   displacement identity, and `array_mov_swap_preserves_count` proves the
@@ -504,6 +512,7 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   See `HISTORY.md` A.36–A.56 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
+`M9` (CPU perf) is independent and unblocked.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
 Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the
 settling guarantee.
