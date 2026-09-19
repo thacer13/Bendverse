@@ -20,6 +20,10 @@ import ./src/step.bend as Step
 import ./src/phase.bend as Phase
 import ./src/word.bend as WR
 
+# This import list is the coverage root: `bend PROOF.bend` checks every module
+# reachable from here, so an import whose *alias* looks unused may be the only
+# reason that module is verified at all. Do not "tidy" these away (A.62).
+
 def Laws.sanity():
   {==}
 

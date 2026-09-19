@@ -4,7 +4,6 @@ import ../src/cell.bend as Cell
 import ../src/worldgen.bend as Worldgen
 import ../src/sim.bend as Sim
 import ../src/support.bend as Support
-import ../src/chunk.bend as Chunk
 import ../src/store.bend as Store
 import ../scenarios/fixtures.bend as Fixtures
 

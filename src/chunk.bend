@@ -1,6 +1,4 @@
 import Base
-import ./grid.bend as Grid
-import ./cell.bend as Cell
 import ./worldgen.bend as Worldgen
 
 def size() -> U32:
@@ -11,9 +9,6 @@ def bits() -> Nat:
 
 def cells() -> U32:
   4096
-
-def per_axis() -> U32:
-  4
 
 def local(x: U32, y: U32, z: U32) -> U32:
   (U32.and(x, 15) .|. (U32.and(z, 15) << 4n) .|. (U32.and(y, 15) << 8n) : U32)

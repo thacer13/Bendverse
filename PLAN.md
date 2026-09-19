@@ -461,8 +461,8 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R3` | At most one writer per cell per phase | deviating | two same-colour cells write one target in a phase (T23) |
 | `R4` | Colour × direction batches, injective targets | deviating | batches are colour-only, so same-colour diagonal movers contend (T23); direction batching is `V0-3` |
 | `R5` | Falling is universal | conforming | `fall_*` laws |
-| `R6` | Cohesion rigidity is local | conforming | `Support.sup` / `Ops.adjacent_static` are neighbourhood-local; no cluster code exists |
-| `R7` | Support derived, scoped to disturbed cells | conforming | activity-gated derivation; the *scan* is a `C3` deviation, not a staleness one |
+| `R6` | Cohesion rigidity is local | deviating | `Ops.shell_adjacent` (renamed from `adjacent_static`, A.62) seeds support from **coordinates**, not the neighbourhood: it hardcodes the 64³ shell (literals `1`/`62`) and never reads an adjacent cell |
+| `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* is the separate `C3` deviation |
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
 | `R9` | Activity effects land next tick | deviating | `Ops.wake` activates immediately and the same phase then evaluates the woken cell (T24) |
 | `R10` | Determinism under any schedule | unproven | holds only because the scan is sequential; `C1` is the proof and does not hold yet |
@@ -471,8 +471,38 @@ This table is what would have caught T23/T24 on the day they landed.
 
 `C2` and `C3` are open engineering. `C1`/`R1`/`R3`/`R4`/`R9`/`R10` are one
 problem wearing six names — **a phase is not a pure function yet** — and `V0` is
-the work item that fixes it. No row is closed by rewording a rule to match the
-code.
+the work item that fixes it. `R6`/`R7` are a second, independent deviation: the
+support seed is positional, so "rigidity is local" is not yet true; `V0-2`/`V0-4`
+replace it with a real neighbour test. No row is closed by rewording a rule to
+match the code.
+
+### 4.2 Known landmines (recorded, not yet fixed)
+
+Active code that can turn a fault into a silent wrong answer. None of these is a
+proof gap; they are robustness debts, listed so that a later session does not
+discover them by accident. Each is removed or bounded by `V0-1`.
+
+- **Silent selector default.** `Rules.step` ends with `case _: world`, so an
+  unknown state ends the phase scan mid-way and returns a half-updated world.
+- **Silent candidate default.** `side_index`/`diag_index` end with `case _: i`,
+  so a `k` outside `{0,1,2,3}` (the engine's loop bound) silently becomes a
+  self-target instead of an error.
+- **Silent material default.** `Cell.density`/`static`/`slides`/`cohesion`/
+  `default_cohesion` all end with `case _`, so any material id ≥ 6 is treated as
+  empty-like (density 0, non-static): a bad id is invisible and can be fallen
+  through.
+- **Unproven fuel sufficiency.** `Rules.step` and `Support.sup` return the world
+  they have at fuel `0`, and `Sim`/`Support` pass a magic `2^24` with no law that
+  it is enough (~13× slack today). Grow the selector and a tick silently does
+  half its work.
+- **Fixed settling budget in tests.** `test/simtests.bend`'s `settle` runs a
+  fixed 50 ticks. T4b does assert the post-settle fixpoint, so the witness is
+  guarded — but the budget itself is not derived.
+
+Ownership of the world size from A.62 onward: `Grid.size()`/`volume()` and
+`Chunk.size()`/`cells()` are the single sources; the engines and mirrors no
+longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
+16³ chunk) was deleted rather than corrected.
 
 ---
 

@@ -34,7 +34,7 @@ def any_active_go(
 
 def any_active(world: Array<U32>) -> Array<U32> & Bool:
   q = Array.get(U32, world, 0)
-  any_active_go(U32.to_nat(262143), 0, False{}, q)
+  any_active_go(U32.to_nat(U32.sub(Grid.volume(), 1)), 0, False{}, q)
 
 def phase(world: Array<U32>, +c: U32) -> Array<U32>:
   +i0 = Grid.color_base(c)

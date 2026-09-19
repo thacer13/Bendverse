@@ -11,8 +11,6 @@ import ../src/store.bend as Store
 import ../src/ops.bend as Ops
 import ../src/rules.bend as Rules
 import ../src/count.bend as Count
-import ../src/refine.bend as Refine
-import ../src/fall.bend as Fall
 
 def is_bad(z: Bool) -> U32:
   match z:

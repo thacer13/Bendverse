@@ -274,7 +274,7 @@ def step_m(fuel: Nat, +t: R.PT, +gv: U32, +sel: StepSel, +i: U32, +c: U32, +w: U
           sr_add(step_m(p, t1, q, E14{}, i, c, 0, 0, wf, n, base),
                  wr_old(t, base, n, i), wr_new(t, base, n, i, Ops.set_fall0(w)))
         case E14{}:
-          step_m(p, t, gv, Bool.pick(StepSel, U32.is_eq(U32.add(i, 1), 262144), E15{}, E16{}), i, c, 0, 0, wf, n, base)
+          step_m(p, t, gv, Bool.pick(StepSel, U32.is_eq(U32.add(i, 1), Grid.volume()), E15{}, E16{}), i, c, 0, 0, wf, n, base)
         case E15{}:
           SR{t, 0n, 0n}
         case E16{}:
@@ -429,7 +429,7 @@ def step_preserves(+fuel: Nat, +t: R.PT, +gv: U32, +sel: StepSel, +i: U32, +c: U
             pt_write_balance(t, base, n, i, Ops.set_fall0(w)),
             step_preserves(p, t1, q, E14{}, i, c, 0, 0, wf, n, base))
         case E14{}:
-          step_preserves(p, t, gv, Bool.pick(StepSel, U32.is_eq(U32.add(i, 1), 262144), E15{}, E16{}), i, c, 0, 0, wf, n, base)
+          step_preserves(p, t, gv, Bool.pick(StepSel, U32.is_eq(U32.add(i, 1), Grid.volume()), E15{}, E16{}), i, c, 0, 0, wf, n, base)
         case E15{}:
           {==}
         case E16{}:

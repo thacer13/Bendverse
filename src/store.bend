@@ -111,9 +111,9 @@ def assemble_cells(m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> A
     case None{}:
       # A missing (evicted) chunk is regenerated from its pure gen: the store is
       # a sparse overlay on the coordinate-indexed worldgen (rule 11).
-      assemble_chunk(U32.to_nat(4096), 0, k, chunk_list(k), world)
+      assemble_chunk(U32.to_nat(Chunk.cells()), 0, k, chunk_list(k), world)
     case Some{cells}:
-      assemble_chunk(U32.to_nat(4096), 0, k, cells, world)
+      assemble_chunk(U32.to_nat(Chunk.cells()), 0, k, cells, world)
 
 def assemble_go(fuel: Nat, +ci: U32, +s: Store, world: Array<U32>) -> Array<U32>:
   match fuel:
@@ -198,8 +198,8 @@ def evict_key(
           +nk = Chunk.key(U32.and(ni, 3), U32.and(U32.shrn(ni, 2n), 3), U32.and(U32.shrn(ni, 4n), 3))
           evict_key(p, get(s, nk), ni, s, acc, nk)
         case Some{+cells}:
-          +sl = sleeping_cells(U32.to_nat(4096), cells, False{})
-          +ge = gen_eq_cells(U32.to_nat(4096), cells, chunk_list(k), True{})
+          +sl = sleeping_cells(U32.to_nat(Chunk.cells()), cells, False{})
+          +ge = gen_eq_cells(U32.to_nat(Chunk.cells()), cells, chunk_list(k), True{})
           +drop = Bool.and(sl, ge)
           +ni = U32.add(ci, 1)
           +nk = Chunk.key(U32.and(ni, 3), U32.and(U32.shrn(ni, 2n), 3), U32.and(U32.shrn(ni, 4n), 3))

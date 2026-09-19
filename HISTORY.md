@@ -2170,3 +2170,81 @@ orphan anything, and it must land with the retirement recorded.
 - `bend_canary` → 6 ok, 0 bad.
 - Nothing in `src/`, `LAWS.bend`, `PROOF.bend`, `test/` or `runners/` was touched,
   so T23/T24 still witness the *old* behaviour; they are re-witnessed by `V0`.
+
+### A.62 — Pre-`V0` audit: slop, landmines, and one wrong constant
+
+**Status:** cleanup. Gate green, 59 laws, both suites pass (sim rebuilt). No
+semantics changed — every edit is behaviour-preserving, verified by rebuilding
+and re-running the native simulation suite.
+
+**Method.** Name-level reference analysis across `src/`, `test/`, `runners/`,
+`scenarios/`, `LAWS.bend`, `PROOF.bend` (defs referenced nowhere, imports whose
+alias is never used), plus a read of every match/fallback site and every
+world-size literal. The point was to ask, per artifact: does this fight the
+direction we just committed to?
+
+**Fixed (behaviour-preserving).**
+- **`Chunk.per_axis()` deleted.** It was referenced nowhere and returned `4` for
+  a 16³ chunk — a wrong constant waiting to be used. A wrong constant is worse
+  than no constant. (`size()`/`cells()` remain the sources.)
+- **World size / chunk size centralised.** `Support.sup` (`262144`),
+  `Sim.any_active` (`262143`), `src/store.bend` (`4096` ×4), and the `step_m`/
+  `sup_m` mirrors (`262144` ×4) now read `Grid.volume()` / `Chunk.cells()`. These
+  were eight copies of "the world is 64³"; under `V0-2` (size as a parameter)
+  each copy was a silent breakage.
+- **`Grid.color_last` derived.** Was `color_base(c) + 257982` — a hand-computed
+  literal. Now `color_at(32767, c)`, which is exactly what T25 asserts, so the
+  witness's first check became definitional.
+- **`Ops.adjacent_static` renamed to `Ops.shell_adjacent`** and documented for
+  what it is: the support *seed* for the layer next to the bedrock shell. It is
+  **coordinate-based, not a neighbourhood test** — the old name claimed a
+  property it never had, and it bakes in the 64³ shell (`1`/`62` = `0+1`/`63-1`).
+  Three call sites updated (`Support.sup`, `sup_m`, `sup_m_preserves`).
+- **§4.1 corrected.** The rows I wrote in A.61 marked `R6`/`R7` **conforming**
+  with "`Ops.adjacent_static` is neighbourhood-local; no cluster code exists".
+  That was wrong on its own evidence. Both are now **deviating**: the support
+  seed is positional, so "rigidity is local" is not yet true. A second,
+  independent deviation group, fixed by `V0-2`/`V0-4`.
+- **Dead imports removed** (`src/chunk.bend`: `grid`, `cell`;
+  `test/tests.bend`: `refine`, `fall`; `test/simtests.bend`: `chunk`). An import
+  whose alias is unused reads as a dependency that does not exist.
+- **`PROOF.bend`'s imports annotated as the coverage root.** They look unused
+  (the aliases are), but they are *load-bearing*: `bend PROOF.bend` checks every
+  module reachable from that file, so removing one silently removes a module from
+  the verified set — and the gate would stay green. The A.60 mutation test (a
+  falsified `src/list.bend` lemma turning the gate red) is the evidence. The
+  comment exists so a future tidy cannot shrug them off.
+- **A.60's lemma chain labelled.** `cells_m`/`cnts_m_len`/`to_counts_len` are
+  consumed by nothing; they are now marked *library, not evidence* so no later
+  session reads them as a claim about the engine. This corrects my own A.60
+  framing, which called them "the use" of the hub import.
+
+**Recorded, not fixed (PLAN §4.2 "known landmines").** Silent selector default
+(`Rules.step` `case _: world` ends the phase scan mid-way); silent candidate
+default (`side_index`/`diag_index` `case _: i`); silent material default
+(`Cell.density`/`static`/`slides`/`cohesion` `case _`, so any material id ≥ 6 is
+empty-like and fall-through-able); unproven fuel sufficiency (a magic `2^24`,
+~13× slack, no law); the test suite's fixed 50-tick `settle` budget (T4b does
+guard the fixpoint). All are robustness debts, and all are removed or bounded by
+`V0-1`.
+
+**Checked and left alone (deliberately).**
+- 52 unused-by-other-files defs in `src/bits.bend`, 52 in `src/parity.bend`, 27
+  in `src/tick.bend`, etc. — nearly all are *internal proof helpers* used within
+  their own file, or live *library* lemmas (`src/list.bend`). That is the repo's
+  lemma library, not slop; deleting it would be churn with a loss of reuse.
+- Dead-but-true Φ wrappers in `src/tick.bend` (`array_fall_write`,
+  `array_deactivate_write`): superseded by the `V4` count laws delegating to the
+  underlying `chg_*` functions. Inert, proof-only, frozen with the mirror layer.
+- `Grid.west/east/south/north`, `Cell.decode`, `src/potential.bend`'s `dens_*`
+  anchors: symmetric API surface and one-line constant anchors. Inert and true.
+- `runners/ascii.bend` already shares `scenarios/fixtures.bend`; no duplication.
+- `LAWS.bend`'s 59 laws, all proofs, and the witness T23/T24: untouched, because
+  they still describe the *current* engine faithfully. `V0` is what retires them.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (59 laws, unchanged).
+- `bend test/tests.bend` → 24/24 PASS.
+- `bend test/simtests.bend -o bin && ./bin` (forced rebuild) → 10/10 PASS — the
+  behaviour-preservation check for the constant/`color_last` edits.
+- `bend_canary` → 6 ok, 0 bad.

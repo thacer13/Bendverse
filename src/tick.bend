@@ -512,7 +512,7 @@ def sup_m(fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gated: Bool, +n
           want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
           sup_m(p, t, v, Bool.pick(SupSel, want, S1{}, S9{}), i, gated, n, wf, base)
         case S1{}:
-          adj = Ops.adjacent_static(i)
+          adj = Ops.shell_adjacent(i)
           sup_m(p, t, gv, Bool.pick(SupSel, adj, S4{}, S5{}), i, gated, n, wf, base)
         case S2{}:
           +b = gv
@@ -542,7 +542,7 @@ def sup_m(fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gated: Bool, +n
           sup_add_gap(rr, guard_gap(t, base, n, i))
         case S9{}:
           +ni = U32.add(i, 1)
-          sup_m(p, t, gv, Bool.pick(SupSel, U32.is_eq(ni, 262144), S10{}, S11{}), i, gated, n, wf, base)
+          sup_m(p, t, gv, Bool.pick(SupSel, U32.is_eq(ni, Grid.volume()), S10{}, S11{}), i, gated, n, wf, base)
         case S10{}:
           (t, 0n)
         case S11{}:
@@ -616,7 +616,7 @@ def sup_m_preserves(+fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gate
           want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
           sup_m_preserves(p, t, v, Bool.pick(SupSel, want, S1{}, S9{}), i, gated, n, wf, base)
         case S1{}:
-          adj = Ops.adjacent_static(i)
+          adj = Ops.shell_adjacent(i)
           sup_m_preserves(p, t, gv, Bool.pick(SupSel, adj, S4{}, S5{}), i, gated, n, wf, base)
         case S2{}:
           +b = gv
@@ -672,7 +672,7 @@ def sup_m_preserves(+fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gate
               st))
         case S9{}:
           +ni = U32.add(i, 1)
-          sup_m_preserves(p, t, gv, Bool.pick(SupSel, U32.is_eq(ni, 262144), S10{}, S11{}), i, gated, n, wf, base)
+          sup_m_preserves(p, t, gv, Bool.pick(SupSel, U32.is_eq(ni, Grid.volume()), S10{}, S11{}), i, gated, n, wf, base)
         case S10{}:
           NatL.n_add_zero_right(S.suml(S.to_pots(R.pack(t), base, n)))
         case S11{}:

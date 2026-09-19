@@ -30,7 +30,7 @@ def sup(
               sup(p, (world, v), Bool.pick(U32, want, 1, 9), i, v, gated)
             case 1:
               +v = gv
-              adj = Ops.adjacent_static(i)
+              adj = Ops.shell_adjacent(i)
               sup(p, (world, v), Bool.pick(U32, adj, 4, 5), i, w, gated)
             case 5:
               q = Array.get(U32, world, Grid.below(i))
@@ -57,7 +57,7 @@ def sup(
               sup(p, q, 9, i, 0, gated)
             case 9:
               +ni = U32.add(i, 1)
-              sup(p, (world, gv), Bool.pick(U32, U32.is_eq(ni, 262144), 10, 11), i, 0, gated)
+              sup(p, (world, gv), Bool.pick(U32, U32.is_eq(ni, Grid.volume()), 10, 11), i, 0, gated)
             case 10:
               world
             case 11:

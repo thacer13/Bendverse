@@ -83,6 +83,10 @@ def cnts_m(t: R.PT) -> +List<Nat>:
 # fold emits exactly one entry per leaf, so `suml` conservation cannot be
 # bought by dropping or duplicating a cell -- the half of rule 2 that `suml`
 # alone cannot state. It consumes `src/list.bend`'s `length_append`.
+#
+# Library, not evidence (A.62): nothing consumes `cells_m`/`cnts_m_len`/
+# `to_counts_len` yet. They are kept as the list-glue library for `V0`/`V4`, and
+# are not a claim about the running engine.
 def cells_m(+t: R.PT) -> Nat:
   match t:
     case R.PL{x}:

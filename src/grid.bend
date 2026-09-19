@@ -86,7 +86,7 @@ def color_at(+s: U32, +c: U32) -> U32:
   )
 
 def color_last(+c: U32) -> U32:
-  U32.add(color_base(c), 257982)
+  color_at(32767, c)
 
 # color_s is the inverse of color_at on a color-c index.
 def color_s(+i: U32, +c: U32) -> U32:
