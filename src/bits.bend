@@ -831,3 +831,52 @@ def and_ones(n: Nat, w: Word(n)) -> {Word.and(n, w, mask(n, n)) == w : Word(n)}:
               Bool.and(wh, True{}), wh, b_and_true(wh)),
             Equal.cong(Word(p), Word(1n+p), t => WCon{wh, t},
               Word.and(p, wt, mask(p, p)), wt, and_ones(p, wt)))
+
+
+def mask_zero(n: Nat) -> {mask(n, 0n) == Word.zero(n) : Word(n)}:
+  match n:
+    case 0n:
+      {==}
+    case 1n+p:
+      {==}
+
+def not_eq_inv(+a: Bool, +b: Bool, +h: {Bool.not(a) == Bool.not(b) : Bool}) -> {a == b : Bool}:
+  Equal.trans(Bool, a, Bool.not(Bool.not(a)), b,
+    Equal.sym(Bool, Bool.not(Bool.not(a)), a, b_not_not(a)),
+    Equal.trans(Bool, Bool.not(Bool.not(a)), Bool.not(Bool.not(b)), b,
+      Equal.cong(Bool, Bool, t => Bool.not(t), Bool.not(a), Bool.not(b), h),
+      b_not_not(b)))
+
+def xor_cancel_left(+p: Bool, +a: Bool, +b: Bool, +h: {Bool.xor(p, a) == Bool.xor(p, b) : Bool}) -> {a == b : Bool}:
+  match p:
+    case False{}:
+      h
+    case True{}:
+      not_eq_inv(a, b, h)
+
+def shr_and_mask1_zero(+n: Nat, +X: Word(n))
+  -> {Word.shr(n, Word.and(n, X, mask(n, 1n))) == Word.zero(n) : Word(n)}:
+  match n:
+    case 0n:
+      match X:
+        case WNil{}:
+          {==}
+    case 1n+p:
+      match X:
+        case WCon{h, t}:
+          +e_m = Equal.cong(Word(p), Word(p), s => Word.and(p, t, s), mask(p, 0n), Word.zero(p), mask_zero(p))
+          +e_and = Equal.trans(Word(p), Word.and(p, t, mask(p, 0n)), Word.and(p, t, Word.zero(p)), Word.zero(p),
+            e_m, w_and_zero(p, t))
+          +e = Equal.cong(Word(p), Word(1n+p), s => Word.shr.pad(p, s),
+            Word.and(p, t, mask(p, 0n)), Word.zero(p), e_and)
+          Equal.trans(Word(1n+p),
+            Word.shr(1n+p, Word.and(1n+p, WCon{h, t}, mask(1n+p, 1n))),
+            Word.shr.pad(p, Word.and(p, t, mask(p, 0n))),
+            Word.zero(1n+p),
+            {==},
+            Equal.trans(Word(1n+p),
+              Word.shr.pad(p, Word.and(p, t, mask(p, 0n))),
+              Word.shr.pad(p, Word.zero(p)),
+              Word.zero(1n+p),
+              e,
+              shr_pad_zero(p)))

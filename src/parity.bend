@@ -14,6 +14,41 @@ def bit0(n: Nat, w: Word(n)) -> Bool:
         case WCon{h, t}:
           h
 
+def bit0_or(+n: Nat, +a: Word(n), +b: Word(n))
+  -> {bit0(n, Word.or(n, a, b)) == Bool.or(bit0(n, a), bit0(n, b)) : Bool}:
+  match n:
+    case 0n:
+      match a b:
+        case WNil{} WNil{}:
+          {==}
+    case 1n+p:
+      match a b:
+        case WCon{ah, at} WCon{bh, bt}:
+          {==}
+
+def bit0_and(+n: Nat, +a: Word(n), +b: Word(n))
+  -> {bit0(n, Word.and(n, a, b)) == Bool.and(bit0(n, a), bit0(n, b)) : Bool}:
+  match n:
+    case 0n:
+      match a b:
+        case WNil{} WNil{}:
+          {==}
+    case 1n+p:
+      match a b:
+        case WCon{ah, at} WCon{bh, bt}:
+          {==}
+
+def bit0_shl(+n: Nat, +X: Word(n)) -> {bit0(n, Word.shl(n, X)) == False{} : Bool}:
+  match n:
+    case 0n:
+      match X:
+        case WNil{}:
+          {==}
+    case 1n+p:
+      match X:
+        case WCon{h, t}:
+          {==}
+
 def fst_b(p: Bool & Bool) -> Bool:
   match p:
     case (a, b):

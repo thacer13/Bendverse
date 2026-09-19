@@ -2501,3 +2501,35 @@ neighbour's chosen target.
 - `bend test/tests.bend` → 26/26 PASS (+T30).
 - `bend test/simtests.bend -o bin && ./bin` (rebuilt) → 13/13 PASS.
 - `bend_canary` → 6 ok, 0 bad.
+
+### A.67 — proof-library consolidation: hoist V0-3b's generic bit/Bool lemmas
+
+**Status:** cleanup (no engine, law, or test change). Gate green (69 laws, no law
+touched), fast 26/26, canaries 6 ok.
+
+**Why.** V0-3b (A.66) needed seven lemmas that are not about colours at all —
+they are generic `Word`/`Bool` facts about `bit0`, masks, and `xor`. Leaving
+them in `src/color.bend` made that module ~500 lines and buried the colour
+argument under plumbing, and any future "bit `k` of a packed word" proof would
+have re-derived them. The A.66 session was ~80% `Equal.trans`/`cong`
+bookkeeping, so the reusable part is the part worth sharing.
+
+**What changed (move only).**
+- `src/parity.bend`: `bit0_or`, `bit0_and`, `bit0_shl` (bit-0 extraction from
+  `Word.or`/`and`/`shl`), next to `bit0`.
+- `src/bits.bend`: `mask_zero`, `not_eq_inv`, `xor_cancel_left`,
+  `shr_and_mask1_zero`, appended after their dependencies.
+- `src/color.bend`: the seven defs removed and their call sites qualified
+  (`Parity.bit0_*`, `Bits.*`); the two colour-specific constants
+  (`bit0_mask1`, `bit0_mask31`) stay. 500+ -> 383 lines.
+
+**Deliberately not done.** No new checker/gate/registry tooling: `bend_audit`
+already detects the drift class we hit (it flagged the 59→69 law-count mismatch),
+and a `conform`-vs-`gate` split or machine-readable status file would be real
+tooling for a small, currently-handled risk. The cheap lever was the shared
+lemma library, not process.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (69 laws; unchanged).
+- `bend test/tests.bend` -> 26/26 PASS.
+- `bend_canary` -> 6 ok, 0 bad.

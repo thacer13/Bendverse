@@ -13,49 +13,9 @@ import ./word.bend as Word
 # packs the three coordinate parities into bits 0..2. The cross-direction target
 # classification needs the *inverse*: bit `k` of `color_of(i)` is the parity of
 # coordinate `k`. These lemmas extract it (`bit0` of bit 0, of the 1-shift, and
-# of the 2-shift), so equal colours force equal coordinate parities.
-
-def bit0_or(+n: Nat, +a: Word(n), +b: Word(n))
-  -> {Parity.bit0(n, Word.or(n, a, b)) == Bool.or(Parity.bit0(n, a), Parity.bit0(n, b)) : Bool}:
-  match n:
-    case 0n:
-      match a b:
-        case WNil{} WNil{}:
-          {==}
-    case 1n+p:
-      match a b:
-        case WCon{ah, at} WCon{bh, bt}:
-          {==}
-
-def bit0_and(+n: Nat, +a: Word(n), +b: Word(n))
-  -> {Parity.bit0(n, Word.and(n, a, b)) == Bool.and(Parity.bit0(n, a), Parity.bit0(n, b)) : Bool}:
-  match n:
-    case 0n:
-      match a b:
-        case WNil{} WNil{}:
-          {==}
-    case 1n+p:
-      match a b:
-        case WCon{ah, at} WCon{bh, bt}:
-          {==}
-
-def bit0_shl(+n: Nat, +X: Word(n)) -> {Parity.bit0(n, Word.shl(n, X)) == False{} : Bool}:
-  match n:
-    case 0n:
-      match X:
-        case WNil{}:
-          {==}
-    case 1n+p:
-      match X:
-        case WCon{h, t}:
-          {==}
-
-def mask_zero(n: Nat) -> {Bits.mask(n, 0n) == Word.zero(n) : Word(n)}:
-  match n:
-    case 0n:
-      {==}
-    case 1n+p:
-      {==}
+# of the 2-shift), so equal colours force equal coordinate parities. The generic
+# `Parity.bit0_or/_and/_shl` and `Bits.shr_and_mask1_zero` they use live in the
+# shared library.
 
 def bit0_mask1() -> {Parity.bit0(32n, Bits.mask(32n, 1n)) == True{} : Bool}:
   {==}
@@ -63,34 +23,6 @@ def bit0_mask1() -> {Parity.bit0(32n, Bits.mask(32n, 1n)) == True{} : Bool}:
 def bit0_mask31() -> {Parity.bit0(32n, Bits.mask(32n, 31n)) == True{} : Bool}:
   {==}
 
-def shr_and_mask1_zero(+n: Nat, +X: Word(n))
-  -> {Word.shr(n, Word.and(n, X, Bits.mask(n, 1n))) == Word.zero(n) : Word(n)}:
-  match n:
-    case 0n:
-      match X:
-        case WNil{}:
-          {==}
-    case 1n+p:
-      match X:
-        case WCon{h, t}:
-          +e_m = Equal.cong(Word(p), Word(p), s => Word.and(p, t, s), Bits.mask(p, 0n), Word.zero(p), mask_zero(p))
-          +e_and = Equal.trans(Word(p), Word.and(p, t, Bits.mask(p, 0n)), Word.and(p, t, Word.zero(p)), Word.zero(p),
-            e_m, Bits.w_and_zero(p, t))
-          +e = Equal.cong(Word(p), Word(1n+p), s => Word.shr.pad(p, s),
-            Word.and(p, t, Bits.mask(p, 0n)), Word.zero(p), e_and)
-          Equal.trans(Word(1n+p),
-            Word.shr(1n+p, Word.and(1n+p, WCon{h, t}, Bits.mask(1n+p, 1n))),
-            Word.shr.pad(p, Word.and(p, t, Bits.mask(p, 0n))),
-            Word.zero(1n+p),
-            {==},
-            Equal.trans(Word(1n+p),
-              Word.shr.pad(p, Word.and(p, t, Bits.mask(p, 0n))),
-              Word.shr.pad(p, Word.zero(p)),
-              Word.zero(1n+p),
-              e,
-              Bits.shr_pad_zero(p)))
-
-# color_bit0: bit 0 of the packed colour is the x parity.
 def color_bit0(+i: U32) -> {Parity.par32(Rules.color_of(i)) == Parity.par32(Grid.ix(i)) : Bool}:
   match i:
     case U32{w}:
@@ -114,11 +46,11 @@ def color_bit0(+i: U32) -> {Parity.par32(Rules.color_of(i)) == Parity.par32(Grid
       +E6 = bA
       +E7 = Bool.and(bw6, Parity.bit0(32n, m1))
       +E8 = Bool.and(bw6, True{})
-      +e1 = bit0_or(32n, Word.or(32n, A, B), C)
-      +e2 = bit0_or(32n, A, B)
-      +e3 = bit0_shl(32n, Word.shl(32n, Word.and(32n, Word.and(32n, Bits.shr_n(32n, 6n, w), m6), m1)))
-      +e4 = bit0_shl(32n, Word.and(32n, Word.and(32n, Bits.shr_n(32n, 12n, w), m6), m1))
-      +e5 = bit0_and(32n, Word.and(32n, w, m6), m1)
+      +e1 = Parity.bit0_or(32n, Word.or(32n, A, B), C)
+      +e2 = Parity.bit0_or(32n, A, B)
+      +e3 = Parity.bit0_shl(32n, Word.shl(32n, Word.and(32n, Word.and(32n, Bits.shr_n(32n, 6n, w), m6), m1)))
+      +e4 = Parity.bit0_shl(32n, Word.and(32n, Word.and(32n, Bits.shr_n(32n, 12n, w), m6), m1))
+      +e5 = Parity.bit0_and(32n, Word.and(32n, w, m6), m1)
       +e6 = bit0_mask1()
       +e7 = Bits.b_and_true(bw6)
       +c2 = Equal.cong(Bool, Bool, t => Bool.or(t, bC), Parity.bit0(32n, Word.or(32n, A, B)), Bool.or(bA, bB), e2)
@@ -168,12 +100,12 @@ def color_bit1(+i: U32) -> {Parity.par32(U32.shrn(Rules.color_of(i), 1n)) == Par
         Bits.shr_or(32n, Word.or(32n, A, B), C),
         Equal.cong(Word(32n), Word(32n), t => Word.or(32n, t, sC),
           Word.shr(32n, Word.or(32n, A, B)), Word.or(32n, sA, sB), Bits.shr_or(32n, A, B)))
-      +e_a = shr_and_mask1_zero(32n, Word.and(32n, w, m6))
+      +e_a = Bits.shr_and_mask1_zero(32n, Word.and(32n, w, m6))
       +e_c = Bits.shr_shl_one(31n, Word.shl(32n, C0))
       +e_b = Bits.shr_shl_one(31n, B0)
-      +e1 = bit0_or(32n, Word.or(32n, sA, sB), sC)
-      +e2 = bit0_or(32n, sA, sB)
-      +e3 = bit0_shl(32n, C0)
+      +e1 = Parity.bit0_or(32n, Word.or(32n, sA, sB), sC)
+      +e2 = Parity.bit0_or(32n, sA, sB)
+      +e3 = Parity.bit0_shl(32n, C0)
       +e_ba = Equal.trans(Bool, rA, Parity.bit0(32n, Word.zero(32n)), False{},
         Equal.cong(Word(32n), Bool, t => Parity.bit0(32n, t), sA, Word.zero(32n), e_a),
         {==})
@@ -191,7 +123,7 @@ def color_bit1(+i: U32) -> {Parity.par32(U32.shrn(Rules.color_of(i), 1n)) == Par
               Parity.bit0(32n, tC),
               Bool.and(Parity.bit0(32n, Word.shl(32n, C0)), Parity.bit0(32n, m31)),
               Bool.and(Parity.bit0(32n, Word.shl(32n, C0)), True{}),
-              bit0_and(32n, Word.shl(32n, C0), m31),
+              Parity.bit0_and(32n, Word.shl(32n, C0), m31),
               Equal.cong(Bool, Bool, t => Bool.and(Parity.bit0(32n, Word.shl(32n, C0)), t), Parity.bit0(32n, m31), True{}, bit0_mask31())),
             Bits.b_and_true(Parity.bit0(32n, Word.shl(32n, C0)))),
           e3))
@@ -199,12 +131,12 @@ def color_bit1(+i: U32) -> {Parity.par32(U32.shrn(Rules.color_of(i), 1n)) == Par
         Equal.cong(Word(32n), Bool, t => Parity.bit0(32n, t), sB, tB, e_b),
         Equal.trans(Bool, L5, Bool.and(L6, True{}), L6,
           Equal.trans(Bool, L5, Bool.and(L6, Parity.bit0(32n, m31)), Bool.and(L6, True{}),
-            bit0_and(32n, B0, m31),
+            Parity.bit0_and(32n, B0, m31),
             Equal.cong(Bool, Bool, t => Bool.and(L6, t), Parity.bit0(32n, m31), True{}, bit0_mask31())),
           Bits.b_and_true(L6)))
       +e_L6 = Equal.trans(Bool, L6, Bool.and(bw12, True{}), bw12,
         Equal.trans(Bool, L6, Bool.and(bw12, Parity.bit0(32n, m1)), Bool.and(bw12, True{}),
-          bit0_and(32n, Word.and(32n, Bits.shr_n(32n, 12n, w), m6), m1),
+          Parity.bit0_and(32n, Word.and(32n, Bits.shr_n(32n, 12n, w), m6), m1),
           Equal.cong(Bool, Bool, t => Bool.and(bw12, t), Parity.bit0(32n, m1), True{}, bit0_mask1())),
         Bits.b_and_true(bw12))
       +c_d = Equal.cong(Bool, Bool, t => Bool.or(Bool.or(t, rB), rC), rA, False{}, e_ba)
@@ -251,10 +183,10 @@ def color_bit2(+i: U32) -> {Parity.par32(U32.shrn(Rules.color_of(i), 2n)) == Par
       +zA = Equal.trans(Word(32n), sA2, Word.shr(32n, Word.shr(32n, A)), Word.zero(32n),
         {==},
         Equal.trans(Word(32n), Word.shr(32n, Word.shr(32n, A)), Word.shr(32n, Word.zero(32n)), Word.zero(32n),
-          Equal.cong(Word(32n), Word(32n), t => Word.shr(32n, t), Word.shr(32n, A), Word.zero(32n), shr_and_mask1_zero(32n, Word.and(32n, w, m6))),
+          Equal.cong(Word(32n), Word(32n), t => Word.shr(32n, t), Word.shr(32n, A), Word.zero(32n), Bits.shr_and_mask1_zero(32n, Word.and(32n, w, m6))),
           Bits.shr_zero(32n)))
       +zB1 = Bits.shr_shl_one(31n, B0)
-      +zB0 = shr_and_mask1_zero(32n, Word.and(32n, Bits.shr_n(32n, 12n, w), m6))
+      +zB0 = Bits.shr_and_mask1_zero(32n, Word.and(32n, Bits.shr_n(32n, 12n, w), m6))
       +zB2 = Bits.shr_and(32n, B0, m31)
       +zB = Equal.trans(Word(32n), sB2, Word.shr(32n, Word.shr(32n, B)), Word.zero(32n),
         {==},
@@ -283,7 +215,7 @@ def color_bit2(+i: U32) -> {Parity.par32(U32.shrn(Rules.color_of(i), 2n)) == Par
             Equal.trans(Bool, Parity.bit0(32n, Word.and(32n, C0, Parity.kmask(2n))),
               Bool.and(Parity.bit0(32n, C0), Parity.bit0(32n, Parity.kmask(2n))),
               Bool.and(Parity.bit0(32n, C0), True{}),
-              bit0_and(32n, C0, Parity.kmask(2n)),
+              Parity.bit0_and(32n, C0, Parity.kmask(2n)),
               Equal.cong(Bool, Bool, t => Bool.and(Parity.bit0(32n, C0), t),
                 Parity.bit0(32n, Parity.kmask(2n)), True{}, {==})),
             Bits.b_and_true(Parity.bit0(32n, C0)))),
@@ -293,7 +225,7 @@ def color_bit2(+i: U32) -> {Parity.par32(U32.shrn(Rules.color_of(i), 2n)) == Par
           Equal.trans(Bool, Parity.bit0(32n, C0),
             Bool.and(Parity.bit0(32n, Word.and(32n, Bits.shr_n(32n, 6n, w), m6)), Parity.bit0(32n, m1)),
             Bool.and(Parity.bit0(32n, Word.and(32n, Bits.shr_n(32n, 6n, w), m6)), True{}),
-            bit0_and(32n, Word.and(32n, Bits.shr_n(32n, 6n, w), m6), m1),
+            Parity.bit0_and(32n, Word.and(32n, Bits.shr_n(32n, 6n, w), m6), m1),
             Equal.cong(Bool, Bool, t => Bool.and(Parity.bit0(32n, Word.and(32n, Bits.shr_n(32n, 6n, w), m6)), t),
               Parity.bit0(32n, m1), True{}, bit0_mask1())),
           Bits.b_and_true(bw6)))
@@ -303,8 +235,8 @@ def color_bit2(+i: U32) -> {Parity.par32(U32.shrn(Rules.color_of(i), 2n)) == Par
         Bits.shr_n_or(32n, 2n, Word.or(32n, A, B), C),
         Equal.cong(Word(32n), Word(32n), t => Word.or(32n, t, sC2),
           Bits.shr_n(32n, 2n, Word.or(32n, A, B)), Word.or(32n, sA2, sB2), Bits.shr_n_or(32n, 2n, A, B)))
-      +e1 = bit0_or(32n, Word.or(32n, sA2, sB2), sC2)
-      +e2 = bit0_or(32n, sA2, sB2)
+      +e1 = Parity.bit0_or(32n, Word.or(32n, sA2, sB2), sC2)
+      +e2 = Parity.bit0_or(32n, sA2, sB2)
       +c_d = Equal.cong(Bool, Bool, t => Bool.or(Bool.or(t, bB2), bC2), bA2, False{}, e_zA)
       +c_b = Equal.cong(Bool, Bool, t => Bool.or(Bool.or(False{}, t), bC2), bB2, False{}, e_zB)
       Equal.trans(Bool, L0, bC2, bw6,
@@ -358,19 +290,19 @@ def target_z_par(+i: U32, +dx: U32, +dz: U32)
       Parity.par32_mask6(addv),
       Parity.par32_add(Grid.iz(i), dz)))
 
-def not_eq_inv(+a: Bool, +b: Bool, +h: {Bool.not(a) == Bool.not(b) : Bool}) -> {a == b : Bool}:
+def Bits.not_eq_inv(+a: Bool, +b: Bool, +h: {Bool.not(a) == Bool.not(b) : Bool}) -> {a == b : Bool}:
   Equal.trans(Bool, a, Bool.not(Bool.not(a)), b,
     Equal.sym(Bool, Bool.not(Bool.not(a)), a, Bits.b_not_not(a)),
     Equal.trans(Bool, Bool.not(Bool.not(a)), Bool.not(Bool.not(b)), b,
       Equal.cong(Bool, Bool, t => Bool.not(t), Bool.not(a), Bool.not(b), h),
       Bits.b_not_not(b)))
 
-def xor_cancel_left(+p: Bool, +a: Bool, +b: Bool, +h: {Bool.xor(p, a) == Bool.xor(p, b) : Bool}) -> {a == b : Bool}:
+def Bits.xor_cancel_left(+p: Bool, +a: Bool, +b: Bool, +h: {Bool.xor(p, a) == Bool.xor(p, b) : Bool}) -> {a == b : Bool}:
   match p:
     case False{}:
       h
     case True{}:
-      not_eq_inv(a, b, h)
+      Bits.not_eq_inv(a, b, h)
 
 # Same colour => the three coordinate parities agree (the inverse of the packing).
 def same_color_x(+i: U32, +j: U32, +hc: {U32.is_eq(Rules.color_of(i), Rules.color_of(j)) == True{} : Bool})
@@ -425,7 +357,7 @@ def same_color_target_x_par(
   +hcx = same_color_x(i, j, hc)
   +econg = Equal.sym(Bool, Bool.xor(pxi, pdxj), Bool.xor(pxj, pdxj),
     Equal.cong(Bool, Bool, t => Bool.xor(t, pdxj), pxi, pxj, hcx))
-  xor_cancel_left(pxi, pdxi, pdxj, Equal.trans(Bool, Bool.xor(pxi, pdxi), Bool.xor(pxj, pdxj), Bool.xor(pxi, pdxj), ecross, econg))
+  Bits.xor_cancel_left(pxi, pdxi, pdxj, Equal.trans(Bool, Bool.xor(pxi, pdxi), Bool.xor(pxj, pdxj), Bool.xor(pxi, pdxj), ecross, econg))
 
 def same_color_target_z_par(
   +i: U32, +j: U32, +dxi: U32, +dzi: U32, +dxj: U32, +dzj: U32,
@@ -448,4 +380,4 @@ def same_color_target_z_par(
   +hcz = same_color_z(i, j, hc)
   +econg = Equal.sym(Bool, Bool.xor(pzi, pdzj), Bool.xor(pzj, pdzj),
     Equal.cong(Bool, Bool, t => Bool.xor(t, pdzj), pzi, pzj, hcz))
-  xor_cancel_left(pzi, pdzi, pdzj, Equal.trans(Bool, Bool.xor(pzi, pdzi), Bool.xor(pzj, pdzj), Bool.xor(pzi, pdzj), ecross, econg))
+  Bits.xor_cancel_left(pzi, pdzi, pdzj, Equal.trans(Bool, Bool.xor(pzi, pdzi), Bool.xor(pzj, pdzj), Bool.xor(pzi, pdzj), ecross, econg))
