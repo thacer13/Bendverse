@@ -34,7 +34,9 @@ def render(depth: Nat, size: U32, gp: Array<U32> & List<Image>, +x0: U32, +y0: U
     case 0n:
       match gp:
         case (world, acc):
-          +idx = Grid.index(U32.shrn(x0, 2n), U32.sub(63, U32.shrn(y0, 2n)), 32)
+          # Rendered at cell resolution: one quadtree leaf per cell, so the
+          # window scales the 64x64 image up (M9 win 1: 16x fewer `Array.get`s).
+          +idx = Grid.index(x0, U32.sub(63, y0), 32)
           render_leaf_got(Array.get(U32, world, idx), acc)
     case 1n+dp:
       +d = dp
@@ -73,12 +75,12 @@ def root_img(imgs: List<Image>) -> Image:
 def view_got(r: Array<U32> & List<Image>, run: Bool, mx: U32, my: U32) -> St & Image:
   match r:
     case (w2, leafs):
-      (St{w2, run, mx, my}, root_img(levels(8n, List.reverse(&1, Image, leafs))))
+      (St{w2, run, mx, my}, root_img(levels(6n, List.reverse(&1, Image, leafs))))
 
 def view(s: St) -> St & Image:
   match s:
     case St{w, run, mx, my}:
-      view_got(render(8n, 256, (w, Nil{}), 0, 0), run, mx, my)
+      view_got(render(6n, 64, (w, Nil{}), 0, 0), run, mx, my)
 
 def paint_at(world: Array<U32>, +x: U32, +y: U32, +mat: U32) -> Array<U32>:
   +cx = U32.shrn(x, 2n)
