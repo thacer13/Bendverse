@@ -15,6 +15,7 @@ import ./src/tick.bend as Tick
 import ./src/count.bend as Count
 import ./src/fall.bend as Fall
 import ./src/step.bend as Step
+import ./src/phase.bend as Phase
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -356,3 +357,7 @@ law step_mirror_balance:
   for +n: U32
   for +c: U32
   {Step.step_phi(Step.step_pass_m(fuel, t, n, c), 0, n) == Nat.add(Settle.suml(Settle.to_pots(Refine.pack(t), 0, n)), Step.step_db(Step.step_pass_m(fuel, t, n, c))) : Nat}
+
+law below_write_flips_y_phase:
+  for i: U32
+  {Parity.par32(Grid.iy(Grid.below(i))) == Bool.not(Parity.par32(Grid.iy(i))) : Bool}

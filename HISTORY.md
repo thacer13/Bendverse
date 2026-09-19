@@ -1893,3 +1893,48 @@ fold's activity closure is the model bug; if not, it is the scheduling blocker.
 - `bend PROOF.bend` → `All terms check.` (58 laws; no law changed).
 - `bend test/simtests.bend` native → 10/10 PASS, incl. the new **T23**
   (contention cascade) and **T24** (intra-phase activity) witnesses.
+
+### A.58 — V3c-0 (partial): every `Rules` write target is a `dy = −1` neighbor
+
+**Status:** proof. Gate green (59 laws). Adds `src/phase.bend` and law
+`below_write_flips_y_phase`. This is the provable fragment of V3c-0 (the
+`Rules`-level form of V3a); `G3` stays open with a sharper remainder.
+
+**What it proves.** Every cell `Rules.step` *writes* is a neighbor with
+`dy = −1`: `below(i)` for the fall (sel 6) and impact crush (sel 22), and
+`diag_index` for the diagonal slide (sel 12). For any `dy = −1` neighbor the
+`iy` parity flips, so the phase color's `y` bit — which is exactly
+`par32(iy i)` — flips too: a phase's writes never land on a cell in the same
+`y`-phase. The side cell (`side_index`, `dy = 0`) is read only and keeps the
+parity.
+
+**What landed (`src/phase.bend`).**
+- `iy_par`: the general `y`-component of the neighbor parity,
+  `par32(iy(neighbor(i, dx, dy, dz))) = xor(par32(iy i), par32 dy)`, by lifting
+  `Priority.u32_iy_neighbor_full` through `par32` (`par32_mask6`, `par32_add`).
+- `neighbor_y_flip` / `neighbor_y_keep`: the `dy = −1` and `dy = 0` instances.
+- `below_y_flip` + law `below_write_flips_y_phase`.
+
+**Why not the full color separation (the honest remainder).** Two pieces remain
+for "the target's *color* differs, not just its `y` bit":
+1. **`color_of` bit extraction.** `par32(shr 1 (color_of i)) = par32(iy i)`
+   needs a small `Word` bit library (`bit0` distributes over `or`/`and`,
+   `shr`/`shl` distribution, `and(w, 1)` bit facts). The first bricks check
+   (`par32_or`, `par32_and`, `par32_and1`, `par32_shl`, `par_shr1_or`,
+   `shr1_shl1`, `shr1_and1_zero`), but the full chain is a real tail and was
+   time-boxed out rather than forced.
+2. **`k < 4` bounds for `diag_index`/`side_index`.** Both are `match`-guarded on
+   `k` with an `_ -> i` fallback, so their per-branch statements need the
+   engine's `k ∈ {0,1,2,3}` invariant threaded (the same by-inspection `G5`
+   caveat as the `step_m`/`sup_m` selectors).
+
+**Why it is still worth landing.** It is the adjacency half of V3c's conflict
+freedom, at the `Rules` level rather than the model level, and it is
+unconditional. A.57 established the *hard* part is order (the contention
+cascade and the intra-phase activation), not adjacency; this closes the part
+that was cleanly provable.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (59 laws).
+- `bend test/tests.bend` → 23/23 PASS.
+- `bend test/simtests.bend` native → 10/10 PASS (A.57 witnesses included).
