@@ -2987,3 +2987,65 @@ walk (comparable at 64³; the win is that cost no longer scales with the world).
 - Equivalence: the mask tick is bit-identical to the pre-mask tick on
   `build`/`spawn`/`pull` for 1–30 ticks (hash probes), and T37 witnesses the
   carried work set across a row boundary.
+
+### A.78 — `V3d`: the material-preserving write family becomes one law, and Φ gets a runtime oracle
+
+**Status:** verification + tests. Prompted by an outside review of whether the
+refinement ladder is actually tractable. Two things came out of it.
+
+**1. The per-write mirror was avoidable.** Every material-preserving write
+(`set_support`, `set_fall0`, `mov`, `activate`, `deactivate`) has the same Φ and
+count obligation, but the potential layer said it four times over: `Tick.chg_support`,
+`chg_fall`, `chg_activate`, `chg_deactivate`, each a full recursive walk of the
+`PT` tree, each with its own `chg_X_if` distribution lemma and its own
+`array_X_write`. The count layer already had the factored form
+(`Count.array_point_write_preserves_count` + five one-line instances); Φ did not.
+
+The reason it could not be factored with an ordinary function parameter is a
+language fact, not a modelling one: **Bend closures are affine, so a parameter
+`f : U32 -> U32` may be called at most once** (probe: `f(f(x))` is rejected with
+"consumed more than once"), and a write function must be applied at *every* leaf.
+It has to be `Data`. So the write choice is a `Data`-kinded selector
+(`Selector.WrSel`), `apply_w` is a top-level def, and the traversal is written
+once. This is the device `SupSel`/`StepSel` already use, generalised.
+
+`src/selector.bend` added: `WrSel`, `apply_w`, `mat_pres` (the whole per-site
+obligation — material is untouched), `pot_pres`/`nempty_pres` (material
+preservation at *any* index is exactly what `pot_at`/`nempty` need), generic
+`chg_wr`/`cnt_wr` walks, and the two array-level theorems. Laws added (75 total):
+`write_selector_preserves_phi`, `write_selector_preserves_count`,
+`array_fall_write_preserves_phi`, `array_mov_write_preserves_phi`,
+`array_deactivate_write_preserves_phi`.
+
+**Coverage, not just size.** `set_fall0` and `deactivate` are emitted by the live
+`Rules.plan` on every tick (sel 22/23 and 4) and had **no array-level Φ law at
+all** — the only thing that accounted for them was `step_m`, which mirrors the
+retired `Rules.step` (A.63). The selector family covers them unconditionally, so
+`G14` now owes only that `plan` emits no other kind of write. `step_mirror_balance`
+is marked RETIRED in `LAWS.bend` (it was documented as retired in PLAN §3.4/§4.1
+but still read as live evidence in the law list), and the `R2` conformance row no
+longer cites the closed `G10` as write-site coverage while `G14` is open.
+
+**2. There was no executable Φ.** `Settle.array_phi` is a proof-side definition
+and `Settle.suml` is not tail-recursive, so it overflows the stack on a
+2^18-cell world — which is *why* the flagship property had never been checked
+end to end. `test/simtests.bend` now carries a tail-recursive oracle
+(`phi_acc`/`phi_run`, reading `Grid.to_list` in ascending flat-index order, the
+order `Settle.to_pots` walks). T39 pins it to the model by comparing against
+`Settle.pot_at` at the packed index for three heights (so a wrong list order, a
+wrong counter start, or a wrong `iy` decode all fail); T38 runs it: **Φ is
+non-increasing across 60 real engine ticks and strictly decreases over the span**
+(non-vacuity).
+
+Two language traps found while landing the oracle, both worth knowing:
+large `Nat` literals are expanded unary and blow the compiler (`Nat.is_eq(6300n,
+6300n)` overflows; the same value built at runtime is fine), and `match` cannot
+scrutinize a local binder or a computed value, so pair-returning folds must be
+unpacked through a parameter. T39 therefore derives its expectation from the
+model rather than from a literal.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (75 laws).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 20/20 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
+- Φ oracle validated three ways (y=1, y=5, y=63 against `Settle.pot_at`).

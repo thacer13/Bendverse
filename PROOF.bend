@@ -23,6 +23,7 @@ import ./src/batch.bend as Batch
 import ./src/commit.bend as Commit
 import ./src/color.bend as Color
 import ./src/word.bend as WR
+import ./src/selector.bend as Selector
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -247,3 +248,18 @@ def Laws.color_collision_z_par(i, j, dxi, dzi, dxj, dzj, hc, ht):
 
 def Laws.point_writes_commute(t, n, i, j, v, w, hne):
   Commit.swap_m_comm(t, n, i, j, v, w, hne)
+
+def Laws.write_selector_preserves_phi(sel, t, base, n, i):
+  Selector.array_write_preserves_phi(sel, t, base, n, i)
+
+def Laws.write_selector_preserves_count(sel, t, n, i):
+  Selector.array_write_preserves_count(sel, t, n, i)
+
+def Laws.array_fall_write_preserves_phi(t, base, n, i):
+  Selector.array_write_preserves_phi(Selector.WFall0{}, t, base, n, i)
+
+def Laws.array_mov_write_preserves_phi(t, base, n, i):
+  Selector.array_write_preserves_phi(Selector.WMov{}, t, base, n, i)
+
+def Laws.array_deactivate_write_preserves_phi(t, base, n, i):
+  Selector.array_write_preserves_phi(Selector.WDeact{}, t, base, n, i)

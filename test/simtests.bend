@@ -5,6 +5,7 @@ import ../src/worldgen.bend as Worldgen
 import ../src/sim.bend as Sim
 import ../src/support.bend as Support
 import ../src/store.bend as Store
+import ../src/settle.bend as Settle
 import ../scenarios/fixtures.bend as Fixtures
 
 def is_bad(z: Bool) -> U32:
@@ -378,6 +379,97 @@ def t37() -> U32:
   w = Sim.ticks(U32.to_nat(2), t37_world())
   is_bad(U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(4, 14, 4))), Cell.sand()))
 
+# ============================================================================
+# T38/T39 — the flagship property, end to end, on the real engine (A.78)
+#
+# Until now Φ was only ever a *symbolic* object: `Settle.array_phi` is a
+# proof-side definition and `Settle.suml` is not tail-recursive, so it overflows
+# the stack on a 2^18-cell world. The engine was therefore never checked against
+# the property the whole verification pyramid is built to establish. These two
+# tests close that: T39 pins the runtime oracle to the model, T38 runs it.
+#
+# Run natively (`bend test/simtests.bend -o bin && ./bin`): the JS backend
+# overflows on this shape, which is why the property went untested.
+# ============================================================================
+
+# Φ = Σ dens(material) * y, over the world read in ascending flat-index order
+# (the order `Grid.to_list` yields, which is the order `Settle.to_pots` walks).
+# Tail-recursive, so it survives a full 262144-cell world.
+def phi_acc(xs: List<&1, U32>, +i: U32, acc: Nat) -> Nat:
+  match xs:
+    case Nil{}:
+      acc
+    case Con{h, t}:
+      phi_acc(t, U32.add(i, 1), Nat.add(acc, Settle.pot_at(h, i)))
+
+def phi_run(world: Array<U32>) -> Nat:
+  phi_acc(Grid.to_list(world), 0, 0n)
+
+# Φ consumes an array, so keep the original and measure a copy.
+def phi_dup(a: Array<U32>) -> Array<U32> & Array<U32>:
+  Array.clone(U32, a)
+
+def phi_keep(p: Array<U32> & Array<U32>) -> Nat & Array<U32>:
+  match p:
+    case (a, b): (phi_run(a), b)
+
+# Tick `fuel` times; `bad` counts ticks where Φ strictly increased.
+def phi_span(fuel: Nat, pr: Nat & Array<U32>, prev: Nat, bad: U32) -> Nat & U32:
+  match fuel:
+    case 0n:
+      match pr:
+        case (ph, w): (ph, bad)
+    case 1n+p:
+      match pr:
+        case (+ph, w):
+          up = Nat.is_gt(ph, prev)
+          phi_span(p, phi_keep(phi_dup(Sim.tick(w))), ph, U32.add(bad, Bool.pick(U32, up, 1, 0)))
+
+# Non-vacuity: a run that moved nothing would pass a monotonicity check for free,
+# so Φ must also have strictly dropped over the whole span.
+def t38_fin(pr: Nat & U32, +ph0: Nat) -> U32:
+  match pr:
+    case (phf, bad):
+      dropped = Nat.is_gt(ph0, phf)
+      U32.add(bad, Bool.pick(U32, dropped, 0, 1))
+
+def t38_start(pr: Nat & Array<U32>) -> U32:
+  match pr:
+    case (+ph0, w):
+      t38_fin(phi_span(60n, phi_keep(phi_dup(Sim.tick(w))), ph0, 0), ph0)
+
+def t38() -> U32:
+  w0 = Fixtures.spawn(Sim.build())
+  w1 = Fixtures.pull(w0)
+  t38_start(phi_keep(phi_dup(w1)))
+
+# T39 — the oracle must agree with the model. An all-empty world carrying one
+# sand grain at height y has Φ = `Settle.pot_at` at its packed index, so the
+# expectation is taken from the model rather than from a literal. (Large `Nat`
+# literals are expanded unary by the compiler and overflow; deriving the value
+# is both necessary and a stronger statement.) This pins the whole read path:
+# `Grid.to_list` order, the counter's start value, and the `iy` decode.
+def empty_world_at(depth: Nat) -> Array<U32>:
+  match depth:
+    case 0n:
+      ALeaf{0}
+    case 1n+ +p:
+      ANode{empty_world_at(p), empty_world_at(p)}
+
+def one_sand_phi(+y: U32) -> Nat:
+  +idx = Grid.index(32, y, 32)
+  w = empty_world_at(18n)
+  w2 = w[idx] <- Cell.encode(Cell.sand(), 0, 0, 0, 0)
+  phi_run(w2)
+
+def model_one_sand(+y: U32) -> Nat:
+  Settle.pot_at(Cell.encode(Cell.sand(), 0, 0, 0, 0), Grid.index(32, y, 32))
+
+def t39() -> U32:
+  a = U32.add(is_bad(Nat.is_eq(one_sand_phi(1), model_one_sand(1))),
+              is_bad(Nat.is_eq(one_sand_phi(5), model_one_sand(5))))
+  U32.add(a, is_bad(Nat.is_eq(one_sand_phi(63), model_one_sand(63))))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -398,3 +490,5 @@ def main() -> IO(Unit):
     report("T35 work-list phase acts on its colour only", t35())
     report("T36 support crush wake is deferred (G16)", t36())
     report("T37 dirty-row mask carries the work set", t37())
+    report("T38 Phi never increases over 60 engine ticks", t38())
+    report("T39 runtime Phi oracle agrees with the model", t39())

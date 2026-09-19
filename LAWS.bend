@@ -17,6 +17,7 @@ import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
 import ./src/commit.bend as Commit
+import ./src/selector.bend as Selector
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -352,6 +353,13 @@ law array_mov_lowers_phi_regime:
   for +hge: {Nat.is_ge(Fall.mov_S(t, base, n, i, j), Fall.mov_T(t, base, n, i, j)) == True{} : Bool}
   {Nat.add(Settle.suml(Settle.to_pots(Fall.mov_array(t, n, i, j), base, n)), Fall.fall_gap(t, base, n, i, j)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
 
+# RETIRED (A.78 note; retired by V0-1/A.63). `Step.step_pass_m` mirrors
+# `Rules.step`, which A.63 removed. The theorem is still true of that old
+# selector machine, but it no longer speaks about the engine, so it is **not
+# evidence** (`PLAN.md` §3.4, §4.1; gap `G10`). The live write-site enumeration
+# is `Rules.plan` and it is the open gap `G14`. Marked here so the law list
+# cannot be read as live coverage: a mirror of a shape that no longer exists is
+# worse than no mirror (AGENTS.md). Do not extend `step_m`.
 law step_mirror_balance:
   for fuel: Nat
   for +t: Refine.PT
@@ -469,3 +477,56 @@ law point_writes_commute:
   for +w: U32
   for +hne: {Commit.ne_idx(t, n, i, j) == True{} : Bool}
   {Refine.swap_m(Refine.swap_m(t, n, i, v), n, j, w) == Refine.swap_m(Refine.swap_m(t, n, j, w), n, i, v) : Refine.PT}
+
+# V3d — the generic write-selector family (A.78).
+#
+# Every material-preserving write has the same Φ and count obligation. Instead of
+# four hand-written `PT` recursions (`Tick.chg_support`/`chg_fall`/`chg_activate`/
+# `chg_deactivate`), the write choice is a `Data`-kinded selector (`Selector.WrSel`)
+# and the traversal is proved once. A `Data` selector is required rather than a
+# function parameter because Bend closures are affine: `f : U32 -> U32` can be
+# called at most once, and the traversal applies the write at every leaf.
+#
+# The two generic laws are the family's whole content; the site-specific laws
+# below them are one-line instances, kept for traceability to §4.
+#
+# Coverage note: `array_fall_write_preserves_phi`, `array_mov_write_preserves_phi`
+# and `array_deactivate_write_preserves_phi` are *new* statements. `set_fall0` and
+# `deactivate` are emitted by the live `Rules.plan` on every tick (sel 22/23 and 4)
+# and previously had no array-level Φ law — `step_m` covered them, but it mirrors
+# the retired `Rules.step` (A.63) and is no longer evidence (`G10`/`G14`).
+law write_selector_preserves_phi:
+  for +sel: Selector.WrSel
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Selector.apply_w(Tick.tget(t, n, i), sel))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law write_selector_preserves_count:
+  for +sel: Selector.WrSel
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Selector.apply_w(Tick.tget(t, n, i), sel))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+
+law array_fall_write_preserves_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Ops.set_fall0(Tick.tget(t, n, i)))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law array_mov_write_preserves_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Rules.mov(Tick.tget(t, n, i)))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law array_deactivate_write_preserves_phi:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Cell.deactivate(Tick.tget(t, n, i)))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
