@@ -1524,3 +1524,32 @@ covered by `array_guarded_crush_lowers_auto`.
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (54 laws); fast 22/22.
+
+### A.50 — Repo shape: `runners/` + `test/`, and a `scenarios/` fixtures module
+
+**Status:** restructure only — no engine, law, or proof change; gate green
+(54 laws); fast 22/22; sim 8/8. This makes the existing boundaries explicit
+instead of changing behavior.
+
+**The split.** `app/` bundled two different things — *runners* (visibility) and
+*tests* (verification evidence). Now:
+- `runners/ascii.bend`, `runners/window.bend` — thin front-ends;
+- `test/tests.bend`, `test/simtests.bend` — golden tests;
+- `scenarios/fixtures.bend` — shared setup (`spawn`, `pull`) moved out of
+  `src/sim.bend`, which is now only `build`/`phase`/`tick`/`ticks` (and drops its
+  now-unused `grid`/`cell`/`ops` imports).
+
+**Wiring updated.** `main.bend`; the runners'/tests' imports (`Fixtures.*`); the
+pi extension (`.pi/extensions/bendverse/index.ts`): `bend_test`/`bend_run`
+paths and the sim-cache mtime dirs (`src` + `test` + `runners` + `scenarios`);
+`AGENTS.md` code layout/workflow; `PLAN.md` §2.11, §3.1, §3.5, §6.
+`HISTORY.md` bodies are immutable and still say `app/…` — they are snapshots.
+
+**Note.** The extension is loaded at pi startup (A.43), so this session's
+`bend_test`/`bend_run` still held the old paths; the suites were verified by
+shell (`bend test/…`), and the new paths take effect next session.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (54 laws); `bend test/tests.bend` 22/22;
+  `bend test/simtests.bend -o bin && ./bin` 8/8; `bend runners/ascii.bend` runs;
+  extension transpiles (`bun build … --external '*'`).

@@ -3,6 +3,7 @@ import ../src/grid.bend as Grid
 import ../src/cell.bend as Cell
 import ../src/worldgen.bend as Worldgen
 import ../src/sim.bend as Sim
+import ../scenarios/fixtures.bend as Fixtures
 
 def char_of(m: U32) -> String:
   match m:
@@ -95,7 +96,7 @@ def ticks() -> Nat:
 def main() -> IO(Unit):
   do IO<Unit>:
     world : Array<U32> = Sim.build()
-    world1 : Array<U32> = Sim.pull(world)
+    world1 : Array<U32> = Fixtures.pull(world)
     IO.print("BEFORE (x-y at z=32, y=63 top; one base rock cell pulled at x=32,y=3):")
     IO.print(render_gen())
     world2 : Array<U32> = Sim.ticks(ticks(), world1)

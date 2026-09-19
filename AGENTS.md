@@ -31,10 +31,12 @@ machine-checked by `PROOF.bend`.
   key/gen + radix store), `bits`/`nat`/`potential` (verified lemma + evaluation
   kernels), `settle`/`parity`/`mod`/`priority`/`order` (V1–V3 verification
   layers).
-- `app/` — **thin runners and tests**, not part of the engine: `ascii.bend`
-  (headless cross-section scenario), `window.bend` (`App.run` UI, M6),
-  `tests.bend` (fast, tick-free golden tests), `simtests.bend` (simulation tests,
-  native-recommended).
+- `runners/` — **thin front-ends**, visibility only, not part of the engine:
+  `ascii.bend` (headless cross-section scenario), `window.bend` (`App.run` UI, M6).
+- `test/` — **verification witnesses**, not front-end: `tests.bend` (fast,
+  tick-free golden tests), `simtests.bend` (simulation tests, native-recommended).
+- `scenarios/` — **setup fixtures** shared by runners and tests (`fixtures.bend`:
+  `spawn`, `pull`), so `src/sim.bend` stays only the tick pipeline.
 - `main.bend` — delegates to the current runner.
 - `PROOF.bend` / `LAWS.bend` — verification, never runtime.
 
@@ -44,8 +46,8 @@ machine-checked by `PROOF.bend`.
   guess the API. Search the project's own lemmas with `bend_lemmas` before
   re-deriving one.
 - Before every commit: `bend PROOF.bend` must print `All terms check.`
-- Tests: fast JS suite `bend app/tests.bend`; simulation suite
-  `bend app/simtests.bend -o bin && ./bin` (native-recommended — JS ticks are slow).
+- Tests: fast JS suite `bend test/tests.bend`; simulation suite
+  `bend test/simtests.bend -o bin && ./bin` (native-recommended — JS ticks are slow).
 - Implement what `PLAN.md` specifies; land it only when the gate is green and
   both suites pass; then move the item from §5.2 to §5.1 and append a
   `HISTORY.md` entry (newest last). Leave the repo runnable after every step.

@@ -246,15 +246,17 @@ the world by calling it per cell (`build`; `build_at` is the parallel variant).
 
 ### 2.11 Runners
 
-- `app/ascii.bend` (root `main.bend` delegates to it): build world, print the
+- `runners/ascii.bend` (root `main.bend` delegates to it): build world, print the
   x–y cross-section at z = 32 (y top-down so up is up), run N ticks (`Nat` fuel,
   N = 20), print again. Chars: `.` Empty, `#` Bedrock, `s` Sand, `R` Rock,
   `r` Rubble.
-- `app/window.bend`: `App.run` windowed app; state = world + running flag; view
+- `runners/window.bend`: `App.run` windowed app; state = world + running flag; view
   renders the x–y cross-section at z = 32 as a 64×64 quadtree `Image`; tick
   handles left/right mouse paint (Sand/Rock) at `(mx, 63 - my, 32)`, `e` to
   erase, space to pause, close to quit. Paints set activity on 26 neighbors.
-- `app/tests.bend`, `app/simtests.bend`: golden tests, see §3.5.
+- `test/tests.bend`, `test/simtests.bend`: golden tests, see §3.5.
+- `scenarios/fixtures.bend`: shared setup (`spawn`, `pull`), so `src/sim.bend`
+  stays only the tick pipeline.
 
 ### 2.12 Determinism contract
 
@@ -274,8 +276,8 @@ module against the current definitions. An undischarged law is a TODO, so a
 missing proof makes the gate red. Changing `src/` can break proofs — that is the
 point, not an accident.
 
-Tests are separate and complementary: `bend app/tests.bend` (JS, tick-free) and
-native `bend app/simtests.bend -o bin && ./bin`.
+Tests are separate and complementary: `bend test/tests.bend` (JS, tick-free) and
+native `bend test/simtests.bend -o bin && ./bin`.
 
 ### 3.2 What the gate proves — and what it cannot
 
@@ -314,14 +316,14 @@ record is mechanical, not narrative.
 
 ### 3.5 Golden tests (runtime witnesses)
 
-Fast, tick-free (`app/tests.bend`): T5 index/cell roundtrips; bit-31 and
+Fast, tick-free (`test/tests.bend`): T5 index/cell roundtrips; bit-31 and
 mul-wrap spikes; T6 gen determinism; T7 terrain structure; T8 build = gen over
 all cells; T10 parity/neighbor-x; T11 low6 add + ∓1 cancel; T12 dir φ
 cancellation; T13 neighbor index cancellation; T14 scan-order totality; T15
 `List.set` split + sum; T16 chunk key/local roundtrip + gen; T17 chunk store
 set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4).
 
-Simulation, native-recommended (`app/simtests.bend`): T1 tick determinism over
+Simulation, native-recommended (`test/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
 settles and far cells are untouched; T4b a settled world is a fixed point; T9
 pull-base collapses rock; T18 chunk-store tick equivalence; T20 evict → assemble
@@ -540,10 +542,11 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `src/order.bend` | rule 3: total scan order |
 | `src/chunk.bend` | chunk key/index, pure per-chunk gen |
 | `src/store.bend` | `U32`-keyed radix-tree chunk store, assemble (gen fallback on evicted chunks), eviction |
-| `app/ascii.bend` | fueled ASCII runner |
-| `app/window.bend` | `App.run` windowed runner |
-| `app/tests.bend` | fast golden tests (tick-free) |
-| `app/simtests.bend` | simulation golden tests (native-recommended) |
+| `runners/ascii.bend` | fueled ASCII runner |
+| `runners/window.bend` | `App.run` windowed runner |
+| `test/tests.bend` | fast golden tests (tick-free) |
+| `test/simtests.bend` | simulation golden tests (native-recommended) |
+| `scenarios/fixtures.bend` | shared setup fixtures (`spawn`, `pull`) |
 | `.pi/extensions/bendverse/` | project tooling (§3.6) |
 
 All of `src/` is pure (zero IO). Runners are thin shells.

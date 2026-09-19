@@ -166,14 +166,14 @@ export default function bendverse(pi: ExtensionAPI) {
 		name: "bend_test",
 		label: "bend tests",
 		description:
-			"Run the Bendverse test suites and report only a pass/fail summary (plus FAIL lines). suite=fast runs `bend app/tests.bend` (JS, tick-free); suite=sim compiles and runs `app/simtests.bend` natively, reusing a cached binary when sources are unchanged.",
+			"Run the Bendverse test suites and report only a pass/fail summary (plus FAIL lines). suite=fast runs `bend test/tests.bend` (JS, tick-free); suite=sim compiles and runs `test/simtests.bend` natively, reusing a cached binary when sources are unchanged.",
 		promptSnippet: "Run fast or sim Bendverse tests; returns a compact pass/fail summary.",
 		promptGuidelines: [
 			"Use bend_test (suite=fast, then suite=sim when behavior changed) instead of shelling out to bend for tests; it returns only the failures.",
 		],
 		parameters: Type.Object({
 			suite: StringEnum(["fast", "sim"] as const, {
-				description: "fast = app/tests.bend (JS); sim = app/simtests.bend (native, cached)",
+				description: "fast = test/tests.bend (JS); sim = test/simtests.bend (native, cached)",
 			}),
 			rebuild: Type.Optional(Type.Boolean({ description: "Force a native rebuild for suite=sim." })),
 		}),
@@ -185,12 +185,14 @@ export default function bendverse(pi: ExtensionAPI) {
 				let r: ExecResult;
 				let rebuilt = false;
 				if (suite === "fast") {
-					r = await execBend(["app/tests.bend"], ctx.cwd, signal);
+					r = await execBend(["test/tests.bend"], ctx.cwd, signal);
 				} else {
 					const bin = scratchBin(ctx.cwd, "simtests");
 					const srcNewest = Math.max(
 						await newestMtime(join(ctx.cwd, "src")),
-						await newestMtime(join(ctx.cwd, "app")),
+						await newestMtime(join(ctx.cwd, "test")),
+						await newestMtime(join(ctx.cwd, "runners")),
+						await newestMtime(join(ctx.cwd, "scenarios")),
 					);
 					let binMtime = 0;
 					try {
@@ -203,7 +205,7 @@ export default function bendverse(pi: ExtensionAPI) {
 					const needBuild = params.rebuild === true || binMtime === 0 || binMtime < srcNewest;
 					if (needBuild) {
 						await mkdir(join(bin, ".."), { recursive: true });
-						const build = await execBend(["app/simtests.bend", "-o", bin], ctx.cwd, signal);
+						const build = await execBend(["test/simtests.bend", "-o", bin], ctx.cwd, signal);
 						if (build.code !== 0) {
 							throw new Error(`simtests failed to compile (exit ${build.code})\n\n${build.out}`);
 						}
@@ -238,10 +240,10 @@ export default function bendverse(pi: ExtensionAPI) {
 		name: "bend_run",
 		label: "run a .bend file",
 		description:
-			"Run an arbitrary Bend file (e.g. app/ascii.bend for a scenario, or a scratch repro). Returns only the last `tail` lines of output. native=true compiles first (recommended for tick-heavy runners; JS ticks are slow).",
+			"Run an arbitrary Bend file (e.g. runners/ascii.bend for a scenario, or a scratch repro). Returns only the last `tail` lines of output. native=true compiles first (recommended for tick-heavy runners; JS ticks are slow).",
 		promptSnippet: "Run any .bend file and return the tail of its output.",
 		parameters: Type.Object({
-			file: Type.String({ description: "Path relative to the project root, e.g. app/ascii.bend" }),
+			file: Type.String({ description: "Path relative to the project root, e.g. runners/ascii.bend" }),
 			native: Type.Optional(Type.Boolean({ description: "Compile natively before running (faster for ticks)." })),
 			tail: Type.Optional(Type.Number({ description: "How many output lines to return (default 40)." })),
 			timeout: Type.Optional(Type.Number({ description: "Timeout in seconds (default 240)." })),

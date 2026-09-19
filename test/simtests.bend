@@ -6,6 +6,7 @@ import ../src/sim.bend as Sim
 import ../src/support.bend as Support
 import ../src/chunk.bend as Chunk
 import ../src/store.bend as Store
+import ../scenarios/fixtures.bend as Fixtures
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -57,9 +58,9 @@ def count_nonempty_list(xs: List<U32>, +acc: U32) -> U32:
       count_nonempty_list(t, Bool.pick(U32, ne, U32.add(acc, 1), acc))
 
 def t2() -> U32:
-  w0 = Sim.spawn(Sim.build())
+  w0 = Fixtures.spawn(Sim.build())
   before = count_nonempty_list(Grid.to_list(w0), 0)
-  w1 = Sim.spawn(Sim.build())
+  w1 = Fixtures.spawn(Sim.build())
   w2 = Sim.ticks(U32.to_nat(10), w1)
   after = count_nonempty_list(Grid.to_list(w2), 0)
   is_bad(U32.is_eq(before, after))
@@ -125,7 +126,7 @@ def settle(fuel: Nat, world: Array<U32>) -> Array<U32>:
 
 def t4() -> U32:
   w = Sim.build()
-  w1 = Sim.spawn(w)
+  w1 = Fixtures.spawn(w)
   w2 = settle(U32.to_nat(50), w1)
   t4_go(U32.to_nat(262144), 0, Grid.to_list(w2), 0)
 
@@ -145,7 +146,7 @@ def list_hash(xs: List<U32>, +h: U32) -> U32:
 
 def settled_hash(z: Bool) -> U32:
   w = Sim.build()
-  w1 = Sim.spawn(w)
+  w1 = Fixtures.spawn(w)
   w2 = settle(U32.to_nat(50), w1)
   w3 = maybe_tick(z, w2)
   list_hash(Grid.to_list(w3), 5381)
@@ -175,7 +176,7 @@ def count_rock_list(xs: List<U32>, +acc: U32) -> U32:
 
 def t9() -> U32:
   before = count_rock_gen(U32.to_nat(262144), 0, 0)
-  w = Sim.pull(Sim.build())
+  w = Fixtures.pull(Sim.build())
   w2 = Sim.ticks(U32.to_nat(5), w)
   after = count_rock_list(Grid.to_list(w2), 0)
   is_bad(U32.is_lt(after, before))
@@ -184,8 +185,8 @@ def t18() -> U32:
   a0 = Support.pass_all(Store.assemble(Store.build_all()))
   b0 = Sim.build()
   init_bad = is_bad(list_eq(Grid.to_list(a0), Grid.to_list(b0)))
-  a = Sim.ticks(U32.to_nat(10), Sim.spawn(Support.pass_all(Store.assemble(Store.build_all()))))
-  b = Sim.ticks(U32.to_nat(10), Sim.spawn(Sim.build()))
+  a = Sim.ticks(U32.to_nat(10), Fixtures.spawn(Support.pass_all(Store.assemble(Store.build_all()))))
+  b = Sim.ticks(U32.to_nat(10), Fixtures.spawn(Sim.build()))
   U32.add(init_bad, is_bad(list_eq(Grid.to_list(a), Grid.to_list(b))))
 
 def t20() -> U32:
@@ -195,8 +196,8 @@ def t20() -> U32:
   a0 = Support.pass_all(Store.assemble(Store.evict(Store.build_all())))
   b0 = Sim.build()
   init_bad = is_bad(list_eq(Grid.to_list(a0), Grid.to_list(b0)))
-  a = Sim.ticks(U32.to_nat(10), Sim.spawn(Support.pass_all(Store.assemble(Store.evict(Store.build_all())))))
-  b = Sim.ticks(U32.to_nat(10), Sim.spawn(Sim.build()))
+  a = Sim.ticks(U32.to_nat(10), Fixtures.spawn(Support.pass_all(Store.assemble(Store.evict(Store.build_all())))))
+  b = Sim.ticks(U32.to_nat(10), Fixtures.spawn(Sim.build()))
   U32.add(init_bad, is_bad(list_eq(Grid.to_list(a), Grid.to_list(b))))
 
 def main() -> IO(Unit):
