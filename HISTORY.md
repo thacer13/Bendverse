@@ -1448,3 +1448,49 @@ that time moved on.
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (53 laws).
+
+### A.48 — G10: the `Support.sup` fuel-loop mirror lands (`sup_m` + `sup_m_preserves`)
+
+**Status:** one new law (`sup_mirror_preserves_phi`); gate green (54 laws); fast
+22/22. The `Support.sup` half of the `G10` write-site enumeration is now
+machine-checked — no crush/`set_support` site in the support pass relies on
+inspection. `Rules.step` remains.
+
+**What landed (`src/tick.bend`).**
+- `SupSel` (`S0`…`S11`): the datatype selector that avoids matching an opaque
+  `U32` in a proof (A.42). The `SupSel` → engine numeric-selector mapping stays a
+  `G5` refinement, by inspection.
+- `sup_m(fuel, t, gv, sel, i, gated, n, wf, base) -> PT & Nat`: `Support.sup`
+  mirrored on `PT`. It carries the running Φ gap in the second component;
+  `set_support` steps add `0`, the guarded crush (sel 6) adds `guard_gap`. The
+  wake fuel is abstract (`wf`), so the 3·3·3 wake loop is never unrolled in a
+  type; `sup_pass_m` instantiates it at `U32.to_nat(3)`.
+- `sup_phi(r, base, n) = suml(to_pots(pack(fst r), base, n)) + snd r`; `sup_phi`
+  is how the theorem mentions the mirror result **once**. `sup_add_gap`,
+  `sup_phi_add_gap`, and `gap_swap_add` move a freshly added gap out of the pair.
+- `sup_support_step` / `sup_crush_step`: the two writing steps, each composing
+  the already-proven array write law (`array_support_write`,
+  `array_guarded_crush_lowers_auto`) with the wake law via `to_pots_swap_pack`.
+- `sup_m_preserves`: induction on the abstract fuel, case-split on `SupSel`,
+  composing the steps. `.bendverse`-probe timing ≤5 s; the gate stays ~5 s.
+- `sup_pass_m(fuel, t, n, gated)`: the top-level binding at the engine entry
+  point (sel `S0`, `i = 0`, `gv = tget(t, n, 0)`, `wf = 3`, `base = 0`).
+- Law `sup_mirror_preserves_phi` (in `LAWS.bend`/`PROOF.bend`): for **all**
+  fuels, `sup_phi(sup_pass_m(fuel, t, n, gated), 0, n) == suml(to_pots(pack(t), 0, n))`.
+
+**Two proof-engineering notes worth keeping.**
+1. `PT & Nat` is not a projectable `let`: `+rr = sup_m(…)` is rejected (`+` wants
+   a `Data`/dupable type) and a local `match rr` is rejected too. Stating the
+   theorem through `sup_phi` (one occurrence, result projected inside the
+   helper) sidesteps both, and `sup_phi_add_gap` handles the stuck pair
+   generically by matching its `r` parameter.
+2. The theorem's fuel must be `+fuel`: in the `1n+p` branch the pattern variable
+   `p` occurs both in the reduced goal type and in the recursive call, which the
+   linear checker otherwise reads as “consumed more than once”.
+
+**Next.** Mirror `Rules.step` on `PT` (sel 22 crush, the fall/mov swaps) with the
+same `sup_m`/`sup_phi` pattern; then the two mirrors compose to a tick-level Φ
+theorem and `G10` closes.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (54 laws); fast 22/22.

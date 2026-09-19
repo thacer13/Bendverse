@@ -314,3 +314,10 @@ law array_activate_write_preserves_phi:
   for +n: U32
   for +i: U32
   {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Cell.activate(Tick.tget(t, n, i)))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law sup_mirror_preserves_phi:
+  for fuel: Nat
+  for +t: Refine.PT
+  for +n: U32
+  for +gated: Bool
+  {Tick.sup_phi(Tick.sup_pass_m(fuel, t, n, gated), 0, n) == Settle.suml(Settle.to_pots(Refine.pack(t), 0, n)) : Nat}

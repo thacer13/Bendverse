@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 53 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 54 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -294,7 +294,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-53 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+54 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -383,7 +383,7 @@ an oversight to hide.
 | `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `guarded_crush_lowers_pot` `array_crumble_lowers_phi` `array_guarded_crush_lowers_phi` `rock_crumbles_lighter` | T9 T19 | support potential writepot tick |
 | `R7` | Support recomputed, never cached | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
-| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_activate_write_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
+| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_activate_write_preserves_phi` `sup_mirror_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
 | `R10` | Determinism under any schedule | — (by construction) | T1 | sim |
 | `R11` | Worldgen is a pure seeding function | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
 | `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
@@ -466,10 +466,12 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      `wake_*_m` mirrors. Both mirror obstacles are resolved (A.42, A.45): use a
      datatype selector (`SupSel`) rather than matching an opaque `U32`, and thread
      the wake fuel as an abstract `Nat` (a concrete `3` unrolls into a
-     normalisation cliff). The full `sup_m` + `sup_m_preserves` is verified to
-     check in ≤5 s. Remaining: land it (plus the top-level instantiation) and
-     then mirror `Rules.step`.
-  See `HISTORY.md` A.36–A.45 for the analysis and probes.
+     normalisation cliff). The full `sup_m` + `sup_m_preserves` is landed (A.48),
+     with the `SupSel` selector, the abstract wake fuel, the top-level
+     `sup_pass_m`, and law `sup_mirror_preserves_phi`; the `Support.sup` half of
+     the write-site enumeration is now machine-checked. Remaining: mirror
+     `Rules.step`.
+  See `HISTORY.md` A.36–A.48 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -499,7 +501,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | closed | G2 G10 | closed (A.38–A.40): `Word.cmp` reflection (A.38) makes the guard provable; the engine guards both crush sites with `Ops.crush_if_rock` (A.39); `array_guarded_crush_lowers_phi` (A.40) proves the guarded write's Φ effect at every index — rock: `crush_gap`, non-rock: identity — with no `material(w) == 3` hypothesis. Runtime-witnessed by T19 |
-| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical). **`G9` is resolved** (A.38–A.40): the guarded-crush write site now has an unconditional Φ theorem (`array_guarded_crush_lowers_phi`), so no crush site carries an unproven hypothesis. Remaining: the fuel-loop mirror that composes the proven write primitives (support/fall/activate/swap/guarded-crush) along `Support.sup`/`Rules.step` control flow. Would also widen `M8d` eviction |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical). **`G9` is resolved** (A.38–A.40): the guarded-crush write site now has an unconditional Φ theorem (`array_guarded_crush_lowers_phi`), so no crush site carries an unproven hypothesis. The `Support.sup` fuel-loop mirror is landed (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`) and an abstract wake fuel, plus law `sup_mirror_preserves_phi`. Remaining: the `Rules.step` fuel-loop mirror (same technique). Would also widen `M8d` eviction |
 
 ---
 

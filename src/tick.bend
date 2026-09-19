@@ -362,3 +362,242 @@ def wake_z_m_preserves(fuel: Nat, +dz: U32, +i: U32, +t: R.PT, +n: U32, +base: U
 
 def wake_m(+i: U32, +t: R.PT, +n: U32) -> R.PT:
   wake_z_m(U32.to_nat(3), 0, i, t, n)
+
+# ------------------------------------------------------------------ sup mirror
+# `Support.sup` mirrored on `PT` (G10). The engine matches on a numeric selector,
+# which is opaque in a proof, so the mirror uses a datatype selector (`SupSel`);
+# the `SupSel` -> numeric mapping is the `G5` refinement, by inspection. The
+# mirror carries the running Φ gap: `set_support` adds 0, the guarded crush at
+# sel 6 adds `guard_gap`. The wake fuel is threaded as an abstract `Nat` (A.45:
+# a concrete fuel inside a proposition unrolls into a normalisation cliff); the
+# top-level `sup_pass_m` instantiates it at 3.
+
+type SupSel is Data:
+  S0{}
+  S1{}
+  S2{}
+  S3{}
+  S4{}
+  S5{}
+  S6{}
+  S7{}
+  S8{}
+  S9{}
+  S10{}
+  S11{}
+
+def gap_swap_add(+A: Nat, +gr: Nat, +g: Nat) -> {Nat.add(A, Nat.add(g, gr)) == Nat.add(Nat.add(A, gr), g) : Nat}:
+  Equal.trans(Nat,
+    Nat.add(A, Nat.add(g, gr)),
+    Nat.add(Nat.add(A, g), gr),
+    Nat.add(Nat.add(A, gr), g),
+    Equal.sym(Nat, Nat.add(Nat.add(A, g), gr), Nat.add(A, Nat.add(g, gr)), NatL.n_add_assoc(A, g, gr)),
+    Equal.sym(Nat, Nat.add(Nat.add(A, gr), g), Nat.add(Nat.add(A, g), gr), S.swap_add(A, gr, g)))
+
+# Φ of a mirror result: the pot sum of the tree plus the accumulated gap.
+def sup_phi(r: R.PT & Nat, +base: U32, +n: U32) -> Nat:
+  match r:
+    case (t, g): Nat.add(S.suml(S.to_pots(R.pack(t), base, n)), g)
+
+def sup_add_gap(r: R.PT & Nat, gap: Nat) -> R.PT & Nat:
+  match r:
+    case (t, g): (t, Nat.add(gap, g))
+
+def sup_phi_add_gap(r: R.PT & Nat, +g: Nat, +base: U32, +n: U32)
+  -> {sup_phi(sup_add_gap(r, g), base, n) == Nat.add(sup_phi(r, base, n), g) : Nat}:
+  match r:
+    case (t, gr):
+      gap_swap_add(S.suml(S.to_pots(R.pack(t), base, n)), gr, g)
+
+def sup_m(fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gated: Bool, +n: U32, +wf: Nat, +base: U32) -> R.PT & Nat:
+  match fuel:
+    case 0n:
+      (t, 0n)
+    case 1n+p:
+      match sel:
+        case S0{}:
+          +v = gv
+          act = U32.is_ne(Cell.active(v), 0)
+          okg = Bool.or(Bool.not(gated), act)
+          coh = U32.is_ne(Cell.cohesion(v), 0)
+          st = Cell.static(Cell.material(v))
+          want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
+          sup_m(p, t, v, Bool.pick(SupSel, want, S1{}, S9{}), i, gated, n, wf, base)
+        case S1{}:
+          adj = Ops.adjacent_static(i)
+          sup_m(p, t, gv, Bool.pick(SupSel, adj, S4{}, S5{}), i, gated, n, wf, base)
+        case S2{}:
+          +b = gv
+          bcoh = U32.is_ne(Cell.cohesion(b), 0)
+          bsup = U32.is_ne(Cell.support(b), 0)
+          sup_m(p, t, b, Bool.pick(SupSel, Bool.and(bcoh, bsup), S3{}, S6{}), i, gated, n, wf, base)
+        case S3{}:
+          +sv = Cell.support(gv)
+          +v = Ops.set_support(tget(t, n, i), sv)
+          +t2 = R.swap_m(t, n, i, v)
+          +q = tget(t2, n, i)
+          sup_m(p, t2, q, S9{}, i, gated, n, wf, base)
+        case S4{}:
+          +v = Ops.set_support(tget(t, n, i), 31)
+          +t2 = R.swap_m(t, n, i, v)
+          +q = tget(t2, n, i)
+          sup_m(p, t2, q, S9{}, i, gated, n, wf, base)
+        case S5{}:
+          +q = tget(t, n, Grid.below(i))
+          sup_m(p, t, q, S2{}, i, gated, n, wf, base)
+        case S6{}:
+          +v = Ops.crush_if_rock(tget(t, n, i))
+          +t2 = R.swap_m(t, n, i, v)
+          +t3 = wake_z_m(wf, 0, i, t2, n)
+          +q = tget(t3, n, i)
+          rr = sup_m(p, t3, q, S9{}, i, gated, n, wf, base)
+          sup_add_gap(rr, guard_gap(t, base, n, i))
+        case S9{}:
+          +ni = U32.add(i, 1)
+          sup_m(p, t, gv, Bool.pick(SupSel, U32.is_eq(ni, 262144), S10{}, S11{}), i, gated, n, wf, base)
+        case S10{}:
+          (t, 0n)
+        case S11{}:
+          +ni = U32.add(i, 1)
+          +q = tget(t, n, ni)
+          sup_m(p, t, q, S0{}, ni, gated, n, wf, base)
+        case S7{}:
+          (t, 0n)
+        case S8{}:
+          (t, 0n)
+
+# A support write at index `i` preserves Φ (sel 3/4 add no gap).
+def sup_support_step(+t: R.PT, +base: U32, +n: U32, +i: U32, +sv: U32)
+  -> {S.suml(S.to_pots(R.pack(R.swap_m(t, n, i, Ops.set_support(tget(t, n, i), sv))), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  +v = Ops.set_support(tget(t, n, i), sv)
+  +after = S.suml(S.to_pots(R.pack(R.swap_m(t, n, i, v)), base, n))
+  +before = S.suml(S.to_pots(R.pack(t), base, n))
+  +e0 = to_pots_swap_pack(t, base, n, i, v)
+  +e1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+    S.to_pots(R.pack(R.swap_m(t, n, i, v)), base, n),
+    S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n), e0)
+  Equal.trans(Nat, after,
+    S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)),
+    before, e1, array_support_write(t, base, n, i, sv))
+
+# A guarded crush + wake at index `i` lowers Φ by exactly `guard_gap` (sel 6).
+def sup_crush_step(+t: R.PT, +base: U32, +n: U32, +i: U32, +wf: Nat)
+  -> {Nat.add(S.suml(S.to_pots(R.pack(wake_z_m(wf, 0, i, R.swap_m(t, n, i, Ops.crush_if_rock(tget(t, n, i))), n)), base, n)),
+           guard_gap(t, base, n, i))
+      == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  +v = Ops.crush_if_rock(tget(t, n, i))
+  +t2 = R.swap_m(t, n, i, v)
+  +t3 = wake_z_m(wf, 0, i, t2, n)
+  +g = guard_gap(t, base, n, i)
+  +e0 = to_pots_swap_pack(t, base, n, i, v)
+  +e1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+    S.to_pots(R.pack(t2), base, n),
+    S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n), e0)
+  +e3 = wake_z_m_preserves(wf, 0, i, t2, n, base)
+  Equal.trans(Nat, Nat.add(S.suml(S.to_pots(R.pack(t3), base, n)), g),
+    Nat.add(S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)), g),
+    S.suml(S.to_pots(R.pack(t), base, n)),
+    Equal.trans(Nat,
+      Nat.add(S.suml(S.to_pots(R.pack(t3), base, n)), g),
+      Nat.add(S.suml(S.to_pots(R.pack(t2), base, n)), g),
+      Nat.add(S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)), g),
+      Equal.cong(Nat, Nat, x => Nat.add(x, g),
+        S.suml(S.to_pots(R.pack(t3), base, n)),
+        S.suml(S.to_pots(R.pack(t2), base, n)), e3),
+      Equal.cong(Nat, Nat, x => Nat.add(x, g),
+        S.suml(S.to_pots(R.pack(t2), base, n)),
+        S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)), e1)),
+    array_guarded_crush_lowers_auto(t, base, n, i))
+
+# The fuel-loop mirror: composing the write primitives along `Support.sup`'s
+# control flow preserves Φ up to the accumulated crush gap. Stated over an
+# abstract fuel (all fuels), hence also the engine's `U32.to_nat(16777216)`.
+def sup_m_preserves(+fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gated: Bool, +n: U32, +wf: Nat, +base: U32)
+  -> {sup_phi(sup_m(fuel, t, gv, sel, i, gated, n, wf, base), base, n) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  match fuel:
+    case 0n:
+      NatL.n_add_zero_right(S.suml(S.to_pots(R.pack(t), base, n)))
+    case 1n+p:
+      match sel:
+        case S0{}:
+          +v = gv
+          act = U32.is_ne(Cell.active(v), 0)
+          okg = Bool.or(Bool.not(gated), act)
+          coh = U32.is_ne(Cell.cohesion(v), 0)
+          st = Cell.static(Cell.material(v))
+          want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
+          sup_m_preserves(p, t, v, Bool.pick(SupSel, want, S1{}, S9{}), i, gated, n, wf, base)
+        case S1{}:
+          adj = Ops.adjacent_static(i)
+          sup_m_preserves(p, t, gv, Bool.pick(SupSel, adj, S4{}, S5{}), i, gated, n, wf, base)
+        case S2{}:
+          +b = gv
+          bcoh = U32.is_ne(Cell.cohesion(b), 0)
+          bsup = U32.is_ne(Cell.support(b), 0)
+          sup_m_preserves(p, t, b, Bool.pick(SupSel, Bool.and(bcoh, bsup), S3{}, S6{}), i, gated, n, wf, base)
+        case S3{}:
+          +sv = Cell.support(gv)
+          +v = Ops.set_support(tget(t, n, i), sv)
+          +t2 = R.swap_m(t, n, i, v)
+          +q = tget(t2, n, i)
+          +ih = sup_m_preserves(p, t2, q, S9{}, i, gated, n, wf, base)
+          +st = sup_support_step(t, base, n, i, sv)
+          Equal.trans(Nat,
+            sup_phi(sup_m(p, t2, q, S9{}, i, gated, n, wf, base), base, n),
+            S.suml(S.to_pots(R.pack(t2), base, n)),
+            S.suml(S.to_pots(R.pack(t), base, n)),
+            ih, st)
+        case S4{}:
+          +v = Ops.set_support(tget(t, n, i), 31)
+          +t2 = R.swap_m(t, n, i, v)
+          +q = tget(t2, n, i)
+          +ih = sup_m_preserves(p, t2, q, S9{}, i, gated, n, wf, base)
+          +st = sup_support_step(t, base, n, i, 31)
+          Equal.trans(Nat,
+            sup_phi(sup_m(p, t2, q, S9{}, i, gated, n, wf, base), base, n),
+            S.suml(S.to_pots(R.pack(t2), base, n)),
+            S.suml(S.to_pots(R.pack(t), base, n)),
+            ih, st)
+        case S5{}:
+          +q = tget(t, n, Grid.below(i))
+          sup_m_preserves(p, t, q, S2{}, i, gated, n, wf, base)
+        case S6{}:
+          +v = Ops.crush_if_rock(tget(t, n, i))
+          +t2 = R.swap_m(t, n, i, v)
+          +t3 = wake_z_m(wf, 0, i, t2, n)
+          +q = tget(t3, n, i)
+          +ih = sup_m_preserves(p, t3, q, S9{}, i, gated, n, wf, base)
+          +st = sup_crush_step(t, base, n, i, wf)
+          +g = guard_gap(t, base, n, i)
+          Equal.trans(Nat,
+            sup_phi(sup_add_gap(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), g), base, n),
+            Nat.add(sup_phi(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), base, n), g),
+            S.suml(S.to_pots(R.pack(t), base, n)),
+            sup_phi_add_gap(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), g, base, n),
+            Equal.trans(Nat,
+              Nat.add(sup_phi(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), base, n), g),
+              Nat.add(S.suml(S.to_pots(R.pack(t3), base, n)), g),
+              S.suml(S.to_pots(R.pack(t), base, n)),
+              Equal.cong(Nat, Nat, x => Nat.add(x, g),
+                sup_phi(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), base, n),
+                S.suml(S.to_pots(R.pack(t3), base, n)), ih),
+              st))
+        case S9{}:
+          +ni = U32.add(i, 1)
+          sup_m_preserves(p, t, gv, Bool.pick(SupSel, U32.is_eq(ni, 262144), S10{}, S11{}), i, gated, n, wf, base)
+        case S10{}:
+          NatL.n_add_zero_right(S.suml(S.to_pots(R.pack(t), base, n)))
+        case S11{}:
+          +ni = U32.add(i, 1)
+          +q = tget(t, n, ni)
+          sup_m_preserves(p, t, q, S0{}, ni, gated, n, wf, base)
+        case S7{}:
+          NatL.n_add_zero_right(S.suml(S.to_pots(R.pack(t), base, n)))
+        case S8{}:
+          NatL.n_add_zero_right(S.suml(S.to_pots(R.pack(t), base, n)))
+
+# The top-level binding: the mirror run over the engine's entry point
+# (`pass_gated`'s `sup(16777216, get(world, 0), 0, 0, 0, gated)`), with the wake
+# fuel instantiated at 3. The main fuel stays abstract (all-fuel theorem).
+def sup_pass_m(fuel: Nat, +t: R.PT, +n: U32, +gated: Bool) -> R.PT & Nat:
+  sup_m(fuel, t, tget(t, n, 0), S0{}, 0, gated, n, U32.to_nat(3), 0)

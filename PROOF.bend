@@ -185,3 +185,6 @@ def Laws.array_guarded_crush_lowers_phi(t, base, n, i):
 
 def Laws.array_activate_write_preserves_phi(t, base, n, i):
   Tick.array_activate_write(t, base, n, i)
+
+def Laws.sup_mirror_preserves_phi(fuel, t, n, gated):
+  Tick.sup_m_preserves(fuel, t, Tick.tget(t, n, 0), Tick.S0{}, 0, gated, n, U32.to_nat(3), 0)
