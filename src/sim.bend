@@ -4,56 +4,41 @@ import ./grid.bend as Grid
 import ./rules.bend as Rules
 import ./support.bend as Support
 import ./worldgen.bend as Worldgen
+import ./ops.bend as Ops
+import ./dirty.bend as Dirty
 
 def build() -> Array<U32>:
   Support.pass_all(Worldgen.build())
 
-# V0-4b-2: a settled world (no active cell, rule 9) is a tick fixpoint. `any_active`
-# is the cheap check; a settled tick is that one scan and nothing else.
-def any_active_go(
-  fuel: Nat, +i: U32, acc: Bool, gp: Array<U32> & U32
-) -> Array<U32> & Bool:
-  match fuel:
-    case 0n:
-      match gp:
-        case (world, v):
-          (world, Bool.or(acc, U32.is_ne(Cell.active(v), 0)))
-    case 1n+p:
-      match gp:
-        case (world, v):
-          acc2 = Bool.or(acc, U32.is_ne(Cell.active(v), 0))
-          +ni = U32.add(i, 1)
-          q = Array.get(U32, world, ni)
-          any_active_go(p, ni, acc2, q)
-
-def any_active(world: Array<U32>) -> Array<U32> & Bool:
-  q = Array.get(U32, world, 0)
-  any_active_go(U32.to_nat(U32.sub(Grid.volume(), 1)), 0, False{}, q)
-
 # ------------------------------------------------------------------ V0-4b
 # The phase fold runs over an *active-cell work list* instead of the colour
-# sub-lattice. The tick's list is built by the support scan (`Support.pass_gated`
-# returns the active cells it saw); `filter_color` selects a phase's colour.
+# sub-lattice. Since V0-4b-3b the tick's list is built by the carried dirty-row
+# mask (`Dirty.dirty_todo`); `active_list` below is the full-scan form, kept for
+# the single-phase test transform `phase`. `filter_color` selects a phase's
+# colour.
 # Soundness: V0-1 makes a phase's result independent of evaluation order, and
 # within a tick the active set only shrinks (a move clears the mover's bit, wake
 # is deferred to tick end), so the list is a superset of every cell the phases
 # can act on and the phases skip any that were deactivated.
 #
-# `active_list` builds the work list in ascending index order (scanning down and
-# consing), which is the bottom-up order the support pass needs for `below`
-# propagation. The phase fold is order-independent.
+# Both builders -- `active_list` and `Dirty.dirty_todo` -- produce the list in
+# ascending index order (scanning down and consing), which is the bottom-up order
+# the support pass needs for `below` propagation. The phase fold is
+# order-independent.
 def active_go(
-  fuel: Nat, +i: U32, acc: List<&2, U32>, gp: Array<U32> & U32
+  fuel: Nat, +i: U32, +acc: List<&2, U32>, gp: Array<U32> & U32
 ) -> Array<U32> & List<&2, U32>:
   match fuel:
     case 0n:
       match gp:
         case (world, v):
-          (world, Support.cons_if(i, acc, U32.is_ne(Cell.active(v), 0)))
+          act = U32.is_ne(Cell.active(v), 0)
+          (world, Bool.pick(List<&2, U32>, act, i <> acc, acc))
     case 1n+p:
       match gp:
         case (world, v):
-          +acc2 = Support.cons_if(i, acc, U32.is_ne(Cell.active(v), 0))
+          act = U32.is_ne(Cell.active(v), 0)
+          +acc2 = Bool.pick(List<&2, U32>, act, i <> acc, acc)
           +ni = U32.sub(i, 1)
           q = Array.get(U32, world, ni)
           active_go(p, ni, acc2, q)
@@ -68,7 +53,9 @@ def filter_color(+xs: List<&2, U32>, +c: U32) -> List<&2, U32>:
     case Nil{}:
       Nil{}
     case Con{h, t}:
-      Support.cons_if(h, filter_color(t, c), U32.is_eq(Rules.color_of(h), c))
+      +tail = filter_color(t, c)
+      keep = U32.is_eq(Rules.color_of(h), c)
+      Bool.pick(List<&2, U32>, keep, h <> tail, tail)
 
 # V0-1: the phase is `Rules.phase_plan_w` — a pure `plan` (read-only intent +
 # resolve) followed by `commit_sets`. V0-4a (rule 9): the wakes the phase
@@ -110,40 +97,68 @@ def phases(
         case (world2, ws):
           phases(p, U32.add(c, 1), phase_w(world2, c, todo), todo, List.append(&1, Rules.Write, ws, wakes))
 
-def phases_commit(r: Array<U32> & List<Rules.Write>) -> Array<U32>:
-  match r:
-    case (world2, wakes):
-      Rules.commit_wakes(wakes, world2)
+# V0-4b-3b: the tick is driven by a dirty-row mask carried across ticks
+# (`src/dirty.bend`). The mask says which `y` rows may hold a cell activated since
+# the last tick, so the work list is built by scanning only those rows
+# (`Dirty.dirty_todo`) instead of the whole world (the full-scan `active_list`
+# and the retired `any_active` check).
+#
+# The mask is threaded only through the *commit*: the support and phase entry
+# points stay monomorphic (`Array<U32>`, `List<...>`), so no symbolic work list
+# crosses a pair-returning fold (the A.76 checker overflow). A wake is applied
+# and its three reachable rows marked together.
+def commit_wakes_mask(
+  writes: List<Rules.Write>, world: Array<U32>, m: Dirty.Mask
+) -> Array<U32> & Dirty.Mask:
+  match writes:
+    case Nil{}:
+      (world, m)
+    case Con{h, t}:
+      match h:
+        case Rules.WSet{idx, val}:
+          commit_wakes_mask(t, world, m)
+        case Rules.WWake{+idx}:
+          w2 = Ops.wake(world, idx)
+          +m2 = Dirty.mark_wake(m, idx)
+          commit_wakes_mask(t, w2, m2)
 
-# V0-4b-3: the tick runs the support pass over the work list (`Support.pass_todo`)
-# with its wakes deferred, then the eight phases over the same list, and applies
-# the support and phase wakes together at tick end.
-def tick_sup(r: Array<U32> & List<U32>, todo: List<&2, U32>) -> Array<U32>:
+def tick_commit_phases(r: Array<U32> & List<Rules.Write>) -> Array<U32> & Dirty.Mask:
+  match r:
+    case (world3, wakes):
+      commit_wakes_mask(wakes, world3, Dirty.zermask())
+
+# The support pass over the work list (wakes deferred), then the eight phases
+# over the same list; the support and phase wakes are applied together at tick
+# end, and the mask accumulates the rows they touch.
+def tick_sup(r: Array<U32> & List<U32>, todo: List<&2, U32>) -> Array<U32> & Dirty.Mask:
   match r:
     case (world2, sws):
-      phases_commit(phases(8n, 0, (world2, Nil{}), todo, Rules.wake_writes(sws)))
+      tick_commit_phases(phases(8n, 0, (world2, Nil{}), todo, Rules.wake_writes(sws)))
 
-def tick_list(r: Array<U32> & List<&2, U32>) -> Array<U32>:
+def tick_go(r: Array<U32> & List<&2, U32>) -> Array<U32> & Dirty.Mask:
   match r:
     case (world2, +todo):
       tick_sup(Support.pass_todo(world2, todo), todo)
 
-def tick_got(r: Array<U32> & Bool) -> Array<U32>:
-  match r:
-    case (world2, act):
-      match act:
-        case False{}:
-          world2
-        case True{}:
-          tick_list(active_list(world2))
+def tick_m(r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask:
+  tick_go(Dirty.dirty_todo(r))
 
-def tick(world: Array<U32>) -> Array<U32>:
-  tick_got(any_active(world))
-
-def ticks(fuel: Nat, world: Array<U32>) -> Array<U32>:
+def ticks_m(fuel: Nat, r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask:
   match fuel:
     case 0n:
-      world
+      r
     case 1n+p:
-      world2 = tick(world)
-      ticks(p, world2)
+      ticks_m(p, tick_m(r))
+
+def ticks_step(r: Array<U32> & Dirty.Mask) -> Array<U32>:
+  match r:
+    case (w, _):
+      w
+
+# `tick` primes the mask from the world (one scan); `ticks` primes once and then
+# carries it across the whole run, so only the first tick scans the world.
+def tick(world: Array<U32>) -> Array<U32>:
+  ticks_step(tick_m(Dirty.active_mask(world)))
+
+def ticks(fuel: Nat, world: Array<U32>) -> Array<U32>:
+  ticks_step(ticks_m(fuel, Dirty.active_mask(world)))

@@ -459,21 +459,22 @@ This table is what would have caught T23/T24 on the day they landed.
 |---|---|---|---|
 | `C1` | Purity of phases | conforming | `Rules.plan`/`phase_plan_w` (V0-1, A.63): the phase reads only the pre-phase array and applies its write set afterwards, so no part reads a value another part produced. T23/T24 re-witnessed as conformance |
 | `C2` | Closure (box, no wrap) | conforming | `V0-2` (A.64): every rule target is guarded by `Grid.step_inside`, so a boundary step is inert rather than wrapping; T27/T28 witness it with the shell painted away. `Grid.neighbor` still wraps, but no rule follows a wrapped step. (`Ops.wake` still marks wrapped neighbours — `G15` — which moves no material) |
-| `C3` | Cost tracks disturbance | deviating | The tick still scans the world twice: `Sim.any_active` (the cheap settled check) and `Sim.active_list` (the work-list build). Support now runs over that list (`Support.pass_todo`), so the support scan is gone; the phase folds and support both work on the list. Closing `C3` needs the list *maintained* across ticks so neither scan is needed — `V0-4b-3b`. Settled tick ≈ 0.09 ms; the active transient is ≈ 15 % faster than A.74 |
+| `C3` | Cost tracks disturbance | conforming | `V0-4b-3b` (A.77): the tick carries a **dirty-row mask** (one bit per `y` row, `src/dirty.bend`) across ticks. The next active set is exactly the cells the deferred wakes marked, so the work list is built by scanning only the mask's rows (`Dirty.dirty_todo`) — the `any_active` and `active_list` world scans are gone. Rows, not 16³ chunks: a chunk-major scan interleaves `y`, which lags the support pass's bottom-up `below` propagation. Settled tick ~1.3 µs (was ~89 µs); 20000 settled ticks 1.79 s → 0.027 s. Active work is the same write set, reached without the world scan |
 | `R1` | Pre-phase reads only, bounded radius | conforming | `Rules.plan` never writes the array it reads (V0-1, A.63); every read is of the pre-phase state |
 | `R2` | Conservation: swap/transform only | conforming | count laws closed (`V4`); write sites enumerated (`G10` closed) |
 | `R3` | At most one writer per cell per phase | conforming | contention is resolved from the pre-phase state: of the two opposite-axis diagonal claimants of one target, the smaller index owns it (V0-1, A.63; T23). Drop/crush targets are injective within a colour |
 | `R4` | Colour × direction batches, injective targets | conforming | direction batches are a closed set (`Rules.Dir4`, no `k ≥ 4` fallback) and each batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`, V0-3a, A.65); bit extraction reads `color_of` back as the three coordinate parities (`color_of_bit0/1/2`, V0-3b, A.66) and a same-colour target collision forces equal displacement parities (`color_collision_x_par/_z_par`), so the only cross-direction overlap is the opposite-diagonal parity class — resolved by the pre-phase tie-break (V0-1/T23, rule 3), not by re-reading |
 | `R5` | Falling is universal | conforming | `fall_*` laws |
 | `R6` | Cohesion rigidity is local | deviating | `Ops.shell_adjacent` (renamed from `adjacent_static`, A.62) seeds support from **coordinates**, not the neighbourhood: it hardcodes the 64³ shell (literals `1`/`62`) and never reads an adjacent cell |
-| `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* is the separate `C3` deviation |
+| `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* was the separate `C3` deviation, closed by `V0-4b-3b` (A.77). The positional seed remains, tracked as `V0-5` |
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
 | `R9` | Activity effects land next tick | conforming | `V0-4a` (A.71) defers each phase's wakes to tick end (T33); `V0-4b-1` (A.72) made a move **clear** the mover's active bit so it is not re-evaluated by a later colour phase (T34); `V0-4b-2` (A.74) defers the support pass's crush wake too (T36). Every wake now lands at tick end |
 | `R10` | Determinism under any schedule | conforming | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The composition step now has a law — point writes at `ne_idx`-distinct leaves commute (`point_writes_commute`, V3c-1, A.68); the full region-split *equality* (the list/region fold, and `ne_idx`'s refinement to `U32.is_eq`) is still `V3c`/`G3` |
 | `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
 | `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
 
-`C3` is open engineering (`V0-4b`). `V0-1` (A.63) closed the purity cluster
+`C3` is *conforming*: `V0-4b-3b` (A.77) replaced the two world scans
+(`any_active` + `active_list`) with the carried dirty-row mask. `V0-1` (A.63) closed the purity cluster
 `C1`/`R1`/`R3`/`R10`, and `V0-2` (A.64) closed `C2`: the box is now enforced in
 the grid, not by the shell. `R4` is *conforming*: `V0-3a` (A.65) closed the
 direction half — a closed direction datatype and an injective per-batch target
@@ -490,8 +491,9 @@ A.68): the phase's writes apply order-independently when their targets are
 distinct, which is what a region merge needs; the fold over a `List<Write>` and
 the `ne_idx`↔`U32.is_eq` refinement are the open remainder.
 `R6`/`R7` are a second, independent deviation: the support seed is positional, so
-"rigidity is local" is not yet true; `V0-2`/`V0-4b` replace it with a real
-neighbour test. No row is closed by rewording a rule to match the code.
+"rigidity is local" is not yet true. `V0-2` closed the box at the grid level and
+`V0-4b-3b` closed `C3`, but neither replaced the seed, which remains a frontier
+item (`V0-5`). No row is closed by rewording a rule to match the code.
 
 **Retirement (A.63).** `Rules.step` was replaced by `Rules.plan`/`phase_plan_w`, so the
 `step_m` mirror in `src/step.bend` (law `step_mirror_balance`) no longer mirrors
@@ -580,6 +582,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V0-4b-1` | move clears active + work-list phase fold: `Rules.mov` (and the slide write) clear the mover's active bit, so a later colour phase cannot re-evaluate it in the same tick (T34: one cell per tick; `mov_preserves_pot`/`nempty_mov` proof terms updated). `Rules.plan` is driven by `todo: List<&2, U32>` (the active cells of the phase) instead of the colour sub-lattice, `Sim.active_list`/`filter_color` build it; T35 witnesses the colour filter. The evaluated set is now exact | A.72 |
 | `V0-4b-2` | deferred support wake + work list built by the support scan: `Support.sup` accumulates the crushed cell instead of waking inline, so every wake lands at tick end (`G16` closed; T36). The pass returns the active cells it saw (`Support.pass_gated` → `(world, wakes, todo)`), so `Sim.tick` is `any_active` → support → phases over the returned list, dropping the separate `active_list` scan. `sup_m` updated to the crush-only shape (deferred wakes Φ-neutral); settled tick ≈ 0.09 ms preserved | A.74 |
 | `V0-4b-3a` | work-list support machine: `Support.sup` is driven by a scan (`scan = True`, setup) or by the work list (`Support.pass_todo`, tick), so the tick's support no longer scans the world; `Sim.active_list` builds the list ascending (bottom-up for `below` propagation). Per-cell writes unchanged, so `sup_m`'s Φ claim is unaffected by the advance. Active transient ≈ 15 % faster than A.74 | A.75 |
+| `V0-4b-3b` | carried work set (`C3` closed): the tick threads a dirty-row mask (`src/dirty.bend`, one bit per `y` row) and builds the work list by scanning only the rows a wake reached (`Dirty.dirty_todo`), so the `any_active`/`active_list` world scans are gone. Rows, not 16³ chunks: a chunk-major scan interleaves `y` and lags the support pass's bottom-up `below` propagation, while the row scan reproduces the exact global ascending order. The mask is threaded only through the commit (support/phase entry points stay monomorphic), and a wake's 3-row reach is arithmetic (`Dirty.mark_wake`), not a recursive 27-neighbour walk. Settled tick ~1.3 µs (was ~89 µs); T37 witnesses the carried work set | A.77 |
 | `V3c-1` | schedule-invariance kernel: point writes at leaves that `Commit.ne_idx` separates commute (`swap_m (swap_m t n i v) n j w = swap_m (swap_m t n j w) n i v`, law `point_writes_commute`), so a merged write set applies order-independently; `ne_idx` mirrors `swap_m`'s own walk (a split at some level, `False` at a leaf) and is exactly distinctness for in-range indices; T31 witnesses both the commutation and the predicate's sharpness. The engine no longer needs a `read/write` ordering argument (V0-1): this is the *composition* half. The list/region fold (V3c-1b) and the `ne_idx`↔`U32.is_eq` refinement remain | A.68 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
@@ -643,25 +646,26 @@ index).
   ascending (bottom-up for support) and both support and the phases fold it.
   Measured: the active transient is ≈ 15 % faster than A.74; settled unchanged
   (still one `any_active` scan).
-  **NEXT — `V0-4b-3b` (maintain the work set):** remove the two remaining scans
-  (`any_active` + `active_list`) so a settled tick costs nothing and an active
-  tick is proportional to the disturbance. The next active set is exactly the
-  cells the deferred wakes marked, so the tick must carry a work set instead of
-  rescanning. Two designs were tried (A.76) and both hit toolchain blockers:
-  (a) carry the **active-cell list** — the next list is the marked neighbours,
-  but support needs them in ascending index order and `List.sort` does not
-  compile in this Base (`List.sort.go` is undefined), and an O(n²) insertion
-  sort is unacceptable; (b) carry a **dirty-chunk mask** (two `U32`s, 64 chunks)
-  and scan only dirty chunks — this avoids sorting, but the first cut
-  stack-overflowed in the checker when the work list was passed symbolically
-  through the support/phase fold (`tick_sup`). The concrete next step is to
-  land (b) with the mask threaded only through the *commit* (which is where the
-  wakes are applied) and to keep the support/phase entry points monomorphic, or
-  to find why the symbolic-work-list path overflows. Neither is a semantics
-  problem; both are plumbing.
+  **V0-4b-3b done (A.77, `C3` closed):** the tick carries a **dirty-row mask**
+  (`src/dirty.bend`, one bit per `y` row) and builds the work list by scanning
+  only the rows a wake reached; the `any_active` and `active_list` world scans
+  are gone. Two A.76 blockers were cleared: (1) a recursive 27-neighbour
+  `block_mask`, inlined once per wake in the synchronous wake fold, overflowed
+  the checker, so the row reach is arithmetic (`Dirty.mark_wake`); (2) the 16³
+  chunk mask's chunk-major scan interleaves `y`, which lags the support pass's
+  bottom-up `below` propagation, so the granularity is rows, whose scan order is
+  exactly global ascending. The mask is threaded only through the *commit*; the
+  support/phase entry points stay monomorphic. T37 witnesses the carried work
+  set; settled tick ~1.3 µs (was ~89 µs).
+  **NEXT — `V0-5` (neighbourhood support seed, `R6`/`R7`):** `Ops.shell_adjacent`
+  still grounds support by coordinate (the hardcoded 64³ shell), so "rigidity is
+  local" is not yet true; `V0-2` closed the box and `V0-4b` closed `C3`, but
+  neither replaced the seed. Replace it with a real neighbourhood rigidity
+  source; the `sup_m` mirror moves with `Support.sup` case 1. T9 witnesses the
+  current behaviour.
   `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
   **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
-  `Support.sup`, which `V0-4b-2` will replace (see §3.4 retirement, §4.1).
+  `Support.sup`, which `V0-5` will replace (see §3.4 retirement, §4.1).
 
 #### Optional track — droppable, does not gate the frontier
 
@@ -699,13 +703,13 @@ index).
 
 | id | state | deps | unblocks |
 |---|---|---|---|
-| `V0` (`V0-4b`) | next | — | — |
+| `V0-5` (under `V0`) | next | — | — |
 | `V3c` | optional | — (`V3c-1` landed) | `M7d` |
 | `M7d` | optional | `V3c` | — |
 | `M7b`/`M7e` | blocked | — | — |
 | `P1` | deferred | — | — |
 
-**Order note.** The frontier (`V0-4b`/`C3`) is independent of the optional
+**Order note.** The frontier (`V0-5`/`R6`–`R7`) is independent of the optional
 parallel track. `M8a–M8d` and `M9` have landed. M7 and V2b are independent; V2b
 may proceed first if the GPU path stalls. Dropping M7/M8 costs nothing above the
 scale track; dropping V2 costs the settling guarantee.
@@ -972,14 +976,14 @@ All of `src/` is pure (zero IO). Runners are thin shells.
 - **Schedule invariance (`G3`).** Off the critical path: post-`V0-1` the phase
   is pure, so the residual is write-set commutativity (`V3c-1` banked). It gates
   only the optional `M7d`; `C3` does not depend on it.
-- **Cost (`C3`/`V0-4b`).** The scan-to-work-set change touches the imperative
-  engine (the `G5` refinement side). The per-tick wake cone is now closed
-  (`V0-4a`/`V0-4b-1`/`V0-4b-2`) and the phase and support folds run over the work
-  list (`V0-4b-3a`). What remains is *maintaining* the set across ticks
-  (`V0-4b-3b`); two designs (active-cell list, dirty-chunk mask) hit toolchain
-  blockers in A.76 — `List.sort` is broken in this Base, and the chunk-mask cut
-  overflowed the checker on a symbolic work list. Resolve the plumbing, then
-  prove the tick's writes stay inside the neighbourhood margin.
+- **Cost (`C3`/`V0-4b-3b`).** **Closed (A.77).** The tick carries a dirty-row
+  mask and scans only the rows a wake reached, so the `any_active` and
+  `active_list` world scans are gone: a settled tick is ~1.3 µs (was ~89 µs).
+  A.76's two designs are recorded in `HISTORY.md`: the active-cell list needs a
+  sort this Base lacks, and the 16³ chunk mask was abandoned for *correctness*
+  (its chunk-major order lags the support pass's bottom-up `below` propagation).
+  The wake's 3-row reach is arithmetic, not a recursive 27-neighbour walk, to
+  keep the checker's stack bounded.
 - **Law proof difficulty.** Bit-level inductions can stall — the downgrade
   protocol (§3.4) exists for this.
 - **No CUDA (`G4`).** GPU work degrades to CPU-parallel validation; keep `!`

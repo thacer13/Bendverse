@@ -14,13 +14,6 @@ import ./ops.bend as Ops
 # writes are identical; only the advance differs, and the advance writes nothing
 # (the `sup_m` mirror tracks the per-cell writes, so its Φ claim is unaffected).
 
-def cons_if(h: U32, xs: List<&2, U32>, b: Bool) -> List<&2, U32>:
-  match b:
-    case True{}:
-      h <> xs
-    case False{}:
-      xs
-
 def sup(
   fuel: Nat,
   gp: Array<U32> & U32,

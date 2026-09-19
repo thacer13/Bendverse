@@ -367,6 +367,17 @@ def t36_woken() -> Bool:
 def t36() -> U32:
   is_bad(Bool.and(Bool.and(t36_crushed(), t36_stayed()), t36_woken()))
 
+# T37 V0-4b-3b conformance: the dirty-row mask carries the work set across ticks.
+# A grain at y=16 (a row boundary) falls one cell per tick; the mask must mark the
+# rows the deferred wake reaches, or the grain freezes after the first move.
+def t37_world() -> Array<U32>:
+  w0 = clear_column(U32.to_nat(62), 1, Sim.build())
+  w0[Grid.index(4, 16, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+
+def t37() -> U32:
+  w = Sim.ticks(U32.to_nat(2), t37_world())
+  is_bad(U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(4, 14, 4))), Cell.sand()))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -386,3 +397,4 @@ def main() -> IO(Unit):
     report("T34 one move per tick (rule 9)", t34())
     report("T35 work-list phase acts on its colour only", t35())
     report("T36 support crush wake is deferred (G16)", t36())
+    report("T37 dirty-row mask carries the work set", t37())

@@ -2938,3 +2938,52 @@ Both designs are recorded here so the next session does not re-derive them.
 - `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
 - `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 17/17 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.77 — `V0-4b-3b`: the dirty-row mask carries the work set (`C3` closed)
+
+**Status:** engine + docs. The tick no longer scans the world: it carries a
+64-bit dirty-row mask (`src/dirty.bend`) and builds the active-cell work list by
+scanning only the rows a wake can reach. `src/dirty.bend` added; `src/sim.bend`
+tick pipeline replaced; dead `Rules.commit_wakes` removed and the one-line
+`Support.cons_if` list helper inlined (so `dirty.bend` no longer depends on
+`support.bend`); `src/ops.bend` seed note re-pointed, `PROOF.bend` now covers the
+new module; T37 added. Gate green (70 laws), fast 26/26, sim 18/18, canaries
+6 ok.
+
+**Why.** `C3` was the last contract deviation: every tick paid two world scans
+(`any_active` + `active_list`). The next active set is exactly the cells the
+deferred wakes marked, so the set can be *carried* instead of recomputed.
+
+**Design — the dirty-row mask.** Two `U32`s, one bit per `y` row. A wake marks
+the three rows it can reach (`y-1`, `y`, `y+1`, mod 64 — the same wrap
+`Grid.neighbor` uses); `active_mask` primes the mask from the world (one scan);
+`dirty_todo` walks rows descending and, within a dirty row, cells descending,
+consing, which reproduces `active_list`'s exact global ascending order.
+
+**Two A.76 blockers, resolved.**
+1. **Checker overflow.** A recursive 27-neighbour `block_mask`, inlined once per
+   wake inside the symbolic wake fold, overflowed the checker's stack even after
+   the work list was bound to a local. The row reach is instead *arithmetic* —
+   three `or_y`s, with no recursion inlined per wake.
+2. **Chunk granularity is wrong, not just fiddly.** A 16³ chunk mask compiles
+   with the arithmetic marking, but its chunk-major scan order interleaves `y`
+   (all 16 rows of one chunk before the next chunk), which lags the support
+   pass's bottom-up `below` propagation and diverges from `active_list` after a
+   few ticks. Row granularity is the coarsest unit whose scan order is exactly
+   global ascending.
+The mask is threaded only through the *commit* (`commit_wakes_mask` applies each
+`Ops.wake` and marks its rows); `Support.pass_todo`/`Sim.phases` stay
+monomorphic, so no symbolic work list crosses a pair-returning fold.
+
+**Measurement (native, 64³).** Settled: 20000 ticks 1.79 s → 0.027 s (~66×,
+~89 µs → ~1.3 µs per tick). Mixed 1000-tick `spawn` 0.113 s → 0.032 s. The active
+work set is unchanged, so an active tick trades the two world scans for the mask
+walk (comparable at 64³; the win is that cost no longer scales with the world).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 18/18 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
+- Equivalence: the mask tick is bit-identical to the pre-mask tick on
+  `build`/`spawn`/`pull` for 1–30 ticks (hash probes), and T37 witnesses the
+  carried work set across a row boundary.

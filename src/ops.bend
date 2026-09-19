@@ -78,8 +78,9 @@ def crush_if_rock(+w: U32) -> U32:
 # neighbourhood test — it never looks at an adjacent cell. It bakes in the
 # 64³ world and a bedrock shell at 0/63 (the literals `1`/`62` are `0+1`/`63-1`).
 # That deviates from rule 6/7 ("rigidity from the pre-phase neighbourhood") and
-# from C2 ("the shell is generation, not grid"). Recorded in PLAN §4.1; to be
-# replaced by a real neighbour test in `V0-2`/`V0-4`.
+# from C2 ("the shell is generation, not grid"). Recorded in PLAN §4.1; the box
+# half was closed by `V0-2` (A.64), and the remaining positional seed is the
+# frontier item `V0-5` (R6/R7).
 def shell_adjacent(+i: U32) -> Bool:
   +x = Grid.ix(i)
   +z = Grid.iz(i)

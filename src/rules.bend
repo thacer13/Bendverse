@@ -55,7 +55,8 @@ def mov(+w: U32) -> U32:
 # phase colour's cells and, for each, decides an action from the *pre-phase*
 # state only, accumulating the resulting writes in `sets`/`wakes`. It never
 # writes the array it reads, so no part of the phase can observe another part's
-# output. `commit_sets`/`commit_wakes` then apply the write set.
+# output. `commit_sets` applies the set writes; the tick applies the pending wakes
+# (mask-aware, `Sim.commit_wakes_mask`).
 #
 # The retired `Rules.step` did the opposite: it wrote `deactivate` to the cell it
 # was inspecting, re-read cells a sibling had just moved into (T23), and woke
@@ -63,9 +64,9 @@ def mov(+w: U32) -> U32:
 #
 #   * every read is a read of the pre-phase array (the array is never written by
 #     `plan`), so a later mover cannot re-read a target an earlier mover wrote;
-#   * wake is applied only after the whole colour's writes are in (`commit_wakes`),
-#     so a phase never pulls in a cell it woke — the evaluated set is fixed when
-#     the phase begins (rule 9).
+#   * wake is applied only after the whole colour's writes are in (`commit_wakes_mask`,
+#     `src/sim.bend`), so a phase never pulls in a cell it woke — the evaluated set
+#     is fixed when the phase begins (rule 9).
 #
 # Contention (rule 3) is resolved from the pre-phase state. Two cells can only
 # share a diagonal target if they are the two opposite-direction claimants on the
@@ -297,17 +298,6 @@ def commit_sets(writes: List<Write>, world: Array<U32>) -> Array<U32>:
           commit_sets(t, world[idx] <- val)
         case WWake{idx}:
           commit_sets(t, world)
-
-def commit_wakes(writes: List<Write>, world: Array<U32>) -> Array<U32>:
-  match writes:
-    case Nil{}:
-      world
-    case Con{h, t}:
-      match h:
-        case WWake{idx}:
-          commit_wakes(t, Ops.wake(world, idx))
-        case WSet{idx, val}:
-          commit_wakes(t, world)
 
 # V0-4b-2: the support pass returns its crushed-cell wake indices as a
 # `List<U32>`; convert them to `WWake` writes so the tick can apply the support

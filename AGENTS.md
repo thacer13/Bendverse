@@ -34,7 +34,8 @@ machine-checked by `PROOF.bend`.
 - `src/` — the **pure engine**, zero IO. The rule system lives here: `cell`
   (word layout + material table), `grid` (index math), `worldgen` (pure
   coordinate-indexed gen), `rules` (fall + impact), `support` (support/crumble),
-  `ops` (shared world ops), `sim` (tick pipeline), `chunk`/`store` (M8 chunk
+  `ops` (shared world ops), `sim` (tick pipeline), `dirty` (the carried
+  dirty-row work-set mask), `chunk`/`store` (M8 chunk
   key/gen + radix store), `bits`/`nat`/`list`/`potential` (verified lemma +
   evaluation kernels; `list` holds the `List` lemmas imported from BendHub), `settle`/`parity`/`mod`/`priority`/`order` (V1–V3 verification
   layers), `fall` (the movement/fall-gap Φ telescope).
