@@ -200,12 +200,12 @@ def t20() -> U32:
   U32.add(init_bad, is_bad(list_eq(Grid.to_list(a), Grid.to_list(b))))
 
 def t23() -> U32:
-  # V3c witness: within one phase two same-color movers can target the SAME
-  # cell and BOTH move -- a lighter mover first, a denser one after it, which
-  # re-reads the just-written target. `sand` at (4,40,4) and `rubble` at
-  # (6,40,4) both slide onto (5,39,4); scan order puts sand first, then rubble
-  # sees sand (100 < 150) and overwrites it. So the target ends as RUBBLE (4),
-  # not sand: the phase fold is an ordered cascade, not "first mover wins".
+  # V0-1 conformance: two same-colour diagonal movers still claim the SAME target
+  # (`sand` at (4,40,4) and `rubble` at (6,40,4) both reach (5,39,4)), but the
+  # phase resolves the contention from the *pre-phase* state: the smaller flat
+  # index (sand, 4 < 6) owns the target and the later mover forfeits. So the
+  # target ends as SAND (2) -- the ordered cascade that re-read the just-written
+  # cell is gone.
   w0 = Sim.build()
   w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
   w2 = w1[Grid.index(6, 40, 4)] <- Cell.encode(Cell.rubble(), 0, 1, 0, 0)
@@ -214,14 +214,13 @@ def t23() -> U32:
   w5 = w4[Grid.index(4, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
   w6 = w5[Grid.index(6, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
   w7 = Sim.phase(w6, 0)
-  is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(5, 39, 4))), 4))
+  is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(5, 39, 4))), Cell.sand()))
 
 def t24() -> U32:
-  # V3c witness: activity propagates WITHIN a phase. `i` at (4,40,4) slides
-  # onto (5,39,4), whose wake reaches the INACTIVE `sand` at (6,40,4). That
-  # cell's index is later in the scan, so it is evaluated this same phase and
-  # falls onto (6,39,4). So (6,39,4) holds sand (2): the fold cannot be a
-  # radius-2 recomputation from the initial state.
+  # V0-1 conformance: wake lands only after the phase. The mover at (4,40,4)
+  # wakes the inactive `sand` at (6,40,4), but that cell is not in this phase's
+  # evaluated set, so it does not fall and (6,39,4) stays EMPTY (0). Intra-phase
+  # activation is gone; the woken cell is evaluated on the next tick.
   w0 = Sim.build()
   w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
   w2 = w1[Grid.index(6, 40, 4)] <- Cell.encode(Cell.sand(), 0, 0, 0, 0)
@@ -230,7 +229,25 @@ def t24() -> U32:
   w5 = w4[Grid.index(3, 40, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
   w6 = w5[Grid.index(4, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
   w7 = Sim.phase(w6, 0)
-  is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(6, 39, 4))), 2))
+  is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(6, 39, 4))), Cell.empty()))
+
+def clear_column(fuel: Nat, +y: U32, world: Array<U32>) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      +i = Grid.index(4, y, 4)
+      clear_column(p, U32.add(y, 1), world[i] <- 0)
+
+# T26 V0-1 settling witness: a lone grain in an empty column falls straight down
+# (drop has priority over sliding), and once the bedrock floor blocks the drop
+# the diagonal cells are bedrock too, so it settles at y=1.
+def t26() -> U32:
+  w0 = clear_column(U32.to_nat(62), 1, Sim.build())
+  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w2 = settle(U32.to_nat(50), w1)
+  landed = U32.is_eq(Cell.material(Grid.value_at(w2, Grid.index(4, 1, 4))), Cell.sand())
+  is_bad(landed)
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -242,5 +259,6 @@ def main() -> IO(Unit):
     report("T9 pull-base collapses rock", t9())
     report("T18 chunk store tick equivalence", t18())
     report("T20 evict -> assemble -> tick equivalence", t20())
-    report("T23 phase contention is an ordered cascade", t23())
-    report("T24 activity propagates within a phase", t24())
+    report("T23 phase contention resolved from pre-phase state", t23())
+    report("T24 wake does not propagate within a phase", t24())
+    report("T26 grain in an empty column settles", t26())

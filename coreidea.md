@@ -127,10 +127,14 @@ static, not because the grid wraps.
 Where the code stands (do not confuse this with the target)
 
 `PLAN.md` §4 is the conformance table: it records, per rule, whether the engine
-conforms, deviates, or holds by construction. Two deviations are open and
-recorded there rather than papered over: the grid still wraps on all three axes
-(contract 2, violated when the shell is removed), and a tick's cost is still
-proportional to world size (contract 3).
+conforms, deviates, or holds by construction. Contract 1 now holds: a phase is a
+pure function of the state it is handed (`Rules.plan`/`Rules.phase`, V0-1), so
+rule 10 holds by construction and contention is resolved from the pre-phase
+state. Deviations remain and are recorded there rather than papered over: the
+grid still wraps on all three axes (contract 2, violated when the shell is
+removed); a tick's cost is still proportional to world size (contract 3); wake
+is applied per phase rather than per tick (rule 9's residual); and rigidity's
+support seed is still positional rather than neighbourhood-derived (rules 6/7).
 
 Ambition (in the open)
 

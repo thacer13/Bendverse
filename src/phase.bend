@@ -5,9 +5,10 @@ import ./grid.bend as Grid
 import ./rules.bend as Rules
 
 # ------------------------------------------------------------------ V3c-0 (partial)
-# Engine-level target separation (A.57/A.58): every cell `Rules.step` *writes* is
-# a neighbor with `dy = -1`, so the target's `y`-parity is the opposite of the
-# evaluated cell's. The phase color is
+# Engine-level target separation (A.57/A.58): every cell the rule fold *writes* is
+# a neighbor with `dy = -1` (the retired `Rules.step` and its V0-1 successor
+# `Rules.plan` write the same targets), so the target's `y`-parity is the opposite
+# of the evaluated cell's. The phase color is
 # `color_of(i) = ix(i)&1 | (iy(i)&1)<<1 | (iz(i)&1)<<2`, so a flipped `iy`
 # parity flips the color's `y` bit: a phase's writes never land on a cell whose
 # color equals the phase's in the `y` bit. (The side cells `side_index` reads

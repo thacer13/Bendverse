@@ -9,9 +9,10 @@ def build() -> Array<U32>:
   Support.pass_all(Worldgen.build())
 
 # M9 win 2: a settled world (no active cell, rule 9) is a tick fixpoint.
-# `Support.pass` is activity-gated and `Rules.step` skips inactive cells, so when
-# no cell carries the active bit a whole tick is the identity. Scanning first
-# turns the flat ~21 ms settled tick into a single cheap pass.
+# `Support.pass` is activity-gated and each phase is an intent fold that skips
+# inactive cells, so when no cell carries the active bit a whole tick is the
+# identity. Scanning first turns the flat ~21 ms settled tick into a single
+# cheap pass.
 #
 # `any_active_go` walks cells `0..262143`, carrying the pair `(world, value)` and
 # an OR accumulator. `fuel` is the number of cells *after* the current one, so
@@ -36,10 +37,10 @@ def any_active(world: Array<U32>) -> Array<U32> & Bool:
   q = Array.get(U32, world, 0)
   any_active_go(U32.to_nat(U32.sub(Grid.volume(), 1)), 0, False{}, q)
 
+# V0-1: the phase is `Rules.phase` — a pure `plan` (read-only intent + resolve)
+# followed by `commit`. `Sim.phase` is kept as the tick pipeline's name for it.
 def phase(world: Array<U32>, +c: U32) -> Array<U32>:
-  +i0 = Grid.color_base(c)
-  q = Array.get(U32, world, i0)
-  Rules.step(U32.to_nat(16777216), q, 0, i0, c, 0, 0)
+  Rules.phase(world, c)
 
 def tick_active(world: Array<U32>) -> Array<U32>:
   world = Support.pass(world)

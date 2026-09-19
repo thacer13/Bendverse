@@ -2248,3 +2248,78 @@ guard the fixpoint). All are robustness debts, and all are removed or bounded by
 - `bend test/simtests.bend -o bin && ./bin` (forced rebuild) → 10/10 PASS — the
   behaviour-preservation check for the constant/`color_last` edits.
 - `bend_canary` → 6 ok, 0 bad.
+
+### A.63 — V0-1: phase purity — `intent → resolve → apply`, and the first retirement
+
+**Status:** engine semantics change + retirement. Gate green (59 laws, unchanged),
+fast suite 24/24, sim suite **11/11** (rebuilt, +T26), canaries 6 ok.
+
+**Why.** A.61 scoped `V0` and showed that `C1`/`R1`/`R3`/`R4`/`R9`/`R10` are one
+problem: a phase read the array it was writing. `Rules.step` wrote `deactivate`
+to the cell it was inspecting, re-read targets a sibling had just moved into
+(T23, an ordered cascade), and evaluated cells it had woken in the same scan
+(T24). `V0-1` is the unblocker: define the phase as a pure function
+`phase(state) = apply(resolve(intent(state)))`.
+
+**What changed.**
+- `src/rules.bend`: `Rules.step` **removed**; the pure phase added.
+  `Write` is `WSet{idx, val} | WWake{idx}`. `plan` is a read-only state machine
+  (fuel loop, `gp` threads the array through reads and is never written) that,
+  for each cell of the phase colour, decides from the *pre-phase* state, resolves
+  contention, and conses its writes onto `sets`/`wakes`. `commit_sets` applies
+  the value writes and `commit_wakes` applies `Ops.wake` afterwards;
+  `phase_commit`/`phase` wrap them. `side_index`/`diag_index`/`color_of`/`mov`
+  are unchanged (the proof layer and `Sim.phase` still use them).
+- `src/sim.bend`: `Sim.phase` now delegates to `Rules.phase`; the tick pipeline is
+  otherwise untouched.
+- `src/step.bend`: header marks the mirror **retired**.
+
+**Design.** Purity is structural, not incidental: `plan` cannot write the array it
+reads, so no part of a phase observes another part's output. The only new rule
+logic is the contention tie-break at states 30/31. Within a colour a target can be
+claimed by at most two cells — the two opposite-direction diagonal claimants on
+one axis (`(4,40,4)`/`(6,40,4)` → `(5,39,4)`); drop and crush targets are already
+injective within a colour. The tie-break is pre-phase and order-free: if the
+opposite claimant is `capable` and has the smaller flat index, this cell forfeits
+to the impact path. Wake is a post-write marking pass, so a phase never pulls in a
+cell it woke (rule 9). Even the wake writes are pure functions of the pre-phase
+state: the woken *index set* is planned, and `activate` of the post-set value is
+`activate` of a planned (hence pre-phase-derived) value.
+
+**Witnesses (re-witnessed as conformance).**
+- **T23** now asserts the target is **sand (2)**: the smaller-index claimant wins
+  and the later mover forfeits — no re-read, no cascade.
+- **T24** now asserts `(6,39,4)` is **empty (0)** after one phase: the woken cell
+  is not in the phase's evaluated set.
+- **T26 (new)** "a grain in an empty column settles": a lone grain falls straight
+  down (drop has priority over sliding) and rests at `y=1` on the bedrock floor.
+
+**Retirement (per §3.4).** `Rules.step` no longer exists, so the `step_m` mirror
+(`law step_mirror_balance`) is orphaned: kept (append-only `LAWS.bend`), still
+true about the old machine, **retired** as evidence and not to be extended
+(recorded in §4.1). `sup_m` still mirrors `Support.sup`, which `V0-1` did not
+touch, so it stays live until `V0-4`. `G10` is therefore closed *only for the
+shape it enumerated*; the live `Rules.plan` write-site enumeration is recorded
+as `G14` (open).
+
+**Honest residuals (recorded, not hidden).**
+- **`G12`** (new, open): wake is applied at the end of each *phase*, not
+  accumulated for the next tick, so a later phase of the same tick can evaluate a
+  woken cell. T24 rules out only the same-phase case.
+- **`G13`** (new, accepted): the tie-break over-forfeits — a diagonal mover yields
+  to a `capable` opposite-axis neighbour even when that neighbour is not actually
+  claiming the shared target. Behaviour-only; `V0-3`'s batching removes the need.
+- `side_index`/`diag_index`'s `case _: i` default is unchanged; `V0-3`'s
+  injectivity proof must establish the `k < 4` bound.
+- Fuel sufficiency is still a magic `2^24` with no law (`plan` needs ~2^19).
+
+**Not done (deliberately).** `V0-2` (close the box), `V0-3` (explicit colour ×
+direction batching + the injectivity proof), `V0-4` (drive the tick from the
+chunk work set). `G3` remains open; A.63 narrows it to the batching theorem.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (59 laws; no law added or removed).
+- `bend test/tests.bend` → 24/24 PASS.
+- `bend test/simtests.bend -o bin && ./bin` (rebuilt) → **11/11** PASS.
+- `bend_canary` → 6 ok, 0 bad.
+- `runners/ascii.bend` native runs and settles.

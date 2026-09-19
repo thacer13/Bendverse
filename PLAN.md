@@ -375,8 +375,9 @@ Simulation, native-recommended (`test/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
 settles and far cells are untouched; T4b a settled world is a fixed point; T9
 pull-base collapses rock; T18 chunk-store tick equivalence; T20 evict → assemble
-→ tick equivalence; T23 phase contention is an ordered cascade; T24 activity
-propagates within a phase (both V3c scoping witnesses, A.57).
+→ tick equivalence; T23 phase contention is resolved from the pre-phase state;
+T24 wake does not propagate within a phase; T26 a grain in an empty column
+settles (the V0-1 conformance witnesses, A.63).
 
 ### 3.6 Proof-development loop
 
@@ -453,47 +454,64 @@ This table is what would have caught T23/T24 on the day they landed.
 
 | Ref | Target | Status | Open deviation / evidence |
 |---|---|---|---|
-| `C1` | Purity of phases | deviating | a phase reads the array it is writing (`Rules.step` sel 5/8/9/10); T23 is an ordered cascade, T24 is intra-phase activation |
+| `C1` | Purity of phases | conforming | `Rules.plan`/`phase` (V0-1, A.63): the phase reads only the pre-phase array and applies its write set afterwards, so no part reads a value another part produced. T23/T24 re-witnessed as conformance |
 | `C2` | Closure (box, no wrap) | deviating | `Grid.neighbor` wraps mod 64 on every axis; the box is a worldgen shell and paint can open it (`V0-2`) |
 | `C3` | Cost tracks disturbance | deviating | `Sim.any_active` and `Support.pass` scan all 262144 cells every tick; `src/store.bend`'s chunks are not wired into the tick |
-| `R1` | Pre-phase reads only, bounded radius | deviating | same as `C1`: mid-phase reads (T23/T24) |
+| `R1` | Pre-phase reads only, bounded radius | conforming | `Rules.plan` never writes the array it reads (V0-1, A.63); every read is of the pre-phase state |
 | `R2` | Conservation: swap/transform only | conforming | count laws closed (`V4`); write sites enumerated (`G10` closed) |
-| `R3` | At most one writer per cell per phase | deviating | two same-colour cells write one target in a phase (T23) |
-| `R4` | Colour × direction batches, injective targets | deviating | batches are colour-only, so same-colour diagonal movers contend (T23); direction batching is `V0-3` |
+| `R3` | At most one writer per cell per phase | conforming | contention is resolved from the pre-phase state: of the two opposite-axis diagonal claimants of one target, the smaller index owns it (V0-1, A.63; T23). Drop/crush targets are injective within a colour |
+| `R4` | Colour × direction batches, injective targets | deviating (partial) | contention no longer arises (V0-1: a pre-phase tie-break, T23), but the schedule is still colour-only and the tie-break is a local check, not the batch injectivity theorem; direction batching + proof is `V0-3` (`G3`) |
 | `R5` | Falling is universal | conforming | `fall_*` laws |
 | `R6` | Cohesion rigidity is local | deviating | `Ops.shell_adjacent` (renamed from `adjacent_static`, A.62) seeds support from **coordinates**, not the neighbourhood: it hardcodes the 64³ shell (literals `1`/`62`) and never reads an adjacent cell |
 | `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* is the separate `C3` deviation |
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
-| `R9` | Activity effects land next tick | deviating | `Ops.wake` activates immediately and the same phase then evaluates the woken cell (T24) |
-| `R10` | Determinism under any schedule | unproven | holds only because the scan is sequential; `C1` is the proof and does not hold yet |
+| `R9` | Activity effects land next tick | deviating (partial) | a phase no longer evaluates a cell it woke (V0-1, A.63; T24), but wake is applied at the end of each *phase*, so a later phase of the same tick can see it. Deferring wake to tick end is `G12` |
+| `R10` | Determinism under any schedule | by construction | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The schedule-invariance *proof* (region-split = sequential) is still `V3c`/`G3` |
 | `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
 | `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
 
-`C2` and `C3` are open engineering. `C1`/`R1`/`R3`/`R4`/`R9`/`R10` are one
-problem wearing six names — **a phase is not a pure function yet** — and `V0` is
-the work item that fixes it. `R6`/`R7` are a second, independent deviation: the
-support seed is positional, so "rigidity is local" is not yet true; `V0-2`/`V0-4`
-replace it with a real neighbour test. No row is closed by rewording a rule to
-match the code.
+`C2` and `C3` are open engineering. `V0-1` (A.63) closed the purity cluster
+`C1`/`R1`/`R3`/`R10`: a phase is now `apply(resolve(intent(state)))`, so
+determinism holds by construction and contention no longer re-reads a sibling's
+write. `R4` and `R9` remain *partial*: the schedule is still colour-only (the
+batch theorem is `V0-3`/`G3`) and wake is per-phase, not per-tick (`G12`).
+`R6`/`R7` are a second, independent deviation: the support seed is positional, so
+"rigidity is local" is not yet true; `V0-2`/`V0-4` replace it with a real
+neighbour test. No row is closed by rewording a rule to match the code.
+
+**Retirement (A.63).** `Rules.step` was replaced by `Rules.plan`/`phase`, so the
+`step_m` mirror in `src/step.bend` (law `step_mirror_balance`) no longer mirrors
+the engine. It is **retired**: still a true theorem about the old selector
+machine, no longer evidence for the engine. Per §3.4 it is kept, not deleted, and
+must not be extended. `sup_m` (`src/tick.bend`, law `sup_mirror_preserves_phi`)
+still mirrors `Support.sup`, which `V0-1` did not touch, so it stays live until
+`V0-4` rewrites that pass. `G10` consequently stays closed only for the retired shape; the live `Rules.plan`
+write-site enumeration is recorded as `G14` (open).
 
 ### 4.2 Known landmines (recorded, not yet fixed)
 
 Active code that can turn a fault into a silent wrong answer. None of these is a
 proof gap; they are robustness debts, listed so that a later session does not
-discover them by accident. Each is removed or bounded by `V0-1`.
+discover them by accident. `V0-1` (A.63) moved two of them from active debt to
+bounded/unreached:
 
-- **Silent selector default.** `Rules.step` ends with `case _: world`, so an
-  unknown state ends the phase scan mid-way and returns a half-updated world.
-- **Silent candidate default.** `side_index`/`diag_index` end with `case _: i`,
-  so a `k` outside `{0,1,2,3}` (the engine's loop bound) silently becomes a
-  self-target instead of an error.
+- **Silent selector default (bounded, A.63).** The retired `Rules.step` ended
+  with `case _: world`, so an unknown state ended the phase scan mid-way.
+  `Rules.plan` still has a `case _` fallback, but every selector is an internal
+  literal chosen by `Bool.pick`, so it is unreachable by construction — it remains
+  only as the compiler-required default for a `U32` scrutinee.
+- **Silent candidate default (open).** `side_index`/`diag_index` end with
+  `case _: i`, so a `k` outside `{0,1,2,3}` (the engine's loop bound) silently
+  becomes a self-target instead of an error. `V0-1` did not change this; `V0-3`'s
+  injectivity proof must establish the `k < 4` bound so the branch is dead.
 - **Silent material default.** `Cell.density`/`static`/`slides`/`cohesion`/
   `default_cohesion` all end with `case _`, so any material id ≥ 6 is treated as
   empty-like (density 0, non-static): a bad id is invisible and can be fallen
   through.
-- **Unproven fuel sufficiency.** `Rules.step` and `Support.sup` return the world
+- **Unproven fuel sufficiency.** `Rules.plan` and `Support.sup` return the world
   they have at fuel `0`, and `Sim`/`Support` pass a magic `2^24` with no law that
-  it is enough (~13× slack today). Grow the selector and a tick silently does
+  it is enough (~13× slack today; `plan` spends at most ~16 transitions per cell ×
+  32768 cells per phase, so ~2^19). Grow the selector and a tick silently does
   half its work.
 - **Fixed settling budget in tests.** `test/simtests.bend`'s `settle` runs a
   fixed 50 ticks. T4b does assert the post-settle fixpoint, so the witness is
@@ -537,6 +555,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V3c-0` | engine-level write-target separation, partial: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`) — the `Rules`-level form of V3a | A.58 |
 | `M9` | CPU perf pass: cell-resolution render, settled-world tick fixpoint, color-restricted phase scan (active tick ≈ 21→4.5 ms, settled ≈ 0.09 ms), T25 | A.59 |
 | `—` | BendHub reuse: `src/list.bend` (the `List` lemmas Base does not ship) and count-fold completeness (`cells_m`, `cnts_m_len`, `to_counts_len`) | A.60 |
+| `V0-1` | phase purity: `Rules.plan`/`phase` replace `Rules.step` — a read-only intent fold (`plan`) that decides from the pre-phase state, resolves contention by a local tie-break, and accumulates `sets`/`wakes`, then `commit_sets`/`commit_wakes` apply it; the `step_m` mirror is retired | A.63 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -555,16 +574,19 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 - [x] **V2 Global settling** — complete (ii and iii landed); `M8d` landed (A.30).
 - [ ] **V0** Phase purity (contract `C1`) — the unblocker for `V3c`/`M7d` and
   for `C3`. Scoped in A.61; sub-steps are each landable and testable alone.
-  **V0-1** define the per-cell `intent` as a pure function of the pre-phase
-  state and `phase(state) = apply(resolve(intent(state)))`; **V0-2** close the
-  box (grid boundary moves inert; the shell is generation, not the grid);
+  **V0-1 done (A.63):** `Rules.plan`/`Rules.phase` replace `Rules.step`;
+  `phase(state) = commit(plan(state))`, `plan` reads only the pre-phase state and
+  resolves contention from it; T23/T24 re-witnessed as conformance and T26
+  (a grain in an empty column settles) added. Remaining: **V0-2** close the box
+  (grid boundary moves inert; the shell is generation, not the grid);
   **V0-3** batch by (colour × direction) and prove the target map injective, so
   `resolve` is trivial and rule 4 holds by construction; **V0-4** drive `Support`
   and the tick from the chunk work set instead of a world scan (`C3`).
   Acceptance: T23/T24 re-witnessed as *conformance* tests (the engine no longer
   exhibits them) plus a new witness "a grain in an empty column settles".
-  `step_m`/`sup_m` (the mirror layer) are **not** to be extended: they mirror
-  the shape `V0-1` replaces (see §3.4 retirement, §4.1).
+  `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
+  **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
+  `Support.sup`, which `V0-4` will replace (see §3.4 retirement, §4.1).
 - [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
   fold. **Superseded as a work item by `V0`** (A.61): the naive statement is
   false *because* the engine reads mid-phase state, so under `C1` this becomes a
@@ -674,15 +696,18 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
-| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem |
+| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; V0-3 still owes the explicit (colour × direction) batching, its injectivity proof, and making `side_index`/`diag_index`'s `k < 4` bound dead |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
-| `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the remaining instance (write-site enumeration `G10`) is now closed (A.48, A.53–A.56), so what remains is the selector/read threading from `Rules.step`/`Support.sup` to their `PT` mirrors, by inspection |
+| `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the remaining instance (write-site enumeration `G10`) is now closed (A.48, A.53–A.56), so what remains is the selector/read threading from `Rules.plan`/`Support.sup` to their `PT` mirrors, by inspection (`G14` is the live instance) |
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | closed | G2 G10 | closed (A.38–A.40): `Word.cmp` reflection (A.38) makes the guard provable; the engine guards both crush sites with `Ops.crush_if_rock` (A.39); `array_guarded_crush_lowers_phi` (A.40) proves the guarded write's Φ effect at every index — rock: `crush_gap`, non-rock: identity — with no `material(w) == 3` hypothesis. Runtime-witnessed by T19 |
-| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | closed | G2 G9 | **closed (A.48, A.53–A.56):** both state machines are mirrored on `PT`. `Support.sup` (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`), an abstract wake fuel, and law `sup_mirror_preserves_phi`. `Rules.step` (A.56): `src/step.bend`'s `step_m` mirrors the full selector machine (`StepSel`, abstract wake fuel) and carries a pair invariant `Φ(current) + da == Φ(start) + db`; every write composes its exact leaf balance via `pt_write_balance`, wakes fold through `sr_phi_cong`, `step_preserves` is the all-fuel theorem, and law `step_mirror_balance` closes over `step_pass_m` (the `Sim.phase` entry point). Unconditional, so no fall-regime or `can` hypothesis is needed; the earlier `G9` resolution (A.38–A.40) covers both crush sites. The selector/read threading of the mirror is by inspection (the `G5` caveat) |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` was by inspection, not mirrored; each write primitive's effect is proven. Subject `Rules.step` **retired by A.63**; the live `Rules.plan` enumeration is `G14` | closed | G2 G9 | **closed (A.48, A.53–A.56):** both state machines are mirrored on `PT`. `Support.sup` (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`), an abstract wake fuel, and law `sup_mirror_preserves_phi`. `Rules.step` (A.56): `src/step.bend`'s `step_m` mirrors the full selector machine (`StepSel`, abstract wake fuel) and carries a pair invariant `Φ(current) + da == Φ(start) + db`; every write composes its exact leaf balance via `pt_write_balance`, wakes fold through `sr_phi_cong`, `step_preserves` is the all-fuel theorem, and law `step_mirror_balance` closes over `step_pass_m` (the `Sim.phase` entry point). Unconditional, so no fall-regime or `can` hypothesis is needed; the earlier `G9` resolution (A.38–A.40) covers both crush sites. The selector/read threading of the mirror is by inspection (the `G5` caveat) |
 | `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | closed | G10 M8d | **closed (A.53):** a `leaf_base(t,base,n,i)` function gives the leaf index `chg_m` actually uses, so `nfst`/`nsnd(chg_m)` project onto `pot_at(tget(..), leaf_base(..))` — definitional at `PL`, where A.52's `base+i` form was false. `swap_balance` then gives one write's `new − old` at that leaf, and the two balances telescope into the unconditional cross law `array_mov_cross` (the residuals `p+q` and `r+s` are the pre/post potentials of the two leaves). `fall_gap := mov_S − mov_T` and `array_mov_lowers_phi` give the decrease under the fall-regime hypothesis `mov_T + fall_gap == mov_S`; the regime is now a single order Bool with the Nat order lemma proven (A.54: `n_add_sub_le`, law `array_mov_lowers_phi_regime`); reflecting the engine's `can` guard to it is the remaining `G10` `step_m` work |
+| `G12` | unproven | wake is applied at the end of each *phase*, not accumulated for the next tick (rule 9); a later phase of the same tick can evaluate a cell an earlier phase woke | open | — | defer wake to tick end (a pending-wake accumulator) or prove the phase-order independence of per-phase wake; A.63 fixed only the same-phase case (T24) |
+| `G13` | accepted | V0-1's contention tie-break over-forfeits: a diagonal mover yields to an opposite-axis `capable` neighbour even when that neighbour is not actually claiming the shared target (it may drop, or slide another way) | accepted | count | refine the tie-break to recompute the neighbour's chosen target once V0-3's batching makes it unnecessary; behaviour-only, no safety consequence |
+| `G14` | unproven | V0-1's `Rules.plan` write-*site* enumeration is by inspection, not mirrored: the write primitives it emits (`mov`, `crush_if_rock`, `set_fall0`, `deactivate`, `wake`) each have proven Φ/conservation effects, but that `plan`'s write set is exactly those is not a theorem | open | G5 | mirror `plan` on `PT` (a fresh enumeration, since `step_m` mirrored the retired `Rules.step`), or prove the `plan`→write-set correspondence directly |
 
 ### 5.4 Deferred — publishing a proven slice to BendHub
 

@@ -490,7 +490,7 @@ def cnt_bad() -> U32:
             cnt_check(Cell.encode(5, 10, 1, 2, 17),
               cnt_check(0, cnt_check(8388607, 0))))))))
 
-# T22 movement Phi witness: the `Rules.step` movement is a two-write swap, and
+# T22 movement Phi witness: the movement is a two-write swap, and
 # its close is the cross equation `after + mov_S == before + mov_T` (A.53). We
 # use the size-free `PT` model to place a heavy cell at level 1 (index 4096) and
 # an empty cell at level 0 (index 0): the move drops Phi by 100 and the single

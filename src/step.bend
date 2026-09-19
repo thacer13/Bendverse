@@ -9,6 +9,12 @@ import ./cell.bend as Cell
 import ./grid.bend as Grid
 import ./fall.bend as F
 
+# --------------------------------------------------- RETIRED by V0-1 (A.63)
+# This mirrors the **retired** `Rules.step` (removed in A.63 and replaced by
+# `Rules.plan`/`Rules.phase`). `step_m` is still a true theorem about that old
+# selector machine, but it no longer mirrors the engine, so it is no longer
+# evidence (`PLAN.md` §3.4, §4.1). Do not extend it; the live write sites are
+# `Rules.plan`'s.
 # ------------------------------------------------------------------ G10 closure
 # `Rules.step` mirrored on `PT` so every write site's potential effect is
 # machine-checked and composed. The selector is a datatype (`StepSel`); the
