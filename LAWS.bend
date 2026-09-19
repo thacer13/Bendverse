@@ -390,3 +390,61 @@ law diag_write_flips_y_phase:
   for i: U32
   for +k: Rules.Dir4
   {Parity.par32(Grid.iy(Rules.diag4(i, k))) == Bool.not(Parity.par32(Grid.iy(i))) : Bool}
+
+# V0-3b — `color_of` bit extraction (the inverse of the colour packing).
+# `Rules.color_of(i) = (ix(i)&1) | ((iy(i)&1)<<1) | ((iz(i)&1)<<2)` packs the
+# three coordinate parities; these laws read bit `k` back as coordinate `k`'s
+# parity, so equal colours force equal coordinate parities (the colour half of
+# the (colour × direction) separation).
+law color_of_bit0:
+  for i: U32
+  {Parity.par32(Rules.color_of(i)) == Parity.par32(Grid.ix(i)) : Bool}
+
+law color_of_bit1:
+  for i: U32
+  {Parity.par32(U32.shrn(Rules.color_of(i), 1n)) == Parity.par32(Grid.iy(i)) : Bool}
+
+law color_of_bit2:
+  for i: U32
+  {Parity.par32(U32.shrn(Rules.color_of(i), 2n)) == Parity.par32(Grid.iz(i)) : Bool}
+
+# V0-3b — cross-direction target classification (rule 4, the second half).
+# A same-colour target collision forces the two displacement parities to agree:
+# `par dx` and `par dz` of the two movers are equal. The only engine directions
+# sharing a `(par dx, par dz)` class are the opposite-diagonal pairs (K0/K1 and
+# K2/K3); every other cross-direction pair is disjoint, and same-direction pairs
+# are injective (V0-3a). This is `is_ne`-free: the claim is about the parity
+# bits, not about the `U32` equality.
+law color_target_x_par:
+  for i: U32
+  for dx: U32
+  for dz: U32
+  {Parity.par32(Grid.ix(Grid.neighbor(i, dx, 4294967295, dz))) == Bool.xor(Parity.par32(Grid.ix(i)), Parity.par32(dx)) : Bool}
+
+law color_target_z_par:
+  for i: U32
+  for dx: U32
+  for dz: U32
+  {Parity.par32(Grid.iz(Grid.neighbor(i, dx, 4294967295, dz))) == Bool.xor(Parity.par32(Grid.iz(i)), Parity.par32(dz)) : Bool}
+
+law color_collision_x_par:
+  for i: U32
+  for j: U32
+  for +dxi: U32
+  for +dzi: U32
+  for +dxj: U32
+  for +dzj: U32
+  for +hc: {U32.is_eq(Rules.color_of(i), Rules.color_of(j)) == True{} : Bool}
+  for +ht: {Grid.neighbor(i, dxi, 4294967295, dzi) == Grid.neighbor(j, dxj, 4294967295, dzj) : U32}
+  {Parity.par32(dxi) == Parity.par32(dxj) : Bool}
+
+law color_collision_z_par:
+  for i: U32
+  for j: U32
+  for +dxi: U32
+  for +dzi: U32
+  for +dxj: U32
+  for +dzj: U32
+  for +hc: {U32.is_eq(Rules.color_of(i), Rules.color_of(j)) == True{} : Bool}
+  for +ht: {Grid.neighbor(i, dxi, 4294967295, dzi) == Grid.neighbor(j, dxj, 4294967295, dzj) : U32}
+  {Parity.par32(dzi) == Parity.par32(dzj) : Bool}

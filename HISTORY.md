@@ -2440,3 +2440,64 @@ mirror (not extended, not on the live path).
 - `bend test/tests.bend` → 25/25 PASS (+T29).
 - `bend test/simtests.bend -o bin && ./bin` (rebuilt) → 13/13 PASS.
 - `bend_canary` → 6 ok, 0 bad.
+
+### A.66 — V0-3b: colour × direction classification — `color_of` bit extraction and the collision theorem
+
+**Status:** proof landing (no engine semantics change). Gate green (**69** laws,
++7), fast suite **26/26** (+T30), sim suite **13/13**, canaries 6 ok.
+
+**Why.** `V0-3a` (A.65) proved a direction batch's target map injective, but the
+*cross-direction* half of rule 4 was open: two same-colour cells in different
+directions can share a target (the opposite diagonals), and there was no
+theorem cutting down which pairs can. `PLAN §5.3`/`G3` named the missing piece
+precisely — "bit extraction of `color_of`, `k < 4` bounds, `is_ne`
+reflection" — and `src/phase.bend`'s `V3c-0` comment recorded it as the second
+half of the colour separation.
+
+**What changed (all `src/color.bend`, new).**
+- **`color_of` bit extraction.** `Rules.color_of` packs the three coordinate
+  parities as `(ix&1) | ((iy&1)<<1) | ((iz&1)<<2)`. The inverse is now proven:
+  `color_bit0`/`color_bit1`/`color_bit2` read bit 0/1/2 back as `par32 ix`,
+  `par32 iy`, `par32 iz`. The plumbing is `bit0_or`/`bit0_and`/`bit0_shl`, a
+  `shr_and_mask1_zero`, and (for the 1- and 2-shifts) the `Bits` library's
+  `shr_or`/`shr_n_or`, `shr_shl_one`, `shr_shl_kmask`, `shr_and`.
+- **Same colour ⇒ equal parities.** `same_color_x`/`_y`/`_z` reflect colour
+  equality (`Word.u32_cmp_eq`) and transport it along the extraction laws.
+- **Target parity.** `target_x_par`/`target_z_par` give the `dy = -1` target's
+  x/z parity as `xor` of the source parity with the displacement parity
+  (`neighbor_y_flip`, A.58, already gave the y flip).
+- **Classification.** `same_color_target_x_par`/`_z_par`: a same-colour target
+  collision forces `par dx` equal and `par dz` equal. The only engine directions
+  sharing a `(par dx, par dz)` class are the opposite-diagonal pairs (`K0`/`K1`
+  and `K2`/`K3`); the drop is the `(False, False)` class. Same-direction pairs
+  are injective (V0-3a). So cross-direction overlap is *exactly* the
+  opposite-diagonal class — which the V0-1 pre-phase tie-break resolves
+  (rule 3, T23). The proof needs a Bool `xor_cancel_left` (discharged via
+  `b_not_not`).
+- `test/tests.bend`: **T30** witnesses the direction-parity table (K0/K1 share
+  `(True, False)`, K2/K3 share `(False, True)`, the drop is `(False, False)`).
+- `LAWS.bend`/`PROOF.bend`: laws `color_of_bit0/1/2`, `color_target_x_par`,
+  `color_target_z_par`, `color_collision_x_par`, `color_collision_z_par`.
+
+**Rule reading.** Rule 4 asks for (colour × direction) batches with injective
+targets. Within a direction batch the targets are a translation and injective
+(V0-3a). Across directions, the classification shows the only possible overlap
+is one parity class (the opposite diagonals), and rule 3 explicitly allows a
+deterministic pre-phase tie-break for exactly that. `R4` is therefore marked
+**conforming** in `PLAN §4.1`.
+
+**Honest residuals.** The claim is stated over the parity bits, so the `is_ne`
+reflection the plan mentioned is *not* needed for it; turning
+`color_collision_*_par` into a literal `U32.is_eq(below i, diag4 j k) == False`
+would need that reflection and is left as polish. The `div`-free classification
+does not by itself prove the *equality* `region-split fold = sequential fold`
+(V3c); that is the remaining schedule-invariance item, now unblocked by phase
+purity (V0-1) + injectivity (V0-3a) + colour separation (V0-3b). `G13`'s
+over-forfeit stands: the tie-break is sufficient but does not recompute the
+neighbour's chosen target.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (69 laws; +7, none retired).
+- `bend test/tests.bend` → 26/26 PASS (+T30).
+- `bend test/simtests.bend -o bin && ./bin` (rebuilt) → 13/13 PASS.
+- `bend_canary` → 6 ok, 0 bad.

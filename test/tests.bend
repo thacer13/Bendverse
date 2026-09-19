@@ -572,6 +572,33 @@ def dir4_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def dir4_bad() -> U32:
   dir4_go(U32.to_nat(4096), 0, 0)
 
+# T30 (V0-3b): the (colour x direction) parity classification. By
+# `color_collision_x_par`/`_z_par`, a same-colour target collision needs equal
+# `(par dx, par dz)`; the engine's four slides fall into exactly two parity
+# classes (K0/K1 and K2/K3), and the drop is a third `(False, False)` class.
+# Witness the table on the concrete direction values.
+def dir_par_check(bad: U32) -> U32:
+  +p0x = Parity.par32(Rules.dir_dx(Rules.K0{}))
+  +p0z = Parity.par32(Rules.dir_dz(Rules.K0{}))
+  +p1x = Parity.par32(Rules.dir_dx(Rules.K1{}))
+  +p1z = Parity.par32(Rules.dir_dz(Rules.K1{}))
+  +p2x = Parity.par32(Rules.dir_dx(Rules.K2{}))
+  +p2z = Parity.par32(Rules.dir_dz(Rules.K2{}))
+  +p3x = Parity.par32(Rules.dir_dx(Rules.K3{}))
+  +p3z = Parity.par32(Rules.dir_dz(Rules.K3{}))
+  b0 = inc_if_false(bool_eq(p0x, p1x), bad)
+  b1 = inc_if_false(bool_eq(p0z, p1z), b0)
+  b2 = inc_if_false(bool_eq(p2x, p3x), b1)
+  b3 = inc_if_false(bool_eq(p2z, p3z), b2)
+  b4 = inc_if_false(Bool.not(bool_eq(p0x, p2x)), b3)
+  b5 = inc_if_false(Bool.not(bool_eq(p0z, p2z)), b4)
+  b6 = inc_if_false(Bool.not(bool_eq(p0x, False{})), b5)
+  b7 = inc_if_false(bool_eq(p2z, True{}), b6)
+  b7
+
+def dir_par_bad() -> U32:
+  dir_par_check(0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -599,3 +626,4 @@ def main() -> IO(Unit):
     report("T22 movement Phi cross + fall account", mov_bad())
     report("T25 phase color sub-lattice + successor", color_bad())
     report("T29 Dir4 == U32 direction table (all 4)", dir4_bad())
+    report("T30 direction parity classification", dir_par_bad())

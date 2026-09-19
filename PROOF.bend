@@ -19,6 +19,7 @@ import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
 import ./src/batch.bend as Batch
+import ./src/color.bend as Color
 import ./src/word.bend as WR
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
@@ -220,3 +221,24 @@ def Laws.diag_target_injective(i, j, k, h):
 
 def Laws.diag_write_flips_y_phase(i, k):
   Phase.diag4_y_flip(i, k)
+
+def Laws.color_of_bit0(i):
+  Color.color_bit0(i)
+
+def Laws.color_of_bit1(i):
+  Color.color_bit1(i)
+
+def Laws.color_of_bit2(i):
+  Color.color_bit2(i)
+
+def Laws.color_target_x_par(i, dx, dz):
+  Color.target_x_par(i, dx, dz)
+
+def Laws.color_target_z_par(i, dx, dz):
+  Color.target_z_par(i, dx, dz)
+
+def Laws.color_collision_x_par(i, j, dxi, dzi, dxj, dzj, hc, ht):
+  Color.same_color_target_x_par(i, j, dxi, dzi, dxj, dzj, hc, ht)
+
+def Laws.color_collision_z_par(i, j, dxi, dzi, dxj, dzj, hc, ht):
+  Color.same_color_target_z_par(i, j, dxi, dzi, dxj, dzj, hc, ht)
