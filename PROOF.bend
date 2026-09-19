@@ -19,6 +19,7 @@ import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
 import ./src/batch.bend as Batch
+import ./src/commit.bend as Commit
 import ./src/color.bend as Color
 import ./src/word.bend as WR
 
@@ -242,3 +243,6 @@ def Laws.color_collision_x_par(i, j, dxi, dzi, dxj, dzj, hc, ht):
 
 def Laws.color_collision_z_par(i, j, dxi, dzi, dxj, dzj, hc, ht):
   Color.same_color_target_z_par(i, j, dxi, dzi, dxj, dzj, hc, ht)
+
+def Laws.point_writes_commute(t, n, i, j, v, w, hne):
+  Commit.swap_m_comm(t, n, i, j, v, w, hne)

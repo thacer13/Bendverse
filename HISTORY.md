@@ -2533,3 +2533,66 @@ lemma library, not process.
 - `bend PROOF.bend` -> `All terms check.` (69 laws; unchanged).
 - `bend test/tests.bend` -> 26/26 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.68 — V3c-1: point writes at distinct leaves commute (the schedule-invariance kernel)
+
+**Status:** proof landing (no engine change). Gate green (**70** laws, +1),
+fast suite **27/27** (+T31), sim suite **13/13**, canaries 6 ok. Adds
+`src/commit.bend` and law `point_writes_commute`.
+
+**Why — and a correction to the V3c-1 framing.** The session started from A.57's
+decomposition ("per-cell transition + forward-activation closure"). That framing
+is **obsolete**: both A.57 counterexamples were properties of the retired
+`Rules.step`. `V0-1` (A.63) made a phase a pure function of the pre-phase state,
+so the evaluated set is fixed (all cells of the colour; wake lands *after* the
+phase's writes), and each cell's decision no longer depends on scan order. There
+is no intra-phase activation closure left to characterise (V3c-2). What remains
+for "a region-split fold equals the sequential fold" is the *composition* step:
+the merged write set must *apply* order-independently, i.e. point writes at
+distinct targets must commute. That is what V3c-1 lands.
+
+**What it proves.** For the `Refine.PT` presentation of `Array` (whose
+`Refine.swap_m` refines `Array.swap.go`/`Array.set`),
+`swap_m (swap_m t n i v) n j w = swap_m (swap_m t n j w) n i v` whenever `i` and
+`j` name distinct leaves. With `Rules.plan` already reading only the pre-phase
+world, this is exactly the algebraic fact a region merge needs: the merge is
+order-independent, so a region-split fold has the same value as the sequential
+fold *given* the engine's writes are pairwise distinct (V0-3a/V0-3b).
+
+**The distinctness hypothesis (`ne_idx`).** The natural statement needs `i != j`,
+but threading `U32.is_eq(i,j) == False` through `swap_m`'s tree recursion would
+need new `U32` order/subtraction lemmas (`sub` injectivity on `[h, 2h)`). The
+landing instead encodes distinctness as the *shape of the recursion*: `ne_idx t n
+i j` walks exactly as `swap_m` does and returns `True` when the two indices split
+into different subtrees at some level, `False` at a leaf (where every index
+collides). Because the predicate reduces to the child's predicate at each node,
+the induction hypothesis applies verbatim and **no `U32` arithmetic is needed**.
+For a full tree with in-range indices `ne_idx` is `i != j`; refining that to the
+engine's `U32.is_eq ... == False` is the recorded residual.
+
+**Proof engineering (why `set_m_if`).** `Refine.swap_m` recomputes its left/right
+decision `U32.is_lt(i, U32.shr(n))` internally, so a composition of two `swap_m`s
+is stuck on a `Bool.pick` whose scrutinee is a *term*, never a `match`-able
+variable — and matching a local `let` Bool inside a `match t` branch trips Bend's
+binder-order rule. `set_m_if` takes that decision as a parameter and mirrors
+`swap_m` exactly (proved as `swap_m_eq_set_m`); `set_m_if_pick` then pushes a
+write past the `Bool.pick` a previous write leaves behind. With every pick on a
+parameter, `match zj`/`match zi` reduces all four cases to IH-left, refl, refl,
+IH-right. The unsatisfiable leaf hypothesis `{False == True}` is eliminated by
+`Equal.cong` under `Bool.pick` (no-confusion).
+
+**Honest residuals (recorded, not hidden).**
+- **V3c-1b** (open): fold the kernel over the engine's `List<Write>` and state
+  the region-split equality as one law. The single-write kernel is the
+  load-bearing algebraic fact; the fold is list bookkeeping.
+- **`ne_idx` ↔ `U32.is_eq`** (open): refine the hypothesis to the engine's
+  `i != j`. Needs `U32` order/subtraction arithmetic (`sub` is injective on
+  `[h, 2h)`), deliberately not attempted here.
+- `G3` stays open; the engine's write-set *distinctness* is V0-3a/V0-3b at the
+  parity level, and the `plan` write-site reflection is `G14`.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; +1).
+- `bend test/tests.bend` -> 27/27 PASS (+T31).
+- `bend test/simtests.bend -o bin && ./bin` (rebuilt) -> 13/13 PASS.
+- `bend_canary` -> 6 ok, 0 bad.

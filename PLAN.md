@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 69 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 70 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -335,7 +335,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-69 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+70 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -369,7 +369,7 @@ mul-wrap spikes; T6 gen determinism; T7 terrain structure; T8 build = gen over
 all cells; T10 parity/neighbor-x; T11 low6 add + ∓1 cancel; T12 dir φ
 cancellation; T13 neighbor index cancellation; T14 scan-order totality; T15
 `List.set` split + sum; T16 chunk key/local roundtrip + gen; T17 chunk store
-set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4); T22 movement Φ witness (the `Rules.step` movement drops Φ by `(dens(w) − dens(gv))·(iy(i) − iy(j))` for empty and lighter targets, and `mov` preserves pot at the target).
+set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4); T22 movement Φ witness (the `Rules.step` movement drops Φ by `(dens(w) − dens(gv))·(iy(i) − iy(j))` for empty and lighter targets, and `mov` preserves pot at the target); T25 phase color sub-lattice; T29 `Rules.Dir4` == the `U32` direction table; T30 the direction-parity classification; T31 point writes at `Commit.ne_idx`-distinct leaves commute, and `ne_idx` is sharp (V3c-1).
 
 Simulation, native-recommended (`test/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
@@ -438,13 +438,14 @@ an oversight to hide.
 | `R7` | Support derived, never carried; scoped to disturbed cells | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
 | `R9` | Activity is explicit; wake effects land next tick | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_activate_write_preserves_phi` `sup_mirror_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
-| `R10` | Determinism as a corollary of phase purity | — (by construction) | T1 | sim |
+| `R10` | Determinism as a corollary of phase purity | `point_writes_commute` | T1 T31 | sim commit |
 | `R11` | Worldgen is a pure seeding function (shell included) | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
 | `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` `n_add_sub_le` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
 
 Reading the `—` rows: R7 is test-witnessed only (recorded as `G6`); R2 now has
 the `V4` count laws (A.31–A.32, A.34).
-R10 and R11 hold by construction and are witnessed by tests.
+R11 holds by construction and is witnessed by tests; R10's composition step now
+has `point_writes_commute` (V3c-1, A.68) alongside its by-construction purity.
 
 ### 4.1 Conformance — contract and rule status
 
@@ -468,7 +469,7 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* is the separate `C3` deviation |
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
 | `R9` | Activity effects land next tick | deviating (partial) | a phase no longer evaluates a cell it woke (V0-1, A.63; T24), but wake is applied at the end of each *phase*, so a later phase of the same tick can see it. Deferring wake to tick end is `G12` |
-| `R10` | Determinism under any schedule | by construction | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The schedule-invariance *proof* (region-split = sequential) is still `V3c`/`G3` |
+| `R10` | Determinism under any schedule | conforming | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The composition step now has a law — point writes at `ne_idx`-distinct leaves commute (`point_writes_commute`, V3c-1, A.68); the full region-split *equality* (the list/region fold, and `ne_idx`'s refinement to `U32.is_eq`) is still `V3c`/`G3` |
 | `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
 | `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
 
@@ -480,6 +481,10 @@ map — and `V0-3b` (A.66) closed the colour half — `color_of` bit extraction 
 the classification that a same-colour collision forces equal displacement
 parities, leaving only the opposite-diagonal class to the rule-3 tie-break.
 `R9` is *partial*: wake is per-phase, not per-tick (`G12`).
+`R10`'s composition step now has an algebraic law (`point_writes_commute`,
+A.68): the phase's writes apply order-independently when their targets are
+distinct, which is what a region merge needs; the fold over a `List<Write>` and
+the `ne_idx`↔`U32.is_eq` refinement are the open remainder.
 `R6`/`R7` are a second, independent deviation: the support seed is positional, so
 "rigidity is local" is not yet true; `V0-2`/`V0-4` replace it with a real
 neighbour test. No row is closed by rewording a rule to match the code.
@@ -567,6 +572,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V0-2` | closure: `Grid.step_inside` guards every rule target, so a boundary step is inert and the box is a property of the grid, not the shell; T27/T28 witnesses | A.64 |
 | `V0-3a` | direction batching core: the live phase uses the closed `Rules.Dir4` direction set (a total match, so no `k ≥ 4` self-target fallback), and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective` — a translation on the torus, inverted by `neighbor_cancel`); every write target flips the phase `y` bit (`diag_write_flips_y_phase` joining `below_write_flips_y_phase`); T29 guards the refactor | A.65 |
 | `V0-3b` | colour × direction classification: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction target-parity laws (`color_target_x_par`/`_z_par`, `color_collision_x_par`/`_z_par` — a same-colour collision forces equal displacement parities), so cross-direction overlap is exactly the opposite-diagonal parity class; T30 witnesses the direction-parity table | A.66 |
+| `V3c-1` | schedule-invariance kernel: point writes at leaves that `Commit.ne_idx` separates commute (`swap_m (swap_m t n i v) n j w = swap_m (swap_m t n j w) n i v`, law `point_writes_commute`), so a merged write set applies order-independently; `ne_idx` mirrors `swap_m`'s own walk (a split at some level, `False` at a leaf) and is exactly distinctness for in-range indices; T31 witnesses both the commutation and the predicate's sharpness. The engine no longer needs a `read/write` ordering argument (V0-1): this is the *composition* half. The list/region fold (V3c-1b) and the `ne_idx`↔`U32.is_eq` refinement remain | A.68 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -606,16 +612,17 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
   `Support.sup`, which `V0-4` will replace (see §3.4 retirement, §4.1).
 - [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
-  fold. **Superseded as a work item by `V0`** (A.61): the naive statement is
-  false *because* the engine reads mid-phase state, so under `C1` this becomes a
-  corollary of phase purity (locality + injective targets) rather than a
-  separate research problem. Scoped in A.57 and **deferred**: the naive statement is false (T23: a
-  denser later mover re-reads and overwrites a shared target — an ordered
-  cascade, not "first wins"; T24: `Ops.wake` activates later-index cells that
-  the scan then evaluates in the *same* phase, so no bounded-radius
-  recomputation exists). The phase fold is a forward index fold with a local
-  transition; the proven parallel-safety contract is V3a+V3b (`neighbor_cancel`
-  candidate locality + `scan_order_total`). `G3` stays open.
+  fold. The A.57 rationale (T23 cascade, T24 intra-phase activation) is
+  **obsolete**: `V0-1` (A.63) made the phase a pure function of the pre-phase
+  state, so the evaluated set is fixed (wake lands after the phase) and a cell's
+  decision no longer depends on scan order. The residual is the *composition*:
+  applying the merged write set must be order-independent. **V3c-1 done (A.68):**
+  point writes at `Commit.ne_idx`-distinct leaves commute
+  (`point_writes_commute`; `ne_idx` mirrors `swap_m`'s walk and is distinctness
+  for in-range indices; T31). Remaining: **V3c-1b** fold it over a `List<Write>`
+  and state the region-split equality; **V3c-2** refine `ne_idx` to the engine's
+  `U32.is_eq(i, j) == False` (needs `U32` order/subtraction arithmetic). The
+  proven parallel-safety contract remains V3a+V3b. `G3` stays open.
 - [x] **M8d** Chunk sleeping/eviction — landed (A.30): `assemble` regenerates
   missing chunks from pure gen, so the store is a sparse overlay; `Store.evict`
   drops sleeping chunks that are bit-equal to gen (a checkable, conservative
@@ -714,7 +721,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
-| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; **A.65 landed V0-3a**: the live engine's directions are the closed `Rules.Dir4` set (the `k ≥ 4` self-target default is off the live path) and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`), with every write target flipping the phase `y` bit (`diag_write_flips_y_phase`, T29). **A.66 landed V0-3b**: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction classification (`color_collision_x_par`/`_z_par` — a same-colour target collision forces equal `par dx` and `par dz`), so the only cross-direction overlap is the opposite-diagonal parity class `{K0,K1}`/`{K2,K3}`, which the V0-1 tie-break resolves; T30 witnesses the parity table. `is_ne` reflection of the drop-vs-slide disjointness is not needed for the claim (it is stated over parities) and the schedule-invariance *equality* (V3c) remains |
+| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; **A.65 landed V0-3a**: the live engine's directions are the closed `Rules.Dir4` set (the `k ≥ 4` self-target default is off the live path) and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`), with every write target flipping the phase `y` bit (`diag_write_flips_y_phase`, T29). **A.66 landed V0-3b**: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction classification (`color_collision_x_par`/`_z_par` — a same-colour target collision forces equal `par dx` and `par dz`), so the only cross-direction overlap is the opposite-diagonal parity class `{K0,K1}`/`{K2,K3}`, which the V0-1 tie-break resolves; T30 witnesses the parity table. `is_ne` reflection of the drop-vs-slide disjointness is not needed for the claim (it is stated over parities) and the schedule-invariance *equality* (V3c) remains. **A.68 landed V3c-1**: the composition half is now a theorem — point writes at `Commit.ne_idx`-distinct leaves commute (`point_writes_commute`, T31). `ne_idx` is a computable predicate mirroring `swap_m`'s top-down walk whose stability under the recursion is what makes the induction go through with no `U32` arithmetic; it is exactly `i != j` for in-range indices, and refining it to the engine's `U32.is_eq(i, j) == False` is the open residual. What remains for the equality: fold the kernel over the engine's `List<Write>`/region split (V3c-1b) — the per-phase `plan` reflection (`G14`) is the other live thread. The A.57 phrase "forward activation closure" is now moot: V0-1 fixed the evaluated set and defers wake past the phase |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the remaining instance (write-site enumeration `G10`) is now closed (A.48, A.53–A.56), so what remains is the selector/read threading from `Rules.plan`/`Support.sup` to their `PT` mirrors, by inspection (`G14` is the live instance) |
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |

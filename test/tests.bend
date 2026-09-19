@@ -11,6 +11,9 @@ import ../src/store.bend as Store
 import ../src/ops.bend as Ops
 import ../src/rules.bend as Rules
 import ../src/count.bend as Count
+import ../src/refine.bend as Refine
+import ../src/commit.bend as Commit
+import ../src/tick.bend as Tick
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -599,6 +602,34 @@ def dir_par_check(bad: U32) -> U32:
 def dir_par_bad() -> U32:
   dir_par_check(0)
 
+# T31 (V3c-1): point writes at leaves that `Commit.ne_idx` separates commute,
+# and the predicate is sharp (`False` exactly when the two writes collide at one
+# leaf, where the second write wins). The tree is a 4-leaf `Refine.PT`; leaves are
+# read back with the size-free `Tick.tget` walk.
+def t31_tree() -> Refine.PT:
+  Refine.PN{Refine.PN{Refine.PL{10}, Refine.PL{20}}, Refine.PN{Refine.PL{30}, Refine.PL{40}}}
+
+def t31_check(+x: U32, +y: U32, +v: U32, +w: U32, bad: U32) -> U32:
+  +t = t31_tree()
+  +lhs = Refine.swap_m(Refine.swap_m(t, 4, x, v), 4, y, w)
+  +rhs = Refine.swap_m(Refine.swap_m(t, 4, y, w), 4, x, v)
+  b0 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 0), Tick.tget(rhs, 4, 0)), bad)
+  b1 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 1), Tick.tget(rhs, 4, 1)), b0)
+  b2 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 2), Tick.tget(rhs, 4, 2)), b1)
+  b3 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 3), Tick.tget(rhs, 4, 3)), b2)
+  b3
+
+def t31_bad() -> U32:
+  b0 = inc_if_false(Commit.ne_idx(t31_tree(), 4, 0, 1), 0)
+  b1 = t31_check(0, 1, 100, 200, b0)
+  b2 = inc_if_false(Commit.ne_idx(t31_tree(), 4, 1, 3), b1)
+  b3 = t31_check(1, 3, 100, 200, b2)
+  b4 = inc_if_false(Commit.ne_idx(t31_tree(), 4, 2, 0), b3)
+  b5 = t31_check(2, 0, 7, 9, b4)
+  b6 = inc_if_false(Bool.not(Commit.ne_idx(t31_tree(), 4, 2, 2)), b5)
+  b7 = inc_if_false(U32.is_eq(Tick.tget(Refine.swap_m(Refine.swap_m(t31_tree(), 4, 2, 100), 4, 2, 200), 4, 2), 200), b6)
+  b7
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -627,3 +658,4 @@ def main() -> IO(Unit):
     report("T25 phase color sub-lattice + successor", color_bad())
     report("T29 Dir4 == U32 direction table (all 4)", dir4_bad())
     report("T30 direction parity classification", dir_par_bad())
+    report("T31 point writes commute at distinct leaves", t31_bad())

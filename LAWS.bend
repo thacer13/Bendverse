@@ -16,6 +16,7 @@ import ./src/count.bend as Count
 import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
+import ./src/commit.bend as Commit
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -448,3 +449,23 @@ law color_collision_z_par:
   for +hc: {U32.is_eq(Rules.color_of(i), Rules.color_of(j)) == True{} : Bool}
   for +ht: {Grid.neighbor(i, dxi, 4294967295, dzi) == Grid.neighbor(j, dxj, 4294967295, dzj) : U32}
   {Parity.par32(dzi) == Parity.par32(dzj) : Bool}
+
+# V3c-1 — the schedule-invariance kernel (rule 10, the composition step).
+#
+# `Rules.phase` reads only the pre-phase state (V0-1), so each evaluated cell's
+# write set is independent of the others; what remains for a region-split fold to
+# equal the sequential fold is that *applying* the merged writes is
+# order-independent. That is exactly this: two point writes at leaves that
+# `Commit.ne_idx` separates commute. `Commit.ne_idx` mirrors `swap_m`'s own walk
+# (a split at some level, or `False` at a leaf where every index collides); for a
+# full tree with in-range indices it is `i != j`, and refining that to the
+# engine's `U32.is_eq(i, j) == False` is the open residual recorded in §5.3 (`G3`).
+law point_writes_commute:
+  for +t: Refine.PT
+  for +n: U32
+  for i: U32
+  for j: U32
+  for +v: U32
+  for +w: U32
+  for +hne: {Commit.ne_idx(t, n, i, j) == True{} : Bool}
+  {Refine.swap_m(Refine.swap_m(t, n, i, v), n, j, w) == Refine.swap_m(Refine.swap_m(t, n, j, w), n, i, v) : Refine.PT}
