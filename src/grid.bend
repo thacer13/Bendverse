@@ -43,6 +43,18 @@ def neighbor(+i: U32, dx: U32, dy: U32, dz: U32) -> U32:
   y = U32.and(U32.add(iy(i), dy), 63)
   index(x, y, z)
 
+# C2 (V0-2): closure at the grid level. `neighbor` wraps mod `size` on every axis,
+# so a step off the box would land on the opposite face. `step_inside` is the
+# guard: it adds the *raw* offset to the coordinate and tests the bits above the
+# axis mask, which are non-zero exactly when the coordinate wrapped. The shell is
+# then generation, not what keeps the world closed.
+def step_inside(+i: U32, +dx: U32, +dy: U32, +dz: U32) -> Bool:
+  +high = U32.not(U32.sub(size(), 1))
+  okx = U32.is_eq(U32.and(U32.add(ix(i), dx), high), 0)
+  oky = U32.is_eq(U32.and(U32.add(iy(i), dy), high), 0)
+  okz = U32.is_eq(U32.and(U32.add(iz(i), dz), high), 0)
+  Bool.and(okx, Bool.and(oky, okz))
+
 def below(i: U32) -> U32:
   neighbor(i, 0, 4294967295, 0)
 

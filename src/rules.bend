@@ -70,6 +70,12 @@ def mov(+w: U32) -> U32:
 # local check with explicit `(colour × direction)` batching and proves the target
 # map injective; the tie-break here is the V0-1 stop-gap (see `PLAN.md` §5.3, `G3`).
 #
+# Closure (`C2`, `V0-2`): every target a rule writes is guarded by
+# `Grid.step_inside`, so a step off the box is inert instead of wrapping to the
+# opposite face. On the generated world this changes nothing (the bedrock shell
+# already blocks those steps); it makes the box a property of the grid rather
+# than of the shell, so painting the shell away can no longer open it.
+#
 # `step_m`/`sup_m` (the `PT` mirror layer) mirror the retired `Rules.step` and are
 # **not** extended: they are retired, not evidence (`PLAN.md` §3.4, §4.1).
 # ----------------------------------------------------------------------------
@@ -156,7 +162,7 @@ def plan(
               q = Array.get(U32, world, Grid.below(i))
               plan(p, q, 6, i, c, w, k, b, d, ic, sets, wakes)
             case 6:
-              +can = can_enter(w, gv)
+              +can = Bool.and(can_enter(w, gv), Grid.step_inside(i, 0, 4294967295, 0))
               plan(p, (world, gv), Bool.pick(U32, can, 7, 8), i, c, w, k, gv, d, ic, sets, wakes)
             case 7:
               +nb = Grid.below(i)
@@ -180,7 +186,7 @@ def plan(
               +fin = U32.is_eq(nk, 4)
               plan(p, (world, gv), Bool.pick(U32, fin, 21, 9), i, c, w, nk, b, d, ic, sets, wakes)
             case 13:
-              +ce2 = can_enter(w, gv)
+              +ce2 = Bool.and(can_enter(w, gv), Grid.step_inside(i, dir_dx(k), 4294967295, dir_dz(k)))
               plan(p, (world, gv), Bool.pick(U32, ce2, 30, 12), i, c, w, k, b, gv, ic, sets, wakes)
             case 30:
               +dx = dir_dx(k)
@@ -189,7 +195,13 @@ def plan(
               q = Array.get(U32, world, ic0)
               plan(p, q, 31, i, c, w, k, b, d, ic0, sets, wakes)
             case 31:
-              +lose = Bool.and(capable(gv), U32.is_lt(ic, i))
+              # The opposite claimant only counts if it is inside the box: a
+              # wrapped neighbour cannot reach the shared target (boundary moves
+              # are inert), so it must not steal the target from `i`.
+              +two_dx = U32.add(dir_dx(k), dir_dx(k))
+              +two_dz = U32.add(dir_dz(k), dir_dz(k))
+              +lose = Bool.and(Grid.step_inside(i, two_dx, 0, two_dz),
+                        Bool.and(capable(gv), U32.is_lt(ic, i)))
               plan(p, (world, gv), Bool.pick(U32, lose, 21, 32), i, c, w, k, b, d, ic, sets, wakes)
             case 32:
               +nd = diag_index(i, k)
@@ -197,7 +209,7 @@ def plan(
                 WSet{nd, w} <> (WSet{i, d} <> sets),
                 WWake{nd} <> (WWake{i} <> wakes))
             case 21:
-              +dmg = dmg_of(w, b)
+              +dmg = Bool.and(dmg_of(w, b), Grid.step_inside(i, 0, 4294967295, 0))
               plan(p, (world, gv), Bool.pick(U32, dmg, 22, 23), i, c, w, k, b, d, ic, sets, wakes)
             case 22:
               +nb = Grid.below(i)

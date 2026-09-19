@@ -130,11 +130,12 @@ Where the code stands (do not confuse this with the target)
 conforms, deviates, or holds by construction. Contract 1 now holds: a phase is a
 pure function of the state it is handed (`Rules.plan`/`Rules.phase`, V0-1), so
 rule 10 holds by construction and contention is resolved from the pre-phase
-state. Deviations remain and are recorded there rather than papered over: the
-grid still wraps on all three axes (contract 2, violated when the shell is
-removed); a tick's cost is still proportional to world size (contract 3); wake
-is applied per phase rather than per tick (rule 9's residual); and rigidity's
-support seed is still positional rather than neighbourhood-derived (rules 6/7).
+state. Contract 2 now holds too (V0-2): every rule target is guarded by
+`Grid.step_inside`, so a boundary step is inert and the shell is generation, not
+the box. Deviations remain and are recorded there rather than papered over: a
+tick's cost is still proportional to world size (contract 3); wake is applied per
+phase rather than per tick (rule 9's residual); and rigidity's support seed is
+still positional rather than neighbourhood-derived (rules 6/7).
 
 Ambition (in the open)
 

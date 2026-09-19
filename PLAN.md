@@ -377,7 +377,9 @@ settles and far cells are untouched; T4b a settled world is a fixed point; T9
 pull-base collapses rock; T18 chunk-store tick equivalence; T20 evict → assemble
 → tick equivalence; T23 phase contention is resolved from the pre-phase state;
 T24 wake does not propagate within a phase; T26 a grain in an empty column
-settles (the V0-1 conformance witnesses, A.63).
+settles (the V0-1 conformance witnesses, A.63); T27 the floor painted away does
+not wrap at y=0; T28 the west wall painted away does not wrap at x=0 (the V0-2
+closure witnesses, A.64).
 
 ### 3.6 Proof-development loop
 
@@ -455,7 +457,7 @@ This table is what would have caught T23/T24 on the day they landed.
 | Ref | Target | Status | Open deviation / evidence |
 |---|---|---|---|
 | `C1` | Purity of phases | conforming | `Rules.plan`/`phase` (V0-1, A.63): the phase reads only the pre-phase array and applies its write set afterwards, so no part reads a value another part produced. T23/T24 re-witnessed as conformance |
-| `C2` | Closure (box, no wrap) | deviating | `Grid.neighbor` wraps mod 64 on every axis; the box is a worldgen shell and paint can open it (`V0-2`) |
+| `C2` | Closure (box, no wrap) | conforming | `V0-2` (A.64): every rule target is guarded by `Grid.step_inside`, so a boundary step is inert rather than wrapping; T27/T28 witness it with the shell painted away. `Grid.neighbor` still wraps, but no rule follows a wrapped step. (`Ops.wake` still marks wrapped neighbours — `G15` — which moves no material) |
 | `C3` | Cost tracks disturbance | deviating | `Sim.any_active` and `Support.pass` scan all 262144 cells every tick; `src/store.bend`'s chunks are not wired into the tick |
 | `R1` | Pre-phase reads only, bounded radius | conforming | `Rules.plan` never writes the array it reads (V0-1, A.63); every read is of the pre-phase state |
 | `R2` | Conservation: swap/transform only | conforming | count laws closed (`V4`); write sites enumerated (`G10` closed) |
@@ -470,11 +472,11 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
 | `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
 
-`C2` and `C3` are open engineering. `V0-1` (A.63) closed the purity cluster
-`C1`/`R1`/`R3`/`R10`: a phase is now `apply(resolve(intent(state)))`, so
-determinism holds by construction and contention no longer re-reads a sibling's
-write. `R4` and `R9` remain *partial*: the schedule is still colour-only (the
-batch theorem is `V0-3`/`G3`) and wake is per-phase, not per-tick (`G12`).
+`C3` is open engineering (`V0-4`). `V0-1` (A.63) closed the purity cluster
+`C1`/`R1`/`R3`/`R10`, and `V0-2` (A.64) closed `C2`: the box is now enforced in
+the grid, not by the shell. `R4` and `R9` remain *partial*: the schedule is still
+colour-only (the batch theorem is `V0-3`/`G3`) and wake is per-phase, not
+per-tick (`G12`).
 `R6`/`R7` are a second, independent deviation: the support seed is positional, so
 "rigidity is local" is not yet true; `V0-2`/`V0-4` replace it with a real
 neighbour test. No row is closed by rewording a rule to match the code.
@@ -556,6 +558,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `M9` | CPU perf pass: cell-resolution render, settled-world tick fixpoint, color-restricted phase scan (active tick ≈ 21→4.5 ms, settled ≈ 0.09 ms), T25 | A.59 |
 | `—` | BendHub reuse: `src/list.bend` (the `List` lemmas Base does not ship) and count-fold completeness (`cells_m`, `cnts_m_len`, `to_counts_len`) | A.60 |
 | `V0-1` | phase purity: `Rules.plan`/`phase` replace `Rules.step` — a read-only intent fold (`plan`) that decides from the pre-phase state, resolves contention by a local tie-break, and accumulates `sets`/`wakes`, then `commit_sets`/`commit_wakes` apply it; the `step_m` mirror is retired | A.63 |
+| `V0-2` | closure: `Grid.step_inside` guards every rule target, so a boundary step is inert and the box is a property of the grid, not the shell; T27/T28 witnesses | A.64 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -577,8 +580,9 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   **V0-1 done (A.63):** `Rules.plan`/`Rules.phase` replace `Rules.step`;
   `phase(state) = commit(plan(state))`, `plan` reads only the pre-phase state and
   resolves contention from it; T23/T24 re-witnessed as conformance and T26
-  (a grain in an empty column settles) added. Remaining: **V0-2** close the box
-  (grid boundary moves inert; the shell is generation, not the grid);
+  (a grain in an empty column settles) added. **V0-2 done (A.64):** every rule
+  target is guarded by `Grid.step_inside`, so a boundary step is inert and the
+  box is a grid property, not the shell (T27/T28). Remaining:
   **V0-3** batch by (colour × direction) and prove the target map injective, so
   `resolve` is trivial and rule 4 holds by construction; **V0-4** drive `Support`
   and the tick from the chunk work set instead of a world scan (`C3`).
@@ -708,6 +712,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G12` | unproven | wake is applied at the end of each *phase*, not accumulated for the next tick (rule 9); a later phase of the same tick can evaluate a cell an earlier phase woke | open | — | defer wake to tick end (a pending-wake accumulator) or prove the phase-order independence of per-phase wake; A.63 fixed only the same-phase case (T24) |
 | `G13` | accepted | V0-1's contention tie-break over-forfeits: a diagonal mover yields to an opposite-axis `capable` neighbour even when that neighbour is not actually claiming the shared target (it may drop, or slide another way) | accepted | count | refine the tie-break to recompute the neighbour's chosen target once V0-3's batching makes it unnecessary; behaviour-only, no safety consequence |
 | `G14` | unproven | V0-1's `Rules.plan` write-*site* enumeration is by inspection, not mirrored: the write primitives it emits (`mov`, `crush_if_rock`, `set_fall0`, `deactivate`, `wake`) each have proven Φ/conservation effects, but that `plan`'s write set is exactly those is not a theorem | open | G5 | mirror `plan` on `PT` (a fresh enumeration, since `step_m` mirrored the retired `Rules.step`), or prove the `plan`→write-set correspondence directly |
+| `G15` | accepted | `Ops.wake` still marks wrapped neighbours from a boundary cell (the opposite face) when the shell is painted away; no material moves, so `C2` holds, but activity leaks across the box | accepted | — | bound `Ops.wake` by `Grid.step_inside` (this touches the wake laws and the `sup_m` mirror) |
 
 ### 5.4 Deferred — publishing a proven slice to BendHub
 

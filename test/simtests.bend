@@ -249,6 +249,31 @@ def t26() -> U32:
   landed = U32.is_eq(Cell.material(Grid.value_at(w2, Grid.index(4, 1, 4))), Cell.sand())
   is_bad(landed)
 
+# T27/T28 V0-2 closure witnesses: with the shell painted away, a boundary step is
+# inert at the grid level instead of wrapping to the opposite face.
+def t27() -> U32:
+  # Floor open: sand at (4,0,4), (4,63,4) cleared. Without the guard the drop
+  # target `below` wraps to (4,63,4) and the grain escapes to the top face.
+  w0 = Sim.build()
+  w1 = w0[Grid.index(4, 0, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w2 = w1[Grid.index(4, 63, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
+  w3 = Sim.phase(w2, 0)
+  is_bad(U32.is_eq(Cell.material(Grid.value_at(w3, Grid.index(4, 0, 4))), Cell.sand()))
+
+def t28() -> U32:
+  # West wall open, down and every in-box diagonal blocked: the only candidate is
+  # the wrap to (63,39,4). Without the guard the grain slides across the box.
+  w0 = Sim.build()
+  w1 = w0[Grid.index(0, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w2 = w1[Grid.index(0, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w3 = w2[Grid.index(63, 40, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
+  w4 = w3[Grid.index(63, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
+  w5 = w4[Grid.index(1, 40, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w6 = w5[Grid.index(0, 40, 3)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w7 = w6[Grid.index(0, 40, 5)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w8 = Sim.phase(w7, 0)
+  is_bad(U32.is_eq(Cell.material(Grid.value_at(w8, Grid.index(0, 40, 4))), Cell.sand()))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -262,3 +287,5 @@ def main() -> IO(Unit):
     report("T23 phase contention resolved from pre-phase state", t23())
     report("T24 wake does not propagate within a phase", t24())
     report("T26 grain in an empty column settles", t26())
+    report("T27 floor painted away: no wrap at y=0", t27())
+    report("T28 wall painted away: no wrap at x=0", t28())

@@ -2323,3 +2323,62 @@ chunk work set). `G3` remains open; A.63 narrows it to the batching theorem.
 - `bend test/simtests.bend -o bin && ./bin` (rebuilt) → **11/11** PASS.
 - `bend_canary` → 6 ok, 0 bad.
 - `runners/ascii.bend` native runs and settles.
+
+### A.64 — V0-2: closure — the box is the grid's, not the shell's
+
+**Status:** engine semantics change (only off the generated world). Gate green
+(59 laws, unchanged), fast 24/24, sim **13/13** (+T27/T28), canaries 6 ok.
+
+**Why.** `C2` was deviating: `Grid.neighbor` wraps mod 64 on every axis, and the
+world was closed only because `Worldgen.gen` paints bedrock on the six faces.
+Nothing proved the shell survives, and `runners/window.bend` paints material `0`,
+so the floor was removable from the shipped UI. A rule that only holds while the
+user does not paint the floor is not a rule (A.61).
+
+**What changed.**
+- `src/grid.bend`: `step_inside(i, dx, dy, dz)` — the closure guard. It adds the
+  *raw* offset to each coordinate and tests the bits above the axis mask, which
+  are non-zero exactly when `neighbor` would wrap. `neighbor` is unchanged, so
+  every law about it (parity, `neighbor_cancel`, …) still holds; the guard is an
+  extra predicate the rules consult.
+- `src/rules.bend` (`plan`): the drop target (state 6), the diagonal target
+  (state 13), the impact crush (state 21), and the contention competitor
+  (state 31 — a wrapped neighbour cannot reach the shared target, so it must not
+  steal it) are all `Bool.and`ed with `Grid.step_inside`. A boundary step now
+  falls through to the inert path instead of wrapping.
+
+**Why the default world is unchanged.** The generated shell already makes every
+wrapped step blocked (bedrock is static and densest), so gating those steps
+changes no outcome when the shell is intact. That is why the existing 11 sim
+witnesses stay green unmodified; only the painted-away cases differ.
+
+**Witnesses (new, V0-2 conformance).**
+- **T27**: floor painted away — sand at `(4,0,4)` with `(4,63,4)` cleared stays at
+  `(4,0,4)`; without the guard `below` wraps to `(4,63,4)` and the grain escapes
+  to the top face.
+- **T28**: west wall painted away, down and every in-box diagonal blocked — the
+  grain at `(0,40,4)` cannot take the wrap to `(63,39,4)`; without the guard it
+  slides across the box.
+
+**No law added (deliberate).** A concrete `{==}` law (e.g. "a step down from
+`y=0` is outside") would be closed-computation reflexivity, and §3.3/`G7` already
+flags six such laws for review — adding a seventh increases that burden. A
+*general* `step_inside` lemma needs the bit lemmas (the `~mask` argument); worth
+doing when `V0-3`/`V0-4` next touch `Grid`. `C2` is therefore recorded as
+**conforming by construction + witness** (T27/T28), which the §4.1 status
+vocabulary allows.
+
+**Residual (`G15`, accepted).** `Ops.wake` still marks wrapped neighbours from a
+boundary cell, so with the shell painted away activity leaks to the opposite
+face. No material moves, so `C2` holds; bounding `Ops.wake` would touch the wake
+laws and the `sup_m` mirror, so it is recorded rather than done here.
+
+**Not done.** `V0-3` (explicit colour × direction batching + the target-map
+injectivity proof; `G3`), `V0-4` (chunk-work-set tick; `C3`). `R4`/`R9` remain
+partial and `G12`/`G14` remain open.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (59 laws).
+- `bend test/tests.bend` → 24/24 PASS.
+- `bend test/simtests.bend -o bin && ./bin` (rebuilt) → **13/13** PASS.
+- `bend_canary` → 6 ok, 0 bad.
