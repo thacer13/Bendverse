@@ -1,2 +1,6 @@
 /bin
 /.bendverse-*.bend
+# Not part of the repo: the standalone tractability assessment lives outside the
+# project directory (currently ../THEBIGISSUE.md). Listed so a stray copy cannot
+# be re-added by accident. See HISTORY.md A.78/A.79.
+/THEBIGISSUE.md
