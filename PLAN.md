@@ -459,7 +459,7 @@ This table is what would have caught T23/T24 on the day they landed.
 |---|---|---|---|
 | `C1` | Purity of phases | conforming | `Rules.plan`/`phase_plan_w` (V0-1, A.63): the phase reads only the pre-phase array and applies its write set afterwards, so no part reads a value another part produced. T23/T24 re-witnessed as conformance |
 | `C2` | Closure (box, no wrap) | conforming | `V0-2` (A.64): every rule target is guarded by `Grid.step_inside`, so a boundary step is inert rather than wrapping; T27/T28 witness it with the shell painted away. `Grid.neighbor` still wraps, but no rule follows a wrapped step. (`Ops.wake` still marks wrapped neighbours — `G15` — which moves no material) |
-| `C3` | Cost tracks disturbance | deviating | The tick still scans the world twice: `Sim.any_active` (the cheap settled check) and the gated `Support.pass`, which now also builds the phase work list. So cost is not yet disturbance-proportional, but the phase folds run over the work list (`Rules.plan`/`phase_plan_w`) and the evaluated set is exact. Closing `C3` needs the support pass driven from the work list and the list *maintained* across ticks (no scan) — `V0-4b-3`. Settled tick stays ≈ 0.09 ms; the active path dropped one scan |
+| `C3` | Cost tracks disturbance | deviating | The tick still scans the world twice: `Sim.any_active` (the cheap settled check) and `Sim.active_list` (the work-list build). Support now runs over that list (`Support.pass_todo`), so the support scan is gone; the phase folds and support both work on the list. Closing `C3` needs the list *maintained* across ticks so neither scan is needed — `V0-4b-3b`. Settled tick ≈ 0.09 ms; the active transient is ≈ 15 % faster than A.74 |
 | `R1` | Pre-phase reads only, bounded radius | conforming | `Rules.plan` never writes the array it reads (V0-1, A.63); every read is of the pre-phase state |
 | `R2` | Conservation: swap/transform only | conforming | count laws closed (`V4`); write sites enumerated (`G10` closed) |
 | `R3` | At most one writer per cell per phase | conforming | contention is resolved from the pre-phase state: of the two opposite-axis diagonal claimants of one target, the smaller index owns it (V0-1, A.63; T23). Drop/crush targets are injective within a colour |
@@ -579,6 +579,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V0-4a` | deferred phase wake (rule 9, `G12` closed): `Rules.phase_plan_w` returns `(written world, pending wakes)`; `Sim.phase` is the writes-only transform, `Sim.tick_active` threads all eight phases' wakes and `Rules.commit_wakes` applies them once at tick end, so no phase evaluates a cell an earlier phase of the same tick woke. `Rules.phase` (immediate wake) removed as dead code; T33 witnesses the differential (woken cell inert this tick, active after) | A.71 |
 | `V0-4b-1` | move clears active + work-list phase fold: `Rules.mov` (and the slide write) clear the mover's active bit, so a later colour phase cannot re-evaluate it in the same tick (T34: one cell per tick; `mov_preserves_pot`/`nempty_mov` proof terms updated). `Rules.plan` is driven by `todo: List<&2, U32>` (the active cells of the phase) instead of the colour sub-lattice, `Sim.active_list`/`filter_color` build it; T35 witnesses the colour filter. The evaluated set is now exact | A.72 |
 | `V0-4b-2` | deferred support wake + work list built by the support scan: `Support.sup` accumulates the crushed cell instead of waking inline, so every wake lands at tick end (`G16` closed; T36). The pass returns the active cells it saw (`Support.pass_gated` → `(world, wakes, todo)`), so `Sim.tick` is `any_active` → support → phases over the returned list, dropping the separate `active_list` scan. `sup_m` updated to the crush-only shape (deferred wakes Φ-neutral); settled tick ≈ 0.09 ms preserved | A.74 |
+| `V0-4b-3a` | work-list support machine: `Support.sup` is driven by a scan (`scan = True`, setup) or by the work list (`Support.pass_todo`, tick), so the tick's support no longer scans the world; `Sim.active_list` builds the list ascending (bottom-up for `below` propagation). Per-cell writes unchanged, so `sup_m`'s Φ claim is unaffected by the advance. Active transient ≈ 15 % faster than A.74 | A.75 |
 | `V3c-1` | schedule-invariance kernel: point writes at leaves that `Commit.ne_idx` separates commute (`swap_m (swap_m t n i v) n j w = swap_m (swap_m t n j w) n i v`, law `point_writes_commute`), so a merged write set applies order-independently; `ne_idx` mirrors `swap_m`'s own walk (a split at some level, `False` at a leaf) and is exactly distinctness for in-range indices; T31 witnesses both the commutation and the predicate's sharpness. The engine no longer needs a `read/write` ordering argument (V0-1): this is the *composition* half. The list/region fold (V3c-1b) and the `ne_idx`↔`U32.is_eq` refinement remain | A.68 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
@@ -636,14 +637,18 @@ index).
   the separate `active_list` scan. Settled tick ≈ 0.09 ms (preserved); active
   path one scan lighter. `sup_m` was updated to mirror the crush-only shape (the
   deferred wakes are Φ-neutral).
-  **NEXT — `V0-4b-3` (drive and maintain the work set):** the phase half and the
-  rule-9 closure are done; the tick is now `any_active` + `Support.pass` (which
-  builds the phase list) + phases over the list, so it still sweeps the world
-  twice. Drive `Support` from the work list (its fold acts only on active cells,
-  but the propagation needs bottom-up order — scan downward and cons, or sort),
-  then maintain the list across ticks so the settled check is free. That is the
-  asymptotic `C3` step; the pieces exist (`M8` store/sleeping). It is
-  **independent of `V3c`** (the A.59 coupling predated `V0-1` and is void).
+  **V0-4b-3a done (A.75):** `Support.sup` is driven either by a full scan
+  (`scan = True`, setup `pass_all`) or by the work list (`Support.pass_todo`),
+  so the tick's support no longer scans; `Sim.active_list` builds the list
+  ascending (bottom-up for support) and both support and the phases fold it.
+  Measured: the active transient is ≈ 15 % faster than A.74; settled unchanged
+  (still one `any_active` scan).
+  **NEXT — `V0-4b-3b` (maintain the work set):** remove the two remaining scans
+  (`any_active` + `active_list`) by carrying the work list across ticks: the next
+  active set is exactly the cells marked by the deferred wakes, so collect the
+  marked neighbours, dedup, and return the list from the tick. Then a settled
+  tick costs nothing and an active tick is proportional to the disturbance. That
+  is the asymptotic `C3` step.
   `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
   **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
   `Support.sup`, which `V0-4b-2` will replace (see §3.4 retirement, §4.1).

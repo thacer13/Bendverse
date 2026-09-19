@@ -2861,3 +2861,36 @@ maintained list across ticks; the chunk `M8` store is not wired in.
 - `bend test/tests.bend` -> 26/26 PASS.
 - `bend test/simtests.bend` native -> 17/17 PASS (T36 added; all goldens pass).
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.75 — V0-4b-3a: the support pass runs over the work list
+
+**Status:** engine structure. Gate green (70 laws; unchanged). Touches
+`src/support.bend`, `src/sim.bend`. `V0-4b-3b` (maintain the work set) is next.
+`PLAN.md` §4.1/§5.1/§5.2 updated.
+
+**Why.** After A.74 the tick was `any_active` + a gated `Support.pass` (which
+scanned the world and built the phase list) + phases over the list. The support
+scan did selector work on all 262144 cells to act on a handful; driving it from
+the work list removes that.
+
+**What changed.**
+- `src/support.bend`: `sup` gained a `scan` mode — `True` advances `i+1` to
+  `volume` (the setup `pass_all`), `False` pops the next work-list entry and
+  stops when it is empty. `pass_todo(world, todo)` is the tick's entry. The
+  per-cell writes are identical, so `sup_m`'s Φ claim is unaffected by the
+  advance (the mode is Φ-neutral).
+- `src/sim.bend`: `active_list` now scans *downward* and conses, so the list is
+  ascending — the bottom-up order the support pass needs for its `below`
+  propagation. `tick` is `any_active` → `active_list` → `Support.pass_todo` →
+  phases over the list → commit wakes.
+
+**Measured.** `build+pull+300 ticks` ≈ 128 ms (was ≈ 151 ms in A.74, ≈ 145 ms
+in A.72): the active transient is ≈ 15 % faster. Settled tick is unchanged
+(≈ 0.09 ms) — the settled path is still the single `any_active` scan, which
+`V0-4b-3b` removes.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 26/26 PASS.
+- `bend test/simtests.bend` native -> 17/17 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
