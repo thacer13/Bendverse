@@ -30,6 +30,7 @@ import {
 	headings,
 	lawImports,
 	latestLawCountMention,
+	milestoneDigest,
 	newestMtime,
 	numberedOutline,
 	parseAppendix,
@@ -400,7 +401,7 @@ export default function bendverse(pi: ExtensionAPI) {
 			const { open } = parseMilestones(content);
 			const landed = parseLandedTable(content).length;
 			const openGaps = parseGapTable(content).filter((g) => g.status === "open" || g.status === "review");
-			const openList = open.length ? open.map((m) => `  - ${m.slice(0, 130)}`).join("\n") : "  (none)";
+			const openList = open.length ? open.map((m) => `  - ${milestoneDigest(m).slice(0, 130)}`).join("\n") : "  (none)";
 			return text(
 				`# PLAN.md — contents\n${root}\n\n` +
 					`## open work (${open.length})\n${openList}\n\n` +
@@ -442,7 +443,7 @@ export default function bendverse(pi: ExtensionAPI) {
 			const lawNames = parseLaws(laws);
 
 			const openList = open.length
-				? open.map((m) => `  - ${m.replace(/\.$/, "").slice(0, 120)}`).join("\n")
+				? open.map((m) => `  - ${milestoneDigest(m).slice(0, 120)}`).join("\n")
 				: "  (none)";
 			const lastAppendix = appendix.length ? appendix[appendix.length - 1].title : "(none)";
 

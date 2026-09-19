@@ -576,20 +576,21 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
-### 5.2 Open work (dependency-ordered)
+### 5.2 Open work (frontier-first)
 
-- [x] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — landed
-  (A.27): a non-linear `PT` model with a machine-checked `Array.swap.go`
-  refinement, the point-update pot list, and the Φ-decrease. Closes `G1`; the
-  one phrasing linearity forbids is recorded as `G8`.
-- [x] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` — landed
-  (A.28–A.29): every write primitive's Φ effect is machine-checked at both the
-  `Word`/`Cell` level and the array (`Array.swap.go`) level — support/fall/mov/
-  wake/deactivate preserve pot, rock crumble lowers it, swaps lower it — and
-  `point_write_lowers` is the composition step. Closes `G2`; the two residuals are
-  `G9` (non-rock crush) and `G10` (write-site enumeration).
-- [x] **V2 Global settling** — complete (ii and iii landed); `M8d` landed (A.30).
-- [ ] **V0** Semantics rewrite (contracts `C1` purity, `C2` closure, `C3` cost)
+**Legend.** An item is `- [ ] **ID** <intent> · <state> · deps: … · serves: …`.
+`state ∈ {next, parallel, open, blocked, optional, deferred}`: `next` is the
+frontier (all deps met, highest priority), `parallel` may run alongside it,
+`blocked` has an external dependency, `optional` is droppable, `deferred` is
+deliberately not now. Groups are by state; order *within* a group is the `deps:`
+chain, and the groups are independent of each other. `serves:` names the
+contract clause / rule the item advances. The **Dependency view** table is the
+single source of truth for order; landed detail follows it (§5.1 is the one-line
+index).
+
+#### Frontier — do next
+
+- [ ] **V0** Semantics rewrite (contracts `C1` purity, `C2` closure, `C3` cost) · next · deps: — · serves: C3
   — scoped in A.61; sub-steps land and test alone. `V0-1`/`V0-2`/`V0-3` are
   **landed**; **the critical path is `V0-4` (`C3`)** — see `NEXT` below.
   **V0-1 done (A.63):** `Rules.plan`/`Rules.phase` replace `Rules.step`;
@@ -617,7 +618,10 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
   **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
   `Support.sup`, which `V0-4` will replace (see §3.4 retirement, §4.1).
-- [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
+
+#### Optional track — droppable, does not gate the frontier
+
+- [ ] **V3c** Schedule invariance: a region-split fold equals the sequential · optional · deps: — · serves: R10
   fold — **off the critical path; pursue only if `M7d` ships.** The A.57
   rationale (T23 cascade, T24 intra-phase activation, "forward activation
   closure") is **obsolete**: `V0-1` (A.63) made the phase a pure function of the
@@ -631,16 +635,55 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   **V3c-2** refine `ne_idx` to the engine's `U32.is_eq(i, j) == False` (needs
   `U32` order/subtraction arithmetic). The proven parallel-safety contract
   remains V3a+V3b. `G3` gates only `M7d`, **not `C3`**.
+- [ ] **M7d** Parallel phase folds (CPU) · optional · deps: V3c · serves: —
+  — **optional, droppable**, gated on `V3c`. A core-count multiplier on top of
+  `C3`, not a scale prerequisite: no CUDA (`G4`), the 64³ world is too small to
+  showcase it, and dropping M7/M8 costs nothing above the scale track.
+
+#### Blocked / external
+
+- [ ] **M7b** / **M7e** GPU worldgen / phases · blocked · deps: — · serves: —
+  — blocked on a CUDA host (`G4`).
+
+#### Deferred
+
+- [ ] **P1** Publish a proven slice to BendHub · deferred · deps: — · serves: —
+  — **deferred** until the engine is more complete; §5.4 records what a publish
+  must contain, the guardrails, and why it is not done yet.
+
+#### Dependency view
+
+| id | state | deps | unblocks |
+|---|---|---|---|
+| `V0` (`V0-4`) | next | — | — |
+| `V3c` | optional | — (`V3c-1` landed) | `M7d` |
+| `M7d` | optional | `V3c` | — |
+| `M7b`/`M7e` | blocked | — | — |
+| `P1` | deferred | — | — |
+
+**Order note.** The frontier (`V0-4`/`C3`) is independent of the optional
+parallel track. `M8a–M8d` and `M9` have landed. M7 and V2b are independent; V2b
+may proceed first if the GPU path stalls. Dropping M7/M8 costs nothing above the
+scale track; dropping V2 costs the settling guarantee.
+
+#### Landed (detail; one-line index in §5.1)
+
+- [x] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — landed
+  (A.27): a non-linear `PT` model with a machine-checked `Array.swap.go`
+  refinement, the point-update pot list, and the Φ-decrease. Closes `G1`; the
+  one phrasing linearity forbids is recorded as `G8`.
+- [x] **V2b-iii** `Sim.tick` as a composition of `replace_decreases` — landed
+  (A.28–A.29): every write primitive's Φ effect is machine-checked at both the
+  `Word`/`Cell` level and the array (`Array.swap.go`) level — support/fall/mov/
+  wake/deactivate preserve pot, rock crumble lowers it, swaps lower it — and
+  `point_write_lowers` is the composition step. Closes `G2`; the two residuals are
+  `G9` (non-rock crush) and `G10` (write-site enumeration).
+- [x] **V2 Global settling** — complete (ii and iii landed); `M8d` landed (A.30).
 - [x] **M8d** Chunk sleeping/eviction — landed (A.30): `assemble` regenerates
   missing chunks from pure gen, so the store is a sparse overlay; `Store.evict`
   drops sleeping chunks that are bit-equal to gen (a checkable, conservative
   regenerability test), and eviction is lossless. Test-witnessed (T20); widening
   eviction to all sleeping chunks needs the sleep-invariance proof (`G10`).
-- [ ] **M7d** Parallel phase folds (CPU) — **optional, droppable**, gated on
-  `V3c`. A core-count multiplier on top of `C3`, not a scale prerequisite: no
-  CUDA (`G4`), the 64³ world is too small to showcase it, and dropping M7/M8
-  costs nothing above the scale track.
-- [ ] **M7b** / **M7e** GPU worldgen / phases — blocked on a CUDA host (`G4`).
 - [x] **M9 CPU perf pass** — landed (A.59). Native at 64³, before: a tick was
   **≈ 21 ms and flat** (settled or active) because every pass scanned all
   262144 cells. Landed wins: (1) **cell-resolution render** —
@@ -660,9 +703,6 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   margin. That work is **`V0-4`/`C3`**, not `M9` and not `V3c` (the same-phase
   case was removed by `V0-1`). CUDA stays deferred: it needs CUDA 12 at
   `/usr/local/cuda` (absent here) and only pays off at M8 scale.
-- [ ] **P1** Publish a proven slice to BendHub — **deferred** until the engine is
-  more complete; §5.4 records what a publish must contain, the guardrails, and
-  why it is not done yet.
 - [x] **V4 (conservation)** — landed (A.31–A.32, A.34): every material-preserving
   write preserves the count, `array_point_write_count_balance` gives the exact
   displacement identity, and `array_mov_swap_preserves_count` proves the
@@ -708,15 +748,6 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      re-derived — so both write-site enumerations (`Support.sup`, `Rules.step`)
      are now machine-checked and `G10` is closed.
   See `HISTORY.md` A.36–A.56 for the analysis and probes.
-
-Suggested order: **`V0-4` (`C3`) first** — it is the asymptotic scaling claim and
-the largest gap between the pitch and the artifact, and the region-skip is
-**independent of `V3c`** (that coupling predated `V0-1` and is void). Then, only
-if the parallel track is still wanted, `V3c-1b`/`V3c-2` → `M7d`; otherwise
-`M7d` is dropped (`M7b`/`M7e` stay blocked on `G4`). `M8a–M8d` and `M9` have
-landed. M7 and V2b are independent; V2b may proceed first if the GPU path
-stalls. Dropping M7/M8 costs nothing above the scale track; dropping V2 costs
-the settling guarantee.
 
 **GPU expectation (honest).** The 64³ world is too small to showcase a GPU; the
 GTX 1050 is discrete VRAM (transfer cost) and falling-sand work is divergent,

@@ -171,6 +171,35 @@ export function numberedOutline(text: string): string {
 		.join("\n");
 }
 
+export const WORK_STATES = ["next", "parallel", "open", "blocked", "optional", "deferred"] as const;
+export type WorkState = (typeof WORK_STATES)[number];
+
+export interface MilestoneInfo {
+	state?: WorkState;
+	deps?: string;
+	serves?: string;
+	/** The label with the `· state · deps · serves` tag removed (the intent). */
+	text: string;
+}
+
+// A tagged milestone's first line ends with ` · <state> · deps: … · serves: …`.
+const MILESTONE_TAG = new RegExp(
+	`^(.*?)\\s*·\\s*(${WORK_STATES.join("|")})\\s*·\\s*deps:\\s*(.*?)\\s*·\\s*serves:\\s*(\\S+)\\s*$`,
+);
+
+/** Split a milestone label into its `state`/`deps`/`serves` tag and intent. */
+export function milestoneInfo(label: string): MilestoneInfo {
+	const m = MILESTONE_TAG.exec(label);
+	if (!m) return { text: label };
+	return { state: m[2] as WorkState, deps: m[3].trim(), serves: m[4].trim(), text: m[1].trim() };
+}
+
+/** One-line digest form of a milestone label, surfacing the state tag. */
+export function milestoneDigest(label: string): string {
+	const i = milestoneInfo(label);
+	return (i.state ? `[${i.state}] ${i.text}` : label).replace(/\.$/, "");
+}
+
 /** `law` names declared in LAWS.bend, in order. */
 export function parseLaws(lawsText: string): string[] {
 	const out: string[] = [];

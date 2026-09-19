@@ -2630,3 +2630,37 @@ notion survives only in `HISTORY.md` (the log), which is where it belongs.
 - `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
 - `bend test/tests.bend` -> 27/27 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.70 — Work-item labels: a frontier-first convention (`state · deps · serves`)
+
+**Status:** documentation + tooling only (no engine, law, or test change). Gate
+green (70 laws), fast 27/27, canaries 6 ok.
+
+**Why.** Order, independence, and schedulability of open work lived in prose
+("gated on", "independent of", "optional", "deferred"), so every session
+re-derived the DAG by reading §5.2. And IDs doubled as ordering hints (`V0-4`
+"after" `V0-3`), which broke the moment `V3c` was reordered (A.69).
+
+**What changed.**
+- `PLAN.md` §5.2 is now **frontier-first**: a legend, then groups by state
+  (`Frontier` / `Optional track` / `Blocked` / `Deferred`), then a
+  **Dependency view** table (the single source of truth for order), then the
+  landed detail. Every open item carries a tag `· <state> · deps: … · serves: …`;
+  `serves` names the contract clause / rule the item advances. **IDs are
+  unchanged** (history cites them) and the item prose is unchanged.
+- `.pi/extensions/bendverse/lib.ts`: `milestoneInfo`/`milestoneDigest` parse the
+  tag; `index.ts` uses them so `bend_status`/`bend_plan` render `[next] V0 …`
+  instead of the raw tag. `parseMilestones` (the `- [ ]`/`- [x]` scan) and the
+  landed/gap/trace table parsers are untouched, so the gate and the rest of the
+  digests are unaffected.
+
+**Deliberately not done.** No rename to a single `W*` namespace (it would
+invalidate every `HISTORY` reference and the `[MV]` landed-table regex), and no
+dependency-graph tooling — a markdown table is enough.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 27/27 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
+- extension: `bun build lib.ts` clean; `milestoneDigest` unit-checked on the five
+  open labels.
