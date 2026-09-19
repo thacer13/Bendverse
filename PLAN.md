@@ -16,7 +16,7 @@ and scalability as properties of the design, not features layered on top.
 | `PLAN.md` | this file: normative design, verification architecture, state, gaps | design |
 | `AGENTS.md` | how to work here: gate, tests, commits, tooling | workflow |
 | `LAWS.bend` / `PROOF.bend` | the claims and their proofs | the verified substrate |
-| `HISTORY.md` | append-only AI milestone log (old Appendix A) | historical record |
+| `HISTORY.md` | AI milestone log; immutable entry bodies, corrections via a `Superseded by` pointer (old Appendix A) | historical record |
 
 **How work happens.** Implement what this file specifies. Land it only when the
 gate is green (`bend PROOF.bend` → `All terms check.`), both test suites pass,
@@ -510,8 +510,8 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `PLAN.md` | this file — normative design, state, gap registry |
 | `coreidea.md` | the 11 immutable rules and the ambition |
 | `AGENTS.md` | workflow: gate, tests, commits, tooling |
-| `HISTORY.md` | append-only milestone log (old Appendix A) |
-| `LAWS.bend` | law claims (append-only; never change a law's meaning) |
+| `HISTORY.md` | milestone log; bodies immutable, corrections via a superseded-by pointer (old Appendix A) |
+| `LAWS.bend` | law claims (strictly append-only; never change a law's meaning) |
 | `PROOF.bend` | proofs of every law — the gate |
 | `main.bend` | entry; delegates to the current runner |
 | `src/cell.bend` | word encode/decode, material table, field accessors |

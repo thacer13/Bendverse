@@ -13,11 +13,13 @@ machine-checked by `PROOF.bend`.
 - `PLAN.md` — **normative plan (v2)**. Design, verification architecture,
   traceability, state, the gap registry, file layout, guardrails, risks. Update
   §5 when work lands; the gap registry (§5.3) is machine-read by `bend_audit`.
-- `LAWS.bend` — **the claims**. Append-only: never change an existing law's
-  meaning; append new laws.
+- `LAWS.bend` — **the claims**. Strictly append-only: never change an existing
+  law's meaning; a correction is a new law.
 - `PROOF.bend` — **a proof of every law**. This is the gate; it must stay green.
-- `HISTORY.md` — **append-only milestone log** (old PLAN Appendix A). Never
-  rewrite an entry in place; append a correction.
+- `HISTORY.md` — **milestone log** (old PLAN Appendix A). Entry bodies are
+  immutable: to correct or supersede one, append a new entry *and* add a one-line
+  `> **Superseded by A.n**` pointer at the top of the old entry (annotation is
+  fine; editing the claim is not).
 - `AGENTS.md` — **workflow authority** (this file): how to work here.
 
 ## Code layout (intent, not just paths)

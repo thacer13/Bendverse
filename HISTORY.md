@@ -1,13 +1,21 @@
 # Bendverse — History
 
-Append-only AI milestone log: one entry per landed step, newest last. This file
+AI milestone log: one entry per landed step, newest last. This file
 was `PLAN.md`'s Appendix A until the v2 rewrite; `PLAN.md` is now the normative
 plan and this file is the record of how the implementation got there.
 
-Entries are append-only — never rewrite one in place; append a correction.
+Entry **bodies are immutable** — never rewrite what an entry claimed. To correct
+or supersede one, append a new entry *and* add a one-line pointer at the top of
+the old entry:
 
-The first line below preserves the original transition note; the convention it
-describes now applies to *this* file.
+> **Superseded by A.n** — what changed, in one line
+
+That pointer is annotation, not a rewrite: provenance stays intact and a reader who
+lands on the old entry is not misled. (`LAWS.bend` is stricter — a law's meaning is
+never changed at all; a correction is a new law.)
+
+The quote below preserves the original transition note; its "never rewrite in
+place" rule now means *immutable bodies*, with the pointer above allowed.
 
 ## Appendix A — AI milestone log
 
@@ -1230,6 +1238,10 @@ accumulated at the guarded crush; `set_support`/`wake` add 0), then `Rules.step`
 
 ### A.42 — G10 mirror: selector representation, then a checker performance cliff
 
+> **Superseded by A.45** — the root cause given below (the `set_support` branches)
+> is wrong; the real trigger is the concrete wake fuel in S6. A.42's bisection was
+> contaminated by a leaked 100 %-CPU compile. See A.45 for the minimal repro and fix.
+
 **Status:** probe only — nothing landed; gate green (53 laws); suites unchanged.
 The `Support.sup` fuel-loop mirror was built and typechecks as a *definition*, but
 its Φ theorem does not check in reasonable time. Two distinct obstacles, both
@@ -1389,3 +1401,21 @@ as an abstract parameter and instantiate at the use site.**
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (53 laws); probe files removed; no strays.
+
+### A.46 — History policy: immutable bodies + superseded pointers
+
+**Status:** docs only (`HISTORY.md` preamble, `AGENTS.md`, `PLAN.md`); gate green
+(53 laws); no code.
+
+**The change.** Strict "append-only, never touch" was correct in spirit but wrong
+for a log whose entries are written in present tense: a stale entry reads as
+current and a targeted retrieval (e.g. `bend_plan HISTORY section=A.42`) returns a
+superseded claim with no warning. Policy is now: **entry bodies are immutable**
+(never rewrite what an entry claimed), but a superseded entry carries a one-line
+pointer at its top — `> **Superseded by A.n** — what changed` — which is
+annotation, not a rewrite. `LAWS.bend` stays *strictly* append-only: a law's
+meaning is never changed, a correction is a new law.
+
+**Demonstration.** A.42 now carries `Superseded by A.45`; A.45 is the correction.
+Provenance is intact, and a reader who lands on A.42 is no longer misled.
+
