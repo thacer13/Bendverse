@@ -68,6 +68,50 @@ def array_support_write(+t: R.PT, +base: U32, +n: U32, +i: U32, +s: U32)
   +e2 = Equal.trans(Nat, Nat.add(after, w2), Nat.add(after, w1), Nat.add(before, w2), e1, dec)
   NatL.n_add_cancel_right(after, before, w2, e2)
 
+# A `set_fall0` write changes only the fall field, so Φ is preserved (the
+# companion of `array_support_write` for `Rules.step` sel 22/23).
+def chg_fall_if(
+  +xs: R.PT, +ys: R.PT, +base: U32, +h: U32, +i: U32, +z: Bool,
+  ihx: {R.nfst(R.chg_m(xs, base, h, i, Ops.set_fall0(tget(xs, h, i)))) == R.nsnd(R.chg_m(xs, base, h, i, Ops.set_fall0(tget(xs, h, i)))) : Nat},
+  ihy: {R.nfst(R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Ops.set_fall0(tget(ys, h, U32.sub(i, h))))) == R.nsnd(R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Ops.set_fall0(tget(ys, h, U32.sub(i, h))))) : Nat}
+) -> {R.nfst(Bool.pick(Nat & Nat, z,
+        R.chg_m(xs, base, h, i, Ops.set_fall0(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h))))),
+        R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Ops.set_fall0(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))))))
+      == R.nsnd(Bool.pick(Nat & Nat, z,
+        R.chg_m(xs, base, h, i, Ops.set_fall0(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h))))),
+        R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Ops.set_fall0(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))))))
+      : Nat}:
+  match z:
+    case True{}:
+      ihx
+    case False{}:
+      ihy
+
+def chg_fall(t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {R.nfst(R.chg_m(t, base, n, i, Ops.set_fall0(tget(t, n, i)))) == R.nsnd(R.chg_m(t, base, n, i, Ops.set_fall0(tget(t, n, i)))) : Nat}:
+  match t:
+    case R.PL{x}:
+      Equal.sym(Nat, S.pot_at(Ops.set_fall0(x), base), S.pot_at(x, base), W.pot_set_fall0(x, base))
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      +z = U32.is_lt(i, h)
+      chg_fall_if(xs, ys, base, h, i, z,
+        chg_fall(xs, base, h, i),
+        chg_fall(ys, U32.add(base, h), h, U32.sub(i, h)))
+
+def array_fall_write(+t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, Ops.set_fall0(tget(t, n, i)))), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  +v = Ops.set_fall0(tget(t, n, i))
+  +after = S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n))
+  +before = S.suml(S.to_pots(R.pack(t), base, n))
+  +w1 = R.nfst(R.chg_m(t, base, n, i, v))
+  +w2 = R.nsnd(R.chg_m(t, base, n, i, v))
+  +eq = chg_fall(t, base, n, i)
+  +dec = R.array_swap_decreases(t, base, n, i, v)
+  +e1 = Equal.cong(Nat, Nat, x => Nat.add(after, x), w2, w1, Equal.sym(Nat, w1, w2, eq))
+  +e2 = Equal.trans(Nat, Nat.add(after, w2), Nat.add(after, w1), Nat.add(before, w2), e1, dec)
+  NatL.n_add_cancel_right(after, before, w2, e2)
+
 # ------------------------------------------------------------------ crumble
 # A rock crumble (material 3 -> 4) lowers the leaf's potential by 50 * L where
 # L is the leaf's level (the bedrock floor guarantees L >= 1 in the engine).
@@ -256,6 +300,50 @@ def array_activate_write(+t: R.PT, +base: U32, +n: U32, +i: U32)
   +w1 = R.nfst(R.chg_m(t, base, n, i, v))
   +w2 = R.nsnd(R.chg_m(t, base, n, i, v))
   +eq = chg_activate(t, base, n, i)
+  +dec = R.array_swap_decreases(t, base, n, i, v)
+  +e1 = Equal.cong(Nat, Nat, x => Nat.add(after, x), w2, w1, Equal.sym(Nat, w1, w2, eq))
+  +e2 = Equal.trans(Nat, Nat.add(after, w2), Nat.add(after, w1), Nat.add(before, w2), e1, dec)
+  NatL.n_add_cancel_right(after, before, w2, e2)
+
+# `deactivate` clears the activity bit (bit 11), which does not touch the
+# material field, so Φ is preserved (the `Rules.step` sel 18 write).
+def chg_deactivate_if(
+  +xs: R.PT, +ys: R.PT, +base: U32, +h: U32, +i: U32, +z: Bool,
+  ihx: {R.nfst(R.chg_m(xs, base, h, i, Cell.deactivate(tget(xs, h, i)))) == R.nsnd(R.chg_m(xs, base, h, i, Cell.deactivate(tget(xs, h, i)))) : Nat},
+  ihy: {R.nfst(R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.deactivate(tget(ys, h, U32.sub(i, h))))) == R.nsnd(R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.deactivate(tget(ys, h, U32.sub(i, h))))) : Nat}
+) -> {R.nfst(Bool.pick(Nat & Nat, z,
+        R.chg_m(xs, base, h, i, Cell.deactivate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h))))),
+        R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.deactivate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))))))
+      == R.nsnd(Bool.pick(Nat & Nat, z,
+        R.chg_m(xs, base, h, i, Cell.deactivate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h))))),
+        R.chg_m(ys, U32.add(base, h), h, U32.sub(i, h), Cell.deactivate(Bool.pick(U32, z, tget(xs, h, i), tget(ys, h, U32.sub(i, h)))))))
+      : Nat}:
+  match z:
+    case True{}:
+      ihx
+    case False{}:
+      ihy
+
+def chg_deactivate(t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {R.nfst(R.chg_m(t, base, n, i, Cell.deactivate(tget(t, n, i)))) == R.nsnd(R.chg_m(t, base, n, i, Cell.deactivate(tget(t, n, i)))) : Nat}:
+  match t:
+    case R.PL{x}:
+      Equal.sym(Nat, S.pot_at(Cell.deactivate(x), base), S.pot_at(x, base), W.pot_and_hi(x, base))
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      +z = U32.is_lt(i, h)
+      chg_deactivate_if(xs, ys, base, h, i, z,
+        chg_deactivate(xs, base, h, i),
+        chg_deactivate(ys, U32.add(base, h), h, U32.sub(i, h)))
+
+def array_deactivate_write(+t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, Cell.deactivate(tget(t, n, i)))), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  +v = Cell.deactivate(tget(t, n, i))
+  +after = S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n))
+  +before = S.suml(S.to_pots(R.pack(t), base, n))
+  +w1 = R.nfst(R.chg_m(t, base, n, i, v))
+  +w2 = R.nsnd(R.chg_m(t, base, n, i, v))
+  +eq = chg_deactivate(t, base, n, i)
   +dec = R.array_swap_decreases(t, base, n, i, v)
   +e1 = Equal.cong(Nat, Nat, x => Nat.add(after, x), w2, w1, Equal.sym(Nat, w1, w2, eq))
   +e2 = Equal.trans(Nat, Nat.add(after, w2), Nat.add(after, w1), Nat.add(before, w2), e1, dec)

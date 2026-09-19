@@ -1494,3 +1494,33 @@ theorem and `G10` closes.
 
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (54 laws); fast 22/22.
+
+### A.49 — G10 prep: the `deactivate` and `set_fall0` array Φ primitives
+
+**Status:** `src/tick.bend` only, no new law; gate green (54 laws); fast 22/22.
+Two `Rules.step` write primitives now have array-level Φ theorems, so the
+remaining mirror work is only the movement telescope.
+
+**What landed.**
+- `chg_fall_if` / `chg_fall` / `array_fall_write`: a `set_fall0` write preserves
+  Φ at every index (mirrors `chg_support`/`array_support_write`, with
+  `W.pot_set_fall0` at the leaf). Covers `Rules.step` sel 22 and sel 23.
+- `chg_deactivate_if` / `chg_deactivate` / `array_deactivate_write`: a
+  `deactivate` write preserves Φ (mirrors `chg_activate`/`array_activate_write`,
+  with `W.pot_and_hi`). Covers `Rules.step` sel 18.
+
+Both are internal lemmas in the `wake_*_m` style (no law wrapper yet); the gate
+still elaborates them on import, verified by injecting a wrong leaf lemma into
+`chg_deactivate` and seeing `bend PROOF.bend` fail at it. They are unused until
+the `step_m` mirror lands, which is fine for prep lemmas.
+
+**Remaining for `G10`.** The `Rules.step` fuel-loop mirror (`step_m`) needs the
+movement swap (sel 6/12): `world[j] <- mov(w)`, `world[i] <- gv`, then wakes.
+Its Φ proof is a two-swap telescope over `Refine.array_swap_decreases`, and it
+needs the pot analogue of count's `nempty_tget_swap_mov` (read-after-write at a
+different index) plus `W.pot_mov`. Same technique as
+`Count.array_mov_swap_preserves_count`. The guarded crush (sel 22) is already
+covered by `array_guarded_crush_lowers_auto`.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (54 laws); fast 22/22.

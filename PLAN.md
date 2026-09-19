@@ -470,7 +470,10 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      with the `SupSel` selector, the abstract wake fuel, the top-level
      `sup_pass_m`, and law `sup_mirror_preserves_phi`; the `Support.sup` half of
      the write-site enumeration is now machine-checked. Remaining: mirror
-     `Rules.step`.
+     `Rules.step`; its `deactivate` (sel 18) and `set_fall0` (sel 22/23) write
+     primitives are proven at the array level (`array_deactivate_write`,
+     `array_fall_write`, A.49), so the movement swap (sel 6/12) is the last
+     missing piece.
   See `HISTORY.md` A.36–A.48 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
