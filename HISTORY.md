@@ -2784,3 +2784,28 @@ untouched (it mirrors `Support.sup`, which `V0-4b-2` will replace).
   T1–T9/T18/T20 and T23–T28/T33 still pass, which is the equivalence witness for
   the work-list fold).
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.73 — `coreidea.md`: restore the conceptual register
+
+**Status:** documentation/governance only. Gate green (70 laws), fast 26/26,
+sim 16/16, canaries 6 ok. No rule or law changed; `PLAN.md` §4 is unchanged.
+
+**Why.** `coreidea.md` is the contract and the rules — conceptual and
+deliberately stable. Its "Where the code stands" paragraph had drifted into a
+status log: version tags (`V0-4a`/`V0-4b-1`), implementation identifiers
+(`Rules.plan`/`phase_plan_w`, `Sim.active_list`), and gap IDs (`G16`), refreshed
+every milestone. That duplicates `PLAN.md` §4 (which is machine-read) and makes
+the contract document churn with the code.
+
+**What changed.** The paragraph now states only the *shape* of the gap in model
+terms — purity and closure hold; the deviations are all consequences of the
+engine still sweeping the world (cost not disturbance-proportional; support
+seeded positionally rather than from the neighbourhood; the support pass's
+activity effect still landing within its own pass) — and says explicitly that it
+changes only when a contract clause or a rule's status changes, not per
+milestone. `PLAN.md` §4 is named as the single source of truth for per-rule
+conformance.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 16/16 PASS.

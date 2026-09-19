@@ -126,20 +126,20 @@ static, not because the grid wraps.
 
 Where the code stands (do not confuse this with the target)
 
-`PLAN.md` §4 is the conformance table: it records, per rule, whether the engine
-conforms, deviates, or holds by construction. Contract 1 now holds: a phase is a
-pure function of the state it is handed (`Rules.plan`/`Rules.phase_plan_w`, V0-1), so
-rule 10 holds by construction and contention is resolved from the pre-phase
-state. Contract 2 now holds too (V0-2): every rule target is guarded by
-`Grid.step_inside`, so a boundary step is inert and the shell is generation, not
-the box. Rule 9 now holds for the phases: wake lands at tick end (V0-4a) and a
-move clears the mover's active bit (V0-4b-1), so the evaluated set is exact and a
-cell moves at most once per tick. The eight phase folds already run over the
-active-cell work list (V0-4b-1). Deviations remain and are recorded there rather
-than papered over: a tick's cost is still proportional to world size (contract 3
-— the world scans are what `V0-4b-2` removes); the support pass's crush-wake is
-still same-tick (rule 9's residual, `G16`); and rigidity's support seed is still
-positional rather than neighbourhood-derived (rules 6/7).
+`PLAN.md` §4 is the conformance table and the single source of truth: per
+contract clause and per rule, whether the engine conforms, deviates, or holds by
+construction. This section states only the *shape* of the current gap, in model
+terms; it changes only when a contract clause or a rule's status changes, not per
+milestone.
+
+Purity (contract 1) and closure (contract 2) hold: a phase reads only the state
+it is handed, and the box is a property of the grid rather than of the shell.
+The deviations are all consequences of one thing — the engine still sweeps the
+world. Cost is therefore not yet proportional to disturbance (contract 3);
+support is seeded from a cell's position rather than derived from its
+neighbourhood (rules 6 and 7); and one activity effect, the support pass, still
+lands within its own pass rather than the next tick (rule 9). No deviation is
+closed by rewording a rule to match the code.
 
 Ambition (in the open)
 
