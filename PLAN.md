@@ -335,6 +335,36 @@ pull-base collapses rock; T18 chunk-store tick equivalence; T20 evict → assemb
 - `bend_lemmas [query]` — signature index of `src/*.bend`. Search before
   re-deriving; `bits.bend` and `parity.bend` already prove most bit facts.
 
+### 3.7 Normalization discipline (expansions and canaries)
+
+`{==}` discharges *definitional* equality, so what the checker normalizes is part
+of the trust boundary, not just a performance knob. Two failure directions:
+
+- **missing / stuck normalization** — a proof that should check hangs or fails
+  (A.41, A.42); or, subtler, passes because both sides are stuck in the same
+  shape rather than genuinely reduced;
+- **over-eager normalization** — a proof that must not check does (soundness).
+
+Working discipline:
+
+- **Canaries.** `tools/checker-canary.sh` (also `bend_canary`) runs positive refl
+  proofs that must still check (catch missing normalization) and negative
+  controls that must still be rejected (catch over-eager acceptance). Run it after
+  touching proofs or the toolchain; when an interaction surprises us, first add a
+  canary that captures the expected behaviour, then investigate.
+- **Observe, don't guess.** Put `?h` in a candidate proof to have `bend_spike`
+  print the elaborated goal — that is how you see what the checker actually has.
+  If a compile is slow, bisect the touched file with `head -n` and time each
+  prefix; never let the full gate run on a known cliff.
+- **Known expansion triggers** (PLAN §7): a concrete-fuel loop application inside
+  a proposition (A.41); a reducible term nested inside a proposition, e.g. a
+  `set_support` write under `pack`→`to_pots` (A.42); an opaque `U32` selector
+  (mirror it with a datatype); a timeout that does not kill the process group
+  (A.43).
+- **Classify and record.** Every surprise is one of *proof-engineering*,
+  *checker performance*, or *checker soundness*. Record it in `HISTORY.md`, and
+  in §5.3 when it is a trust boundary.
+
 ---
 
 ## 4. Traceability: coreidea rules ↔ evidence
@@ -545,6 +575,9 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   The pi tools run `env BEND_NO_TELEMETRY=1 timeout --kill-after=5 <secs> bend …`
   (A.43); if a compile ever takes more than ~4× the usual time, stop and bisect
   the touched file with `head -n` rather than letting the gate run.
+- **Guard the checker itself with canaries** (§3.7, `bend_canary`):
+  `tools/checker-canary.sh` asserts positive reductions still reduce and negative
+  controls are still rejected. Add a canary for any new surprising interaction.
 
 ---
 

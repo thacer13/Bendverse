@@ -142,6 +142,25 @@ export default function bendverse(pi: ExtensionAPI) {
 		},
 	});
 
+	// ---------------------------------------------------------------- canaries
+	pi.registerTool({
+		name: "bend_canary",
+		label: "bend checker canaries",
+		description:
+			"Run the checker canaries (tools/checker-canary.sh): positive refl proofs that must still check (missing normalisation) and negative ones that must still fail (over-eager acceptance = soundness alarm). Fast; run after touching proofs or the checker toolchain.",
+		promptSnippet: "Run checker canaries: positive refl proofs must pass, negative controls must fail.",
+		promptGuidelines: [
+			"Run bend_canary when a proof behaves unexpectedly or after touching src/proof machinery; a pass canary that stops passing means missing normalisation, a fail canary that starts passing is a soundness alarm.",
+		],
+		parameters: Type.Object({}),
+		async execute(_id, _params, signal, _onUpdate, ctx) {
+			const r = await pi.exec("bash", ["tools/checker-canary.sh"], { cwd: ctx.cwd, signal, timeout: 120_000 });
+			const out = clean([r.stdout, r.stderr]);
+			if ((r.code ?? 0) === 0) return text(`✅ ${out}`);
+			throw new Error(out || `canaries failed (exit ${r.code})`);
+		},
+	});
+
 	// ---------------------------------------------------------------- tests
 	pi.registerTool({
 		name: "bend_test",

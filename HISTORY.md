@@ -1309,3 +1309,35 @@ touched file with `head -n` instead of letting the gate run.
 **Note.** This session cannot exercise the new code path (the extension is loaded
 at startup); it takes effect on the next pi session. The `timeout` fix was
 validated standalone against a synthetic hang.
+
+### A.44 — Checker canaries: normalization as part of the trust boundary
+
+**Status:** new `tools/checker-canary.sh` + six canaries, plus a `bend_canary`
+tool; gate green (53 laws); no engine/proof change.
+
+**Why.** A.41–A.43 treated the expansion cliffs as time/CPU waste. They are also a
+*proof-integrity* concern: `{==}` discharges *definitional* equality, so what the
+checker reduces is part of the trust boundary. Both directions matter:
+- **missing / stuck normalization** — a proof that should check hangs or fails,
+  or passes while both sides are stuck in the same shape;
+- **over-eager normalization** — a proof that must not check does (soundness).
+
+**What.** `tools/checker-canary.sh` runs `tools/canaries/*.bend` and compares each
+against its filename:
+- `.pass.` — positive refl proofs that must still check: `U32.add` computes,
+  `U32.is_eq` on literals reduces, `Word.cmp` on concrete words reduces through
+  `Cmp.is_eq` (the reflection surface the material guards depend on);
+- `.fail.` — negative controls that must still be rejected: `{False == True}`,
+  `U32.add(2, 3) == 6`, and `add` non-commutativity on abstract words.
+A timeout on a pass canary is reported separately as a *cliff*, not a wrong
+answer. The set is 6/6 in ~0 s today. `bend_canary` exposes the same run.
+
+**Protocol (PLAN §3.7).** When an interaction surprises us: add a canary that
+captures the expected behaviour, print the actual goal with `?h`, bisect with
+`head -n`, classify it (proof-engineering / checker performance / checker
+soundness), and record it here (and in §5.3 if it is a boundary).
+
+**Verification**
+- `tools/checker-canary.sh` → 6 ok, 0 bad; extension transpiles
+  (`bun build … --external '*'`);
+- `bend PROOF.bend` → `All terms check.` (53 laws).
