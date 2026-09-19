@@ -195,3 +195,6 @@ def Laws.array_mov_cross(t, base, n, i, j):
 
 def Laws.array_mov_lowers_phi(t, base, n, i, j, hg):
   Fall.array_mov_lowers_phi(t, base, n, i, j, hg)
+
+def Laws.array_mov_lowers_phi_regime(t, base, n, i, j, hge):
+  Fall.array_mov_lowers_phi_regime(t, base, n, i, j, hge)

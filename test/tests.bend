@@ -5,11 +5,14 @@ import ../src/worldgen.bend as Worldgen
 import ../src/parity.bend as Parity
 import ../src/priority.bend as Priority
 import ../src/settle.bend as Settle
+import ../src/potential.bend as Pot
 import ../src/chunk.bend as Chunk
 import ../src/store.bend as Store
 import ../src/ops.bend as Ops
 import ../src/rules.bend as Rules
 import ../src/count.bend as Count
+import ../src/refine.bend as Refine
+import ../src/fall.bend as Fall
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -489,6 +492,32 @@ def cnt_bad() -> U32:
             cnt_check(Cell.encode(5, 10, 1, 2, 17),
               cnt_check(0, cnt_check(8388607, 0))))))))
 
+# T22 movement Phi witness: the `Rules.step` movement is a two-write swap, and
+# its close is the cross equation `after + mov_S == before + mov_T` (A.53). We
+# use the size-free `PT` model to place a heavy cell at level 1 (index 4096) and
+# an empty cell at level 0 (index 0): the move drops Phi by 100 and the single
+# cross terms match the before/after potentials. `fall_gap = mov_S - mov_T` and
+# `mov_S >= mov_T` are checked by evaluation.
+# T22 movement Phi witness (A.51/A.53): the movement writes `mov(w)` down to
+# `below(i)` and the old target `gv` up to `i`, so its concrete Phi account is
+# `after + gap == before` with `gap = (dens(w) - dens(gv)) * (iy(i) - iy(j))`.
+# Two cases: empty target (gap 100) and lighter-but-nonempty target (gap 20).
+def mov_case(+w: U32, +gv: U32, +i: U32, +j: U32, +expect: Nat, bad: U32) -> U32:
+  +before = Nat.add(Settle.pot_at(w, i), Settle.pot_at(gv, j))
+  +after = Nat.add(Settle.pot_at(Rules.mov(w), j), Settle.pot_at(gv, i))
+  +gap = Nat.mul(Nat.sub(Pot.dens(Cell.material(w)), Pot.dens(Cell.material(gv))),
+                 Nat.sub(U32.to_nat(Grid.iy(i)), U32.to_nat(Grid.iy(j))))
+  b0 = inc_if_false(Nat.is_eq(gap, expect), bad)
+  b1 = inc_if_false(Nat.is_eq(Nat.add(after, gap), before), b0)
+  b2 = inc_if_false(Nat.is_eq(Settle.pot_at(Rules.mov(w), j), Settle.pot_at(w, j)), b1)
+  inc_if_false(Nat.is_ge(before, after), b2)
+
+def mov_bad() -> U32:
+  +i = Grid.index(0, 1, 0)
+  +j = Grid.index(0, 0, 0)
+  mov_case(Cell.encode(2, 0, 1, 0, 0), Cell.encode(0, 0, 0, 0, 0), i, j, 100n,
+    mov_case(Cell.encode(2, 0, 1, 0, 0), Cell.encode(5, 0, 0, 0, 0), i, j, 20n, 0))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -513,3 +542,4 @@ def main() -> IO(Unit):
     report("T20c evict preserves world (one resident chunk)", ev_mod_bad())
     report("T20d sleeping/gen-eq predicates", ev_pred_bad())
     report("T21 conservation of non-Empty writes", cnt_bad())
+    report("T22 movement Phi cross + fall account", mov_bad())

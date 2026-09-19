@@ -339,3 +339,12 @@ law array_mov_lowers_phi:
   for +j: U32
   for +hg: {Nat.add(Fall.mov_T(t, base, n, i, j), Fall.fall_gap(t, base, n, i, j)) == Fall.mov_S(t, base, n, i, j) : Nat}
   {Nat.add(Settle.suml(Settle.to_pots(Fall.mov_array(t, n, i, j), base, n)), Fall.fall_gap(t, base, n, i, j)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law array_mov_lowers_phi_regime:
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +j: U32
+  for +hge: {Nat.is_ge(Fall.mov_S(t, base, n, i, j), Fall.mov_T(t, base, n, i, j)) == True{} : Bool}
+  {Nat.add(Settle.suml(Settle.to_pots(Fall.mov_array(t, n, i, j), base, n)), Fall.fall_gap(t, base, n, i, j)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}

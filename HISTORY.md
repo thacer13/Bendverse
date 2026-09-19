@@ -1632,6 +1632,7 @@ write primitives for `deactivate` (sel 18) and `set_fall0` (sel 22/23) (A.49).
   `PL` as described; no code changed.
 
 ### A.53 — `G11` closed: `leaf_base` unblocks the movement Φ telescope
+> **Superseded in part by A.54** — the Nat order lemma *is* provable; `step_m` is not blocked on it.
 
 **Status:** proof. Gate green (56 laws). Adds `src/fall.bend` and the laws
 `array_mov_cross` and `array_mov_lowers_phi`; closes `G11` and the movement
@@ -1677,3 +1678,50 @@ closed.
 - `bend test/tests.bend` → all PASS (JS, T5–T21).
 - `bend test/simtests.bend -o /tmp/bendverse/Bendverse-simtests && ./…` →
   T1, T2, T3, T4, T4b, T9, T18, T20 all PASS.
+
+### A.54 — The Nat order lemma is provable: `Equal.cong` as false-elimination (`step_m` unblocked)
+
+**Status:** proof + test. Gate green (57 laws). Corrects the A.53 residual note:
+the `T + (S − T) = S` arithmetic is **not** blocked. Adds `n_add_sub_le`
+(`src/nat.bend`), law `array_mov_lowers_phi_regime`, and the T22 runtime twin.
+
+**The insight.** A.53 argued the regime could not be turned into a proposition
+because Base has no false-elimination primitive. That is wrong.
+`Equal.cong(Bool, A, f, False{}, True{}, h)` yields `{f(False) == f(True)}` for
+*any* `f : Bool -> A`, so choosing `f(z) = Bool.pick(A, z, R, L)` gives
+`{L == R}` for any goal at any type — a full false-eliminator. `src/word.bend`
+already used exactly this to close the impossible `LT`/`GT` branches of
+`Word.cmp` equality reflection (A.37); the A.53 note simply missed it. So a
+decidable guard *can* be reflected into a proposition.
+
+**What landed.**
+- `NatL.n_add_sub_le(a, b, h : is_ge(a,b) = True) : {b + (a − b) == a}` —
+  induction on `a, b`; the unreachable `0 / 1+p` case is closed by the
+  `Bool.pick` motive. `src/nat.bend` had `n_sub_add` (the other direction) but
+  not this.
+- Law `array_mov_lowers_phi_regime` (`src/fall.bend`): the fall-regime
+  hypothesis is the single order Bool `Nat.is_ge(mov_S, mov_T) == True`, and the
+  gap identity `mov_T + fall_gap == mov_S` follows from `n_add_sub_le`. This is
+  the cleanest regime form — an order *test*, not a carried witness, and no
+  subtraction in the statement.
+- T22 runtime twin (`test/tests.bend`): the concrete movement account
+  `after + gap == before` with
+  `gap = (dens(w) − dens(gv)) · (iy(i) − iy(j))`, for an empty target (gap 100)
+  and a lighter non-empty target (gap 20), plus `mov`-preserves-pot at the
+  target and `before ≥ after`.
+
+**Note (checker limit, not a soundness issue).** A runtime twin over
+`Array.swap.go` (the full array-level cross) hits a Bend elaborator limit: the
+identical snippet typechecks standalone, but inside `test/tests.bend` it reports
+“an open Array element type”. T22 therefore stays at the point level; the
+array-level cross itself is kernel-proven (`array_mov_cross`).
+
+**Next.** `step_m` is unblocked: its movement site can carry the regime Bool and
+apply `array_mov_lowers_phi_regime`. The remaining design choice is whether to
+show the engine's `can` guard implies the regime (needs `U32`/`iy` order
+reflection) or to add the regime to the mirror's guard.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (57 laws).
+- `bend test/tests.bend` → 23/23 PASS (incl. T22).
+- `bend test/simtests.bend` native → T1, T2, T3, T4, T4b, T9, T18, T20 PASS.

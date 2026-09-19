@@ -156,3 +156,23 @@ def n_add_cancel_right(a: Nat, +b: Nat, +c: Nat, +h: {Nat.add(a, c) == Nat.add(b
     Equal.trans(Nat, Nat.sub(Nat.add(a, c), c), Nat.sub(Nat.add(b, c), c), b,
       Equal.cong(Nat, Nat, x => Nat.sub(x, c), Nat.add(a, c), Nat.add(b, c), h),
       n_sub_add(b, c)))
+
+# Truncated subtraction recovers the difference under an order hypothesis:
+# `b + (a - b) = a` when `a >= b`. The `0n / 1n+p` case is unreachable (its
+# hypothesis is `{False == True}`), but Base has no false-elimination primitive;
+# `Equal.cong` with a `Bool.pick` motive transports the contradiction to the goal
+# (`f(False)` is the left side, `f(True)` the right). This is the same trick
+# `Word.cmp` reflection uses for its impossible `LT`/`GT` branches (A.37, A.54).
+def n_add_sub_le(a: Nat, b: Nat, h: {Nat.is_ge(a, b) == True{} : Bool})
+  -> {Nat.add(b, Nat.sub(a, b)) == a : Nat}:
+  match a b:
+    case 0n 0n:
+      {==}
+    case 0n 1n+p:
+      Equal.cong(Bool, Nat,
+        z => Bool.pick(Nat, z, 0n, Nat.add(1n + p, Nat.sub(0n, 1n + p))),
+        False{}, True{}, h)
+    case 1n+q 0n:
+      {==}
+    case 1n+q 1n+p:
+      Equal.cong(Nat, Nat, x => 1n + x, Nat.add(p, Nat.sub(q, p)), q, n_add_sub_le(q, p, h))

@@ -73,7 +73,7 @@ Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 56 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 57 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -296,7 +296,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-56 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+57 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -321,7 +321,7 @@ mul-wrap spikes; T6 gen determinism; T7 terrain structure; T8 build = gen over
 all cells; T10 parity/neighbor-x; T11 low6 add + ∓1 cancel; T12 dir φ
 cancellation; T13 neighbor index cancellation; T14 scan-order totality; T15
 `List.set` split + sum; T16 chunk key/local roundtrip + gen; T17 chunk store
-set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4).
+set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4); T22 movement Φ witness (the `Rules.step` movement drops Φ by `(dens(w) − dens(gv))·(iy(i) − iy(j))` for empty and lighter targets, and `mov` preserves pot at the target).
 
 Simulation, native-recommended (`test/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
@@ -381,14 +381,14 @@ an oversight to hide.
 | `R2` | Conservation: swap/transform only | `array_point_write_preserves_count` `array_point_write_count_balance` `array_mov_swap_preserves_count` `array_support_write_preserves_count` `array_fall_write_preserves_count` `array_mov_write_preserves_count` `array_wake_write_preserves_count` `array_deactivate_write_preserves_count` | T2 T21 | count rules ops |
 | `R3` | Single-writer, deterministic tie-break | `scan_order_total` `neighbor_cancel` | T14 | order priority |
 | `R4` | Phase separation: no same-color neighbors | `neighbor_x_parity` `neighbor_y_parity` `neighbor_z_parity` `parity_flip_succ` `parity_flip_pred` | T10 | parity sim |
-| `R5` | Falling is universal (density rule) | `fall_decreases` `fall_lowers_potential` `sand_sinks_in_water` `array_mov_cross` `array_mov_lowers_phi` | T9 | rules potential fall |
+| `R5` | Falling is universal (density rule) | `fall_decreases` `fall_lowers_potential` `sand_sinks_in_water` `array_mov_cross` `array_mov_lowers_phi` `array_mov_lowers_phi_regime` | T9 T22 | rules potential fall |
 | `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `guarded_crush_lowers_pot` `array_crumble_lowers_phi` `array_guarded_crush_lowers_phi` `rock_crumbles_lighter` | T9 T19 | support potential writepot tick |
 | `R7` | Support recomputed, never cached | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
 | `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_activate_write_preserves_phi` `sup_mirror_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
 | `R10` | Determinism under any schedule | — (by construction) | T1 | sim |
 | `R11` | Worldgen is a pure seeding function | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
-| `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
+| `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` `n_add_sub_le` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
 
 Reading the `—` rows: R7 is test-witnessed only (recorded as `G6`); R2 now has
 the `V4` count laws (A.31–A.32, A.34).
@@ -476,12 +476,15 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      size-free `chg_m` projection A.52 said was missing, so the two
      `array_swap_decreases` balances telescope into the unconditional
      `array_mov_cross`, and `array_mov_lowers_phi` gives the Φ drop by
-     `fall_gap` under the fall-regime hypothesis (`G11` closed). Remaining:
-     the `Rules.step` fuel-loop mirror `step_m` itself; it accumulates the
-     crush gap and the fall gap, and must discharge that hypothesis
-     (`mov_T + fall_gap == mov_S`) from the engine's fall condition and the
-     `below`/`diag` index relation.
-  See `HISTORY.md` A.36–A.53 for the analysis and probes.
+     `fall_gap` under the fall-regime hypothesis (`G11` closed). A.54 then
+     proved the Nat order lemma `n_add_sub_le` (the `{False == True}` branch is
+     closed by an `Equal.cong`/`Bool.pick` motive), so the regime is the single
+     order Bool `Nat.is_ge(mov_S, mov_T)` and `array_mov_lowers_phi_regime`
+     derives the gap identity. Remaining: the `Rules.step` fuel-loop mirror
+     `step_m` itself; it accumulates the crush gap and the fall gap, and its
+     movement site carries that regime Bool (or shows the engine's `can` guard
+     implies it via density/level order reflection).
+  See `HISTORY.md` A.36–A.54 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -511,8 +514,8 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G7` | review | six laws are `{==}` reflexivity proofs and could admit a weakened statement | review | — | human review of each statement (§3.3) |
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | closed | G2 G10 | closed (A.38–A.40): `Word.cmp` reflection (A.38) makes the guard provable; the engine guards both crush sites with `Ops.crush_if_rock` (A.39); `array_guarded_crush_lowers_phi` (A.40) proves the guarded write's Φ effect at every index — rock: `crush_gap`, non-rock: identity — with no `material(w) == 3` hypothesis. Runtime-witnessed by T19 |
-| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical). **`G9` is resolved** (A.38–A.40): the guarded-crush write site now has an unconditional Φ theorem (`array_guarded_crush_lowers_phi`), so no crush site carries an unproven hypothesis. The `Support.sup` fuel-loop mirror is landed (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`) and an abstract wake fuel, plus law `sup_mirror_preserves_phi`. The `Rules.step` **movement** write site is landed (A.53, `G11` closed): `array_mov_cross` telescopes the two swap balances and `array_mov_lowers_phi` gives the Φ drop by `fall_gap` under the fall-regime hypothesis. Remaining: the `Rules.step` fuel-loop mirror `step_m`, which accumulates the crush gap and the fall gap and must discharge that regime hypothesis (`mov_T + fall_gap == mov_S`) from the engine's fall condition and index relation. Would also widen `M8d` eviction |
-| `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | closed | G10 M8d | **closed (A.53):** a `leaf_base(t,base,n,i)` function gives the leaf index `chg_m` actually uses, so `nfst`/`nsnd(chg_m)` project onto `pot_at(tget(..), leaf_base(..))` — definitional at `PL`, where A.52's `base+i` form was false. `swap_balance` then gives one write's `new − old` at that leaf, and the two balances telescope into the unconditional cross law `array_mov_cross` (the residuals `p+q` and `r+s` are the pre/post potentials of the two leaves). `fall_gap := mov_S − mov_T` and `array_mov_lowers_phi` give the decrease under the fall-regime hypothesis `mov_T + fall_gap == mov_S`; discharging that hypothesis from the engine's fall condition and index relation is the remaining `G10` `step_m` arithmetic |
+| `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical). **`G9` is resolved** (A.38–A.40): the guarded-crush write site now has an unconditional Φ theorem (`array_guarded_crush_lowers_phi`), so no crush site carries an unproven hypothesis. The `Support.sup` fuel-loop mirror is landed (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`) and an abstract wake fuel, plus law `sup_mirror_preserves_phi`. The `Rules.step` **movement** write site is landed (A.53, `G11` closed): `array_mov_cross` telescopes the two swap balances and `array_mov_lowers_phi` gives the Φ drop by `fall_gap` under the fall-regime hypothesis. The fall-regime hypothesis is now a single order Bool and the Nat order lemma is proven (A.54: `n_add_sub_le`, law `array_mov_lowers_phi_regime`). Remaining: the `Rules.step` fuel-loop mirror `step_m`, which accumulates the crush gap and the fall gap; its movement site carries the regime Bool and must show the engine's `can` guard implies it (density/level order reflection) or thread it as the mirror's guard. Would also widen `M8d` eviction |
+| `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | closed | G10 M8d | **closed (A.53):** a `leaf_base(t,base,n,i)` function gives the leaf index `chg_m` actually uses, so `nfst`/`nsnd(chg_m)` project onto `pot_at(tget(..), leaf_base(..))` — definitional at `PL`, where A.52's `base+i` form was false. `swap_balance` then gives one write's `new − old` at that leaf, and the two balances telescope into the unconditional cross law `array_mov_cross` (the residuals `p+q` and `r+s` are the pre/post potentials of the two leaves). `fall_gap := mov_S − mov_T` and `array_mov_lowers_phi` give the decrease under the fall-regime hypothesis `mov_T + fall_gap == mov_S`; the regime is now a single order Bool with the Nat order lemma proven (A.54: `n_add_sub_le`, law `array_mov_lowers_phi_regime`); reflecting the engine's `can` guard to it is the remaining `G10` `step_m` work |
 
 ---
 

@@ -369,3 +369,13 @@ def array_mov_lowers_phi(+t: R.PT, +base: U32, +n: U32, +i: U32, +j: U32,
       eq2,
       Equal.trans(Nat, Nat.add(Phi2, Nat.add(TT, g)), Nat.add(Phi2, SS), Nat.add(Phi0, TT), eq3, cross)))
   NatL.n_add_cancel_right(Nat.add(Phi2, g), Phi0, TT, step)
+
+# The cleaner regime form: the fall condition is the *order* `mov_S >= mov_T`
+# (the source leaf's pot is at least the post-move pot of both leaves), and the
+# gap identity `mov_T + fall_gap == mov_S` is derived from it with `n_add_sub_le`
+# — no false-elimination primitive is needed (A.54).
+def array_mov_lowers_phi_regime(+t: R.PT, +base: U32, +n: U32, +i: U32, +j: U32,
+  hge: {Nat.is_ge(mov_S(t, base, n, i, j), mov_T(t, base, n, i, j)) == True{} : Bool})
+  -> {Nat.add(S.suml(S.to_pots(mov_array(t, n, i, j), base, n)), fall_gap(t, base, n, i, j)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  array_mov_lowers_phi(t, base, n, i, j,
+    NatL.n_add_sub_le(mov_S(t, base, n, i, j), mov_T(t, base, n, i, j), hge))
