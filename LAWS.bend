@@ -40,22 +40,22 @@ law cell_roundtrip:
   {Cell.reencode(w) == U32.and(w, 8388607) : U32}
 
 law rock_crumbles_lighter:
-  {Pot.dens(Cell.rock()) == Pot.dens(Cell.rubble()) + 50n : Nat}
+  {Pot.dens(Cell.rock()) == Nat.add(Pot.dens(Cell.rubble()), 50n) : Nat}
 
 law sand_sinks_in_water:
-  {Pot.dens(Cell.water()) + 20n == Pot.dens(Cell.sand()) : Nat}
+  {Nat.add(Pot.dens(Cell.water()), 20n) == Pot.dens(Cell.sand()) : Nat}
 
 law fall_decreases:
   for L: Nat
   for D: Nat
   for G: Nat
-  {(Pot.phi(D + (1n + G), L) + Pot.phi_up(D, L)) + (1n + G) == Pot.phi_up(D + (1n + G), L) + Pot.phi(D, L) : Nat}
+  {Nat.add(Nat.add(Pot.phi(Nat.add(D, Nat.add(1n, G)), L), Pot.phi_up(D, L)), Nat.add(1n, G)) == Nat.add(Pot.phi_up(Nat.add(D, Nat.add(1n, G)), L), Pot.phi(D, L)) : Nat}
 
 law crumble_decreases:
   for d: Nat
   for G: Nat
   for L: Nat
-  {Pot.phi(d, L) + Pot.phi(1n + G, L) == Pot.phi(d + (1n + G), L) : Nat}
+  {Nat.add(Pot.phi(d, L), Pot.phi(Nat.add(1n, G), L)) == Pot.phi(Nat.add(d, Nat.add(1n, G)), L) : Nat}
 
 law budget_exhausts:
   for m: Nat
@@ -207,7 +207,7 @@ law point_write_lowers:
   for +v: Nat
   for +g: Nat
   for +r: +List<Nat>
-  {Nat.add(Settle.suml(Settle.app(l, Settle.app([v], r))), g) == Settle.suml(Settle.app(l, Settle.app([v + g], r))) : Nat}
+  {Nat.add(Settle.suml(Settle.app(l, Settle.app([v], r))), g) == Settle.suml(Settle.app(l, Settle.app([Nat.add(v, g)], r))) : Nat}
 
 law array_support_write_preserves_phi:
   for +t: Refine.PT

@@ -64,10 +64,10 @@ def Laws.sand_sinks_in_water():
   {==}
 
 def Laws.fall_decreases(L, D, G):
-  Pot.fall_decreases(D, 1n + G, L)
+  Pot.fall_decreases(D, Nat.add(1n, G), L)
 
 def Laws.crumble_decreases(d, G, L):
-  Pot.crumble_decreases(d, 1n + G, L)
+  Pot.crumble_decreases(d, Nat.add(1n, G), L)
 
 def Laws.budget_exhausts(m):
   Pot.spend_exhausts(m)

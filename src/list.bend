@@ -3,7 +3,7 @@
 # All six are by induction on the list; none is reflexivity.
 #
 # Imported from BendHub 0x085d89db9ee8a21865e959816bb20e5b/list.bend (the
-# `&2, Nat` shape is that package's; it checks verbatim in Bend 2.0.5). Kept
+# `&2, Nat` shape is that package's; it checks verbatim in Bend 2.0.17). Kept
 # here rather than re-derived because `bend_lemmas` indexes this directory:
 # `src/settle.bend`'s `app` is `List.append(&2, Nat, ...)`, so every lemma
 # below applies to `app` without a bridge.

@@ -2897,6 +2897,8 @@ in A.72): the active transient is ≈ 15 % faster. Settled tick is unchanged
 
 ### A.76 — `V0-4b-3b` scoping: two maintained-work-set designs, two toolchain blockers
 
+> **Superseded by A.80** — the `List.sort` / `Array.to_list` blockers below are fixed in Bend 2.0.17.
+
 **Status:** documentation/scoping only (the two code attempts were reverted; the
 tree is at A.75). Gate green (70 laws), fast 26/26, sim 17/17, canaries 6 ok.
 `PLAN.md` §5.2/§8 updated. No engine, law, or test change.
@@ -3134,4 +3136,58 @@ architecture is right; one costing a mirror means it is not.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.` (77 laws).
 - `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 20/20 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
+
+### A.80 — toolchain: Bend 2.0.5 → 2.0.17 (operator annotations, index-sugar workaround)
+
+**Status:** toolchain upgrade + docs. `~/.bend` moved to Bend 2.0.17 (the 2.0.5
+self-updating launcher refuses the new tarball layout, so the announced installer
+`curl -fsSL https://bend-lang.com/install.sh | sh` was used; the pre-upgrade tree
+is backed up at `~/.bend.bak-2.0.5-20260919`). Two compiled breaking changes were
+adapted and one 2.0.17 compiler bug worked around; two former toolchain blockers
+are confirmed fixed. No engine, law, or test *meaning* changed — the engine edits
+are operator annotations and an explicit-sugar rewrite. Gate green (77 laws),
+fast 26/26, sim 20/20 (rebuilt), canaries 6 ok.
+
+**Breaking change 1 — bare operators demand annotation.** In 2.0.5 a bare
+`a + b` (and `- * / %`, and the `< <= > >=` family) defaulted to `Nat`; 2.0.16
+made that an error ("a type for this operator… Until 2.0.16 a bare operator meant
+Nat. That was a bug"). The bundled guide still documents the old default, so it is
+stale. Adapted by writing the named form in propositions and proofs — `Nat.add` /
+`Nat.mul` / `Nat.sub` — already the dominant style in `src/` and free of nested
+`(… : Nat)` parens. Touched: `LAWS.bend` (5 laws), `PROOF.bend` (2),
+`src/nat.bend` (17), `src/potential.bend` (3), `src/settle.bend` (2),
+`src/writepot.bend` (6), `test/tests.bend` (1). Law statements are unchanged in
+meaning (annotation only), consistent with the `LAWS.bend` append-only rule.
+`&&`, `++`, and the `U32` operators are unaffected.
+
+**Breaking change 2 / compiler bug — `../`-relative index sugar.** The
+`a[i] <- v` and `a[i]` sugar routes the index through
+`parse_term_ns(p, ix, Ref("U32"))`, which treats *any* index head whose resolved
+name starts with `.` as an operator-namespace reference and prepends the element
+type. A `../`-relative import leaves the leading dot in the def's name, so
+`import ../src/grid.bend` + `w[Grid.index(…)]` became the nonexistent
+`U32../src/grid.index` ("expected : a defined name"); a `./src/...` import is
+unaffected. The only affected file was `test/simtests.bend` (the only
+`../`-importing file that indexes with `Grid.index`). Adapted by calling
+`Array.set(U32, w, i, v)` explicitly — the fallback the 2.0.17 guide itself gives
+— for the 34 sites: 29 rebinding, and 5 function-final statement writes, which now
+return the written array instead of rebinding. Reads were unaffected (they use
+`Grid.value_at`).
+
+**Former blockers now clear.** `Array.to_list` inlines and checks (2.0.5 reported
+`expected a defined name, observed Array.to_list.go`), and `List.sort` compiles and
+sorts correctly (2.0.5 referenced an undefined `List.sort.go`). That removes both
+A.76 toolchain blockers. `--checkup` still exists and the no-hex-literal rule still
+holds, so those §0 facts are unchanged. The `Array.to_list` / `Grid.to_list_go`
+workaround is now unneeded but was left in place (behaviour-identical); retiring it
+is optional.
+
+**Docs.** `PLAN.md` §0 retitled to Bend 2.0.17 with a new "2.0.17 breaking changes
+and toolchain bugs" block; `src/list.bend`'s version note bumped; A.76 got a
+superseded-by pointer for its blocker claim.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (77 laws).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` native -> 20/20 PASS.
 - `bend_canary` -> 6 ok, 0 bad.

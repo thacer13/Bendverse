@@ -26,10 +26,10 @@ def phi(d: Nat, L: Nat) -> Nat:
 def phi_up(+d: Nat, L: Nat) -> Nat:
   Nat.add(Nat.mul(d, L), d)
 
-def phi_up_eq(+d: Nat, +L: Nat) -> {phi_up(d, L) == Nat.mul(d, 1n + L) : Nat}:
-  Equal.sym(Nat, Nat.mul(d, 1n + L), phi_up(d, L), NatL.n_mul_succ_right(d, L))
+def phi_up_eq(+d: Nat, +L: Nat) -> {phi_up(d, L) == Nat.mul(d, Nat.add(1n, L)) : Nat}:
+  Equal.sym(Nat, Nat.mul(d, Nat.add(1n, L)), phi_up(d, L), NatL.n_mul_succ_right(d, L))
 
-def rotate2(+D: Nat, +G: Nat, +Y: Nat) -> {(Y + D) + G == (D + G) + Y : Nat}:
+def rotate2(+D: Nat, +G: Nat, +Y: Nat) -> {Nat.add(Nat.add(Y, D), G) == Nat.add(Nat.add(D, G), Y) : Nat}:
   Equal.trans(Nat,
     Nat.add(Nat.add(Y, D), G),
     Nat.add(Nat.add(D, Y), G),

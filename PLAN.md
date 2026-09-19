@@ -30,7 +30,29 @@ the loop: `bend_gate`, `bend_test`, `bend_run`, `bend_api`, `bend_lemmas`,
 
 ## 0. Verified platform facts (do not re-derive)
 
-Bend 2.0.5. Learned the hard way; re-checking these costs more than reading them.
+Bend 2.0.17 (upgraded from 2.0.5 in A.80). Learned the hard way; re-checking
+these costs more than reading them.
+
+**2.0.17 breaking changes and toolchain bugs (A.80).**
+- **Bare operators require a type annotation.** `a + b` (also `- * / %`, and
+  the `< <= > >=` family) no longer defaults to `Nat`: the checker reports
+  "a type for this operator". The bundled guide still says bare operators
+  belong to `Nat`; the compiler note is authoritative ("Until 2.0.16 a bare
+  operator meant Nat. That was a bug"). Project convention: write the named
+  form — `Nat.add`, `Nat.mul`, `Nat.sub` — in propositions and proofs, and
+  reserve `(a + b : T)` for expressions that want the namespace annotation.
+  `&&`, `++`, and the `U32` operators are unaffected.
+- **The `a[i] <- v` / `a[i]` sugar mangles a `../`-relative index head.**
+  `parse_term_ns` treats any index head starting with `.` as an
+  operator-namespace reference and prepends the element type, so `Grid.index`
+  reached through `import ../src/grid.bend` becomes the nonexistent
+  `U32../src/grid.index` ("expected : a defined name"); a `./src/...` import is
+  unaffected. Workaround (used by `test/simtests.bend`): call
+  `Array.set(T, a, i, v)` explicitly instead of the sugar. Closes when the
+  compiler keys this on a single leading dot.
+- **Fixed since 2.0.5:** `Array.to_list` inlines correctly, and `List.sort`
+  compiles and runs (2.0.5 referenced an undefined `List.sort.go`), clearing
+  both A.76 toolchain blockers. Hex literals (`0x…`) are still rejected.
 
 **Language and termination.**
 - Bend is pure and affine. Copyable values need `+` (Data kind); arrays and IO

@@ -113,14 +113,14 @@ def incs(xs: +List<Nat>) -> +List<Nat>:
     case Nil{}:
       Nil{}
     case h <> t:
-      1n + h <> incs(t)
+      Nat.add(1n, h) <> incs(t)
 
 def len(xs: +List<Nat>) -> Nat:
   match xs:
     case Nil{}:
       0n
     case h <> t:
-      1n + len(t)
+      Nat.add(1n, len(t))
 
 def reorder_counts(+h: Nat, +lt: Nat, +st: Nat) -> {Nat.add(Nat.add(1n, h), Nat.add(lt, st)) == Nat.add(Nat.add(1n, lt), Nat.add(h, st)) : Nat}:
   +t1 = Nat.add(1n, Nat.add(h, Nat.add(lt, st)))

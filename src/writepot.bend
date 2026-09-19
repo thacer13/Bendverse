@@ -41,11 +41,11 @@ def shl_n_zero(k: Nat)
       {==}
     case 1n+p:
       Equal.trans(Word(32n),
-        Bits.shl_n(32n, Word.zero(32n), 1n + p),
+        Bits.shl_n(32n, Word.zero(32n), Nat.add(1n, p)),
         Word.zero(32n),
         Word.zero(32n),
         Equal.trans(Word(32n),
-          Bits.shl_n(32n, Word.zero(32n), 1n + p),
+          Bits.shl_n(32n, Word.zero(32n), Nat.add(1n, p)),
           Word.shl(32n, Bits.shl_n(32n, Word.zero(32n), p)),
           Word.zero(32n),
           {==},
@@ -286,14 +286,14 @@ def pot_crush_guarded(+w: U32, +i: U32)
 # This is the "composition of replace_decreases" building block: the list-level
 # theorem in V2b-i (`list_set_sum`) instantiated at an arbitrary segment split.
 def point_write_lowers(+l: +List<Nat>, +v: Nat, +g: Nat, +r: +List<Nat>)
-  -> {Nat.add(S.suml(S.app(l, S.app([v], r))), g) == S.suml(S.app(l, S.app([v + g], r))) : Nat}:
+  -> {Nat.add(S.suml(S.app(l, S.app([v], r))), g) == S.suml(S.app(l, S.app([Nat.add(v, g)], r))) : Nat}:
   +h = Equal.trans(Nat,
     Nat.add(S.suml([v]), g),
     Nat.add(v, g),
-    S.suml([v + g]),
+    S.suml([Nat.add(v, g)]),
     Equal.cong(Nat, Nat, x => Nat.add(x, g), S.suml([v]), v, S.suml1(v)),
-    Equal.sym(Nat, S.suml([v + g]), Nat.add(v, g), S.suml1(Nat.add(v, g))))
-  S.replace_decreases(l, r, [v + g], [v], g, h)
+    Equal.sym(Nat, S.suml([Nat.add(v, g)]), Nat.add(v, g), S.suml1(Nat.add(v, g))))
+  S.replace_decreases(l, r, [Nat.add(v, g)], [v], g, h)
 
 # Active-bit writes: set (wake) and clear (deactivate) touch bit 11 only.
 # 2048 == shln(1, 11) and ~2048 == not(2048) are definitional.

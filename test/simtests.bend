@@ -208,12 +208,12 @@ def t23() -> U32:
   # target ends as SAND (2) -- the ordered cascade that re-read the just-written
   # cell is gone.
   w0 = Sim.build()
-  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
-  w2 = w1[Grid.index(6, 40, 4)] <- Cell.encode(Cell.rubble(), 0, 1, 0, 0)
-  w3 = w2[Grid.index(5, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
-  w4 = w3[Grid.index(3, 40, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
-  w5 = w4[Grid.index(4, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
-  w6 = w5[Grid.index(6, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w1 = Array.set(U32, w0, Grid.index(4, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(6, 40, 4), Cell.encode(Cell.rubble(), 0, 1, 0, 0))
+  w3 = Array.set(U32, w2, Grid.index(5, 39, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w4 = Array.set(U32, w3, Grid.index(3, 40, 4), Cell.encode(Cell.rock(), 48, 0, 31, 0))
+  w5 = Array.set(U32, w4, Grid.index(4, 39, 4), Cell.encode(Cell.rock(), 48, 0, 31, 0))
+  w6 = Array.set(U32, w5, Grid.index(6, 39, 4), Cell.encode(Cell.rock(), 48, 0, 31, 0))
   w7 = Sim.phase(w6, 0)
   is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(5, 39, 4))), Cell.sand()))
 
@@ -224,12 +224,12 @@ def t24() -> U32:
   # this phase's evaluated set: it does not fall and (6,39,4) stays EMPTY (0).
   # Intra-phase activation is gone; the wake is applied at tick end (T33).
   w0 = Sim.build()
-  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
-  w2 = w1[Grid.index(6, 40, 4)] <- Cell.encode(Cell.sand(), 0, 0, 0, 0)
-  w3 = w2[Grid.index(5, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
-  w4 = w3[Grid.index(6, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
-  w5 = w4[Grid.index(3, 40, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
-  w6 = w5[Grid.index(4, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w1 = Array.set(U32, w0, Grid.index(4, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(6, 40, 4), Cell.encode(Cell.sand(), 0, 0, 0, 0))
+  w3 = Array.set(U32, w2, Grid.index(5, 39, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w4 = Array.set(U32, w3, Grid.index(6, 39, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w5 = Array.set(U32, w4, Grid.index(3, 40, 4), Cell.encode(Cell.rock(), 48, 0, 31, 0))
+  w6 = Array.set(U32, w5, Grid.index(4, 39, 4), Cell.encode(Cell.rock(), 48, 0, 31, 0))
   w7 = Sim.phase(w6, 0)
   is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(6, 39, 4))), Cell.empty()))
 
@@ -246,7 +246,7 @@ def clear_column(fuel: Nat, +y: U32, world: Array<U32>) -> Array<U32>:
 # the diagonal cells are bedrock too, so it settles at y=1.
 def t26() -> U32:
   w0 = clear_column(U32.to_nat(62), 1, Sim.build())
-  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w1 = Array.set(U32, w0, Grid.index(4, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
   w2 = settle(U32.to_nat(50), w1)
   landed = U32.is_eq(Cell.material(Grid.value_at(w2, Grid.index(4, 1, 4))), Cell.sand())
   is_bad(landed)
@@ -257,8 +257,8 @@ def t27() -> U32:
   # Floor open: sand at (4,0,4), (4,63,4) cleared. Without the guard the drop
   # target `below` wraps to (4,63,4) and the grain escapes to the top face.
   w0 = Sim.build()
-  w1 = w0[Grid.index(4, 0, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
-  w2 = w1[Grid.index(4, 63, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
+  w1 = Array.set(U32, w0, Grid.index(4, 0, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(4, 63, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
   w3 = Sim.phase(w2, 0)
   is_bad(U32.is_eq(Cell.material(Grid.value_at(w3, Grid.index(4, 0, 4))), Cell.sand()))
 
@@ -266,13 +266,13 @@ def t28() -> U32:
   # West wall open, down and every in-box diagonal blocked: the only candidate is
   # the wrap to (63,39,4). Without the guard the grain slides across the box.
   w0 = Sim.build()
-  w1 = w0[Grid.index(0, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
-  w2 = w1[Grid.index(0, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
-  w3 = w2[Grid.index(63, 40, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
-  w4 = w3[Grid.index(63, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
-  w5 = w4[Grid.index(1, 40, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
-  w6 = w5[Grid.index(0, 40, 3)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
-  w7 = w6[Grid.index(0, 40, 5)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w1 = Array.set(U32, w0, Grid.index(0, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(0, 39, 4), Cell.encode(Cell.rock(), 48, 0, 31, 0))
+  w3 = Array.set(U32, w2, Grid.index(63, 40, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w4 = Array.set(U32, w3, Grid.index(63, 39, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w5 = Array.set(U32, w4, Grid.index(1, 40, 4), Cell.encode(Cell.rock(), 48, 0, 31, 0))
+  w6 = Array.set(U32, w5, Grid.index(0, 40, 3), Cell.encode(Cell.rock(), 48, 0, 31, 0))
+  w7 = Array.set(U32, w6, Grid.index(0, 40, 5), Cell.encode(Cell.rock(), 48, 0, 31, 0))
   w8 = Sim.phase(w7, 0)
   is_bad(U32.is_eq(Cell.material(Grid.value_at(w8, Grid.index(0, 40, 4))), Cell.sand()))
 
@@ -284,10 +284,10 @@ def t28() -> U32:
 # with B active at tick start (control) phase 3 evaluates it and it falls.
 def t33_mk(+bact: U32) -> Array<U32>:
   w0 = Sim.build()
-  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
-  w2 = w1[Grid.index(4, 39, 4)] <- 0
-  w3 = w2[Grid.index(5, 39, 4)] <- Cell.encode(Cell.sand(), 0, bact, 0, 0)
-  w3[Grid.index(5, 38, 4)] <- 0
+  w1 = Array.set(U32, w0, Grid.index(4, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(4, 39, 4), 0)
+  w3 = Array.set(U32, w2, Grid.index(5, 39, 4), Cell.encode(Cell.sand(), 0, bact, 0, 0))
+  Array.set(U32, w3, Grid.index(5, 38, 4), 0)
 
 def t33_stayed() -> Bool:
   w = Sim.tick(t33_mk(0))
@@ -310,7 +310,7 @@ def t33() -> U32:
 # re-evaluated the mover and it fell two cells in one tick.)
 def t34_world() -> Array<U32>:
   w0 = clear_column(U32.to_nat(62), 1, Sim.build())
-  w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  Array.set(U32, w0, Grid.index(4, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
 
 def t34_one_drop() -> Bool:
   w = Sim.tick(t34_world())
@@ -328,8 +328,8 @@ def t34() -> U32:
 # moves in phase 3 but is untouched by phase 0.
 def t35_world() -> Array<U32>:
   w0 = Sim.build()
-  w1 = w0[Grid.index(5, 39, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
-  w1[Grid.index(5, 38, 4)] <- 0
+  w1 = Array.set(U32, w0, Grid.index(5, 39, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  Array.set(U32, w1, Grid.index(5, 38, 4), 0)
 
 def t35_color3() -> Bool:
   w = Sim.phase(t35_world(), 3)
@@ -348,10 +348,10 @@ def t35() -> U32:
 # tick's phases (it stays put), and is active afterwards (so it falls next tick).
 def t36_world() -> Array<U32>:
   w0 = Sim.build()
-  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.rock(), 48, 1, 31, 0)
-  w2 = w1[Grid.index(4, 39, 4)] <- 0
-  w3 = w2[Grid.index(5, 40, 4)] <- Cell.encode(Cell.sand(), 0, 0, 0, 0)
-  w3[Grid.index(5, 39, 4)] <- 0
+  w1 = Array.set(U32, w0, Grid.index(4, 40, 4), Cell.encode(Cell.rock(), 48, 1, 31, 0))
+  w2 = Array.set(U32, w1, Grid.index(4, 39, 4), 0)
+  w3 = Array.set(U32, w2, Grid.index(5, 40, 4), Cell.encode(Cell.sand(), 0, 0, 0, 0))
+  Array.set(U32, w3, Grid.index(5, 39, 4), 0)
 
 def t36_crushed() -> Bool:
   w = Sim.tick(t36_world())
@@ -373,7 +373,7 @@ def t36() -> U32:
 # rows the deferred wake reaches, or the grain freezes after the first move.
 def t37_world() -> Array<U32>:
   w0 = clear_column(U32.to_nat(62), 1, Sim.build())
-  w0[Grid.index(4, 16, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  Array.set(U32, w0, Grid.index(4, 16, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
 
 def t37() -> U32:
   w = Sim.ticks(U32.to_nat(2), t37_world())

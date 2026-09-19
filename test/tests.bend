@@ -246,7 +246,7 @@ def set_split_go(fuel: Nat, +n: Nat, bad: U32) -> U32:
     case 0n:
       bad
     case 1n+p:
-      set_split_go(p, 1n + n, set_split_case(n, bad))
+      set_split_go(p, Nat.add(1n, n), set_split_case(n, bad))
 
 def sample_xs2() -> +List<Nat>:
   [1n, 2n, 3n]
