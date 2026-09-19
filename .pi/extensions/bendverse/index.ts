@@ -88,8 +88,19 @@ export default function bendverse(pi: ExtensionAPI) {
 		signal: AbortSignal | undefined,
 		timeout = DEFAULT_TIMEOUT,
 	): Promise<ExecResult> {
-		const r = await pi.exec("bend", args, { cwd, signal, timeout });
-		return { code: r.code ?? 0, out: clean([r.stdout, r.stderr]), killed: r.killed };
+		// Run through GNU `timeout` so a hung compile kills its whole process
+		// group. The `bend` launcher spawns `bun` as a child (no `exec`), so
+		// killing the launcher alone orphans `bun` at 100% CPU. `timeout`
+		// signals the group, and `--kill-after` SIGKILLs anything stubborn.
+		// `BEND_NO_TELEMETRY=1` stops the launcher's background telemetry /
+		// self-update subshell. pi.exec's own timeout is a longer backstop.
+		const secs = Math.max(1, Math.ceil(timeout / 1000));
+		const r = await pi.exec(
+			"env",
+			["BEND_NO_TELEMETRY=1", "timeout", "--kill-after=5", String(secs), "bend", ...args],
+			{ cwd, signal, timeout: timeout + 15_000 },
+		);
+		return { code: r.code ?? 0, out: clean([r.stdout, r.stderr]), killed: r.killed || r.code === 124 };
 	}
 
 	async function execBin(
@@ -116,10 +127,15 @@ export default function bendverse(pi: ExtensionAPI) {
 		async execute(_id, _params, signal, _onUpdate, ctx) {
 			return withBendLock(async () => {
 				const t0 = Date.now();
-				const r = await execBend(["PROOF.bend"], ctx.cwd, signal, 120_000);
+				const r = await execBend(["PROOF.bend"], ctx.cwd, signal, 90_000);
 				const secs = ((Date.now() - t0) / 1000).toFixed(1);
 				if (r.code === 0 && /All terms check\./.test(r.out)) {
 					return text(`✅ gate green — All terms check. (${secs}s)`);
+				}
+				if (r.code === 124 || r.killed) {
+					throw new Error(
+						`gate RED — bend timed out after ${secs}s (exit ${r.code}). A normal gate is ~4s, so this is almost certainly a checker expansion. See PLAN §7 guardrails / HISTORY A.41–A.42.\n\n${r.out}`,
+					);
 				}
 				throw new Error(`gate RED (exit ${r.code}) after ${secs}s\n\n${r.out}`);
 			});
@@ -506,7 +522,7 @@ export default function bendverse(pi: ExtensionAPI) {
 				const file = join(ctx.cwd, ".bendverse-goal.bend");
 				await writeFile(file, src, "utf8");
 				try {
-					const r = await execBend([basename(file)], ctx.cwd, signal, 120_000);
+					const r = await execBend([basename(file)], ctx.cwd, signal, 60_000);
 					return text(r.out || "(bend produced no output)");
 				} finally {
 					await unlink(file).catch(() => undefined);
@@ -534,7 +550,7 @@ export default function bendverse(pi: ExtensionAPI) {
 				const file = join(ctx.cwd, ".bendverse-spike.bend");
 				await writeFile(file, params.code, "utf8");
 				try {
-					const r = await execBend([basename(file)], ctx.cwd, signal, 120_000);
+					const r = await execBend([basename(file)], ctx.cwd, signal, 60_000);
 					let body = r.out || "(bend produced no output)";
 					if (params.tail) body = tailLines(body, params.tail).text;
 					return text(`$ bend .bendverse-spike.bend — exit ${r.code}\n\n${body}`);
@@ -559,7 +575,7 @@ export default function bendverse(pi: ExtensionAPI) {
 		async execute(_id, _params, signal, _onUpdate, ctx) {
 			return withBendLock(async () => {
 				const [gate, lawsText, proofText, planText] = await Promise.all([
-					execBend(["PROOF.bend"], ctx.cwd, signal, 120_000),
+					execBend(["PROOF.bend"], ctx.cwd, signal, 90_000),
 					readFile(join(ctx.cwd, "LAWS.bend"), "utf8").catch(() => ""),
 					readFile(join(ctx.cwd, "PROOF.bend"), "utf8").catch(() => ""),
 					readFile(join(ctx.cwd, "PLAN.md"), "utf8").catch(() => ""),

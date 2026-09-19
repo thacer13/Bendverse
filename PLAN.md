@@ -534,6 +534,17 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   State the lemma over the abstract-fuel function (`wake_z_m_preserves`) and
   instantiate the concrete fuel only *inside* a proof, where the equality is a
   single definitional unfold.
+- **Beware reducible terms nested in a proposition (A.42).** A type that embeds a
+  write like `swap_m(t, n, i, set_support(…))` inside `pack`→`to_pots`→`suml`
+  makes the checker unfold `set_support`/`Cell.encode` into a large bit term,
+  twice, and it can run for minutes. Prefer to keep such values as *parameters*
+  (opaque, stuck) rather than inlined; mirror opaque `U32` selectors with a
+  datatype (`SupSel`) so `match` reduces structurally.
+- **Timeouts kill the whole process group.** The upstream `bend` launcher spawns
+  `bun` as a child (no `exec`), so killing the launcher orphans `bun` at 100 % CPU.
+  The pi tools run `env BEND_NO_TELEMETRY=1 timeout --kill-after=5 <secs> bend …`
+  (A.43); if a compile ever takes more than ~4× the usual time, stop and bisect
+  the touched file with `head -n` rather than letting the gate run.
 
 ---
 

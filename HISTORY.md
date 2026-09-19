@@ -1276,3 +1276,36 @@ inside a type". Candidate mitigations, neither yet tried:
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (53 laws); fast 22/22; sim 8/8.
 - Probe files removed (`.bendverse-*` is gitignored); no stray compiler processes.
+
+### A.43 — Tooling: hangs now die cleanly (no more orphaned 100%-CPU compiles)
+
+**Status:** `.pi/extensions/bendverse/index.ts` only; gate green (53 laws); no
+engine or proof change. Tooling hardening after the A.41–A.42 hangs.
+
+**Root cause.** The `bend` launcher ends with `"$BUN" …/bend2/main.ts "$@"` — no
+`exec` — so `bun` is a *child* of the launcher shell. `pi.exec`'s timeout killed
+only the launcher, orphaning `bun` (reparented, 100 % CPU). A leaked
+`bend_spike` compile ran ~15 min; the hung `PROOF.bend` run ~12 min.
+
+**Fix.** `execBend` now runs
+`env BEND_NO_TELEMETRY=1 timeout --kill-after=5 <secs> bend …`. GNU `timeout`
+signals the whole child process group (verified against a synthetic
+launcher-that-spawns-a-child), so `bun` dies with the launcher; `--kill-after`
+SIGKILLs stragglers. `pi.exec`'s timeout is now only a longer backstop.
+Telemetry is off (no background curl / self-update subshell). Gate timeout
+120→90 s, spike/goal probes 120→60 s; a green gate is ~4 s, so a cliff fails fast
+with an explicit "checker expansion" message instead of frying the CPU.
+
+**New guardrails (PLAN §7).** (1) no concrete-fuel loop application in a
+proposition (A.41); (2) avoid reducible terms nested inside a proposition — keep
+write values as opaque parameters, and mirror opaque `U32` selectors with a
+datatype (A.42); (3) if a compile exceeds ~4× the usual time, stop and bisect the
+touched file with `head -n` instead of letting the gate run.
+
+**Verification**
+- extension transpiles (`bun build … --external '*'`);
+- `bend PROOF.bend` → `All terms check.` (53 laws); no stray `bend2/main.ts`.
+
+**Note.** This session cannot exercise the new code path (the extension is loaded
+at startup); it takes effect on the next pi session. The `timeout` fix was
+validated standalone against a synthetic hang.
