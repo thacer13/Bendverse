@@ -4,15 +4,16 @@ AI milestone log: one entry per landed step, newest last. This file
 was `PLAN.md`'s Appendix A until the v2 rewrite; `PLAN.md` is now the normative
 plan and this file is the record of how the implementation got there.
 
-Entry **bodies are immutable** — never rewrite what an entry claimed. To correct
-or supersede one, append a new entry *and* add a one-line pointer at the top of
-the old entry:
+Entry **bodies are immutable** — never rewrite what an entry claimed. When a later
+entry **corrects** an earlier claim ("that is wrong"), the earlier one gets a
+one-line pointer at its top:
 
-> **Superseded by A.n** — what changed, in one line
+> **Superseded by A.n** — the claim or line that is wrong
 
-That pointer is annotation, not a rewrite: provenance stays intact and a reader who
-lands on the old entry is not misled. (`LAWS.bend` is stricter — a law's meaning is
-never changed at all; a correction is a new law.)
+That pointer is annotation, not a rewrite. Otherwise entries are **snapshots**: a
+`Status`, law count, or "remains gated" line describes that moment, not today —
+current state is `PLAN.md` §5 (landed/open) and §5.3 (gaps). `LAWS.bend` is
+stricter still — a law's meaning is never changed; a correction is a new law.
 
 The quote below preserves the original transition note; its "never rewrite in
 place" rule now means *immutable bodies*, with the pointer above allowed.
@@ -870,6 +871,11 @@ stays open for it (and for rule 7 support).
 
 ### A.32 — V4 balance: the point-write count balance (the swap primitive)
 
+> **Partly superseded by A.34/A.35** — the "Interpretation (scope)" note below
+> ("not yet a theorem", "needs U32 subtraction injectivity", "`G6` therefore
+> stays open for the composition") is obsolete: the composition landed in A.34 and
+> A.35 retracts the injectivity claim. The balance primitive above stands.
+
 **Status:** the conservation count *balance* landed; **1 new law** (47 total).
 Engine untouched; gate green; fast (22/22) and simulation (8/8) suites pass.
 
@@ -911,6 +917,11 @@ support); the balance primitive is landed and reusable.
 - Native `bend app/simtests.bend -o bin && ./bin` → 8/8.
 
 ### A.33 — V4 correction: the movement composition's obstacle (recorded, not landed)
+
+> **Superseded by A.34/A.35** — the composition landed (A.34); A.35 retracts the
+> "validity invariant / subtraction injectivity" claim *and* the
+> "decision-parameterized double swap" framing. The obstacle description below is
+> of historical interest only.
 
 **Status:** no code change; a correction to A.32's "remaining" note. Gate green;
 suites unchanged. Appended per the downgrade protocol (never rewrite an entry).
@@ -1419,3 +1430,21 @@ meaning is never changed, a correction is a new law.
 **Demonstration.** A.42 now carries `Superseded by A.45`; A.45 is the correction.
 Provenance is intact, and a reader who lands on A.42 is no longer misled.
 
+
+### A.47 — Corrections only: pointers on the wrong entries, none on snapshots
+
+**Status:** docs only (`HISTORY.md`); gate green (53 laws); no code.
+
+Applying the A.46 policy, but keeping it to *corrections*. Two more entries were
+corrected by later ones and now carry a `Superseded by` pointer: A.32 (its
+"read-after-write needs validity / subtraction injectivity" was retracted by A.35)
+and A.33 (same, per A.35). A.42 already points at A.45.
+
+Deliberately **not** annotated: entries that are merely snapshots — A.9, A.10,
+A.21, A.22, A.28, A.36, A.37 and the "in progress / partial" headings. Their status
+and "remains gated" lines were true when written; the preamble says as much, and
+`PLAN.md` §5/§5.3 is the current state. A pointer means a claim is *wrong*, not
+that time moved on.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (53 laws).
