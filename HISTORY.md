@@ -1497,6 +1497,11 @@ theorem and `G10` closes.
 
 ### A.49 — G10 prep: the `deactivate` and `set_fall0` array Φ primitives
 
+> **Superseded by A.51** — the "movement swap … same technique as
+> `array_mov_swap_preserves_count`" claim below is wrong: count is
+> position-blind, so it preserves; Φ depends on the leaf's y-coordinate, so the
+> movement is a *decrease*.
+
 **Status:** `src/tick.bend` only, no new law; gate green (54 laws); fast 22/22.
 Two `Rules.step` write primitives now have array-level Φ theorems, so the
 remaining mirror work is only the movement telescope.
@@ -1553,3 +1558,38 @@ shell (`bend test/…`), and the new paths take effect next session.
 - `bend PROOF.bend` → `All terms check.` (54 laws); `bend test/tests.bend` 22/22;
   `bend test/simtests.bend -o bin && ./bin` 8/8; `bend runners/ascii.bend` runs;
   extension transpiles (`bun build … --external '*'`).
+
+### A.51 — Correction to A.49: the `Rules.step` movement is a Φ *decrease*, not a preserve
+
+**Status:** analysis only, no code; gate green (54 laws). Corrects A.49's
+"Remaining" paragraph, which proposed mirroring the movement with the count
+technique.
+
+**Why count and Φ differ.** `array_mov_swap_preserves_count` holds because
+`nempty` depends only on the material, so a swap of two cells' values is
+position-blind. Φ is not: `pot_at(w, x) = dens(material(w)) * iy(x)` carries the
+leaf's **y-coordinate**. Moving `w` from `i` down to `j = below(i)` (or
+`diag_index(i, k)`) and `gv` from `j` up to `i` changes Φ by
+`(dens(w) − dens(gv)) · (iy(i) − iy(j))`, which is `≥ 0` in the fall regime
+(`gv` empty or lower-density), so Φ decreases by that drop. Two
+`array_swap_decreases` steps therefore do **not** telescope to equality — the
+residual is exactly the drop.
+
+**Witness.** A probe with sand at `y=1` (index 4096) and empty at `j=0` checks
+`after() < before()` by reflexivity: `pot(mov(sand), 0) + pot(0, 4096) <
+pot(sand, 4096) + pot(0, 0)`.
+
+**Consequence for `G10`.** The `step_m` mirror accumulates a **fall gap** in
+addition to the crush gap. The movement law is a `…_lowers_phi` with gap
+`(dens(w) − dens(gv)) · (iy(i) − iy(j))`, needing the fall condition
+(`dens(material(gv)) ≤ dens(material(w))`) to keep it a `Nat`, and the index
+relation for the drop. Note `diag_index` wraps `y` at 0, so the gap must use the
+actual indices, not a constant 1. `array_swap_decreases` still composes; only the
+final cancellation is replaced by a residual-gap argument.
+
+**Next.** `fall_gap` function + `array_mov_lowers_phi`, then `step_m`
+(sel 18/22/23 primitives already proven, A.49).
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (54 laws); witness probe checks; no code
+  changed.
