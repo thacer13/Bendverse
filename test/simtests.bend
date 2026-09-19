@@ -303,6 +303,44 @@ def t33_control() -> Bool:
 def t33() -> U32:
   is_bad(Bool.and(Bool.and(t33_stayed(), t33_woken()), t33_control()))
 
+# T34 rule-9 conformance: a move clears the mover's active bit and the deferred
+# wake re-activates it, so a grain falls at most one cell per tick. (Before the
+# V0-4b fix, `mov` kept the bit set, so the target's later colour phase
+# re-evaluated the mover and it fell two cells in one tick.)
+def t34_world() -> Array<U32>:
+  w0 = clear_column(U32.to_nat(62), 1, Sim.build())
+  w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+
+def t34_one_drop() -> Bool:
+  w = Sim.tick(t34_world())
+  U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(4, 39, 4))), Cell.sand())
+
+def t34_reactivated() -> Bool:
+  w = Sim.tick(t34_world())
+  U32.is_ne(Cell.active(Grid.value_at(w, Grid.index(4, 39, 4))), 0)
+
+def t34() -> U32:
+  is_bad(Bool.and(t34_one_drop(), t34_reactivated()))
+
+# T35 V0-4b conformance: the phase fold is driven by the active-cell work list,
+# so it processes exactly the phase's colour. A grain of colour 3 at (5,39,4)
+# moves in phase 3 but is untouched by phase 0.
+def t35_world() -> Array<U32>:
+  w0 = Sim.build()
+  w1 = w0[Grid.index(5, 39, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w1[Grid.index(5, 38, 4)] <- 0
+
+def t35_color3() -> Bool:
+  w = Sim.phase(t35_world(), 3)
+  U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(5, 38, 4))), Cell.sand())
+
+def t35_color0() -> Bool:
+  w = Sim.phase(t35_world(), 0)
+  U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(5, 39, 4))), Cell.sand())
+
+def t35() -> U32:
+  is_bad(Bool.and(t35_color3(), t35_color0()))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -319,3 +357,5 @@ def main() -> IO(Unit):
     report("T27 floor painted away: no wrap at y=0", t27())
     report("T28 wall painted away: no wrap at x=0", t28())
     report("T33 wake is pending until tick end (G12)", t33())
+    report("T34 one move per tick (rule 9)", t34())
+    report("T35 work-list phase acts on its colour only", t35())

@@ -2718,3 +2718,69 @@ are untouched.
 - `bend test/simtests.bend` native -> 14/14 PASS (T33 added; T23/T24/T26–T28
   unaffected).
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.72 — V0-4b-1: one move per tick, and the work-list phase fold
+
+**Status:** engine semantics + structural refactor. Gate green (70 laws; no law
+changed — two proof terms updated). Touches `src/rules.bend`, `src/sim.bend`,
+`src/writepot.bend`, `src/count.bend`, `test/simtests.bend` (T34/T35). Closes
+`G17`; `V0-4b-2` (maintain the work set) is next. `PLAN.md` §4.1/§5.1/§5.2/§5.3
+and `coreidea.md` updated.
+
+**Why.** `V0-4b` needs the tick's *evaluated set* to be exact, so that a work
+list derived before the phases is complete. Probing the engine turned up a
+second in-tick activation path that `V0-4a` had not touched: `Rules.mov` (and the
+slide write `WSet{nd, w}`) kept the mover's **active bit**, so after a grain
+dropped from a colour-`c` cell into the `dy = -1` neighbour (a different colour)
+a *later* phase re-evaluated it and it fell again — **two cells in one tick**.
+That is a rule-9 violation (a write's activity should land next tick) and it
+makes any pre-phase work list unsound. The impact path already clears active
+(`Ops.set_fall0`) and relies on the deferred wake, so drop/slide were simply
+inconsistent with it.
+
+**What changed.**
+- `src/rules.bend`: `mov` writes active `0` (was `Cell.active(w)`); the slide
+  case 32 writes `Cell.deactivate(w)`. The move already emits `WWake{nb}` (and
+  the slide `WWake{nd}`), which `V0-4a` applies at tick end, so the mover is
+  re-activated next tick. A grain now falls exactly one cell per tick.
+- `src/rules.bend`: `plan` is driven by `todo: List<&2, U32>` — the active cells
+  of the phase — instead of the colour sub-lattice. `c` was only ever used for
+  the advance (`color_last`/`next_color`); the per-cell decisions never read it,
+  and V0-1 makes a phase order-independent, so any `todo` order gives the same
+  write set. The terminal selector advances to the next `todo` entry or stops.
+  `phase_plan_w(world, todo)` is the entry.
+- `src/sim.bend`: `active_list` collects the active cells after the support pass,
+  `filter_color` selects a phase's colour, and `phases` folds the eight colours
+  over the shared list (reused via `+todo`); wakes are still threaded and applied
+  once at tick end. `Sim.phase` uses the same path.
+- `src/writepot.bend`/`src/count.bend`: `pot_mov`/`nempty_mov` unfold `mov`'s
+  material projection; the `mat_encode` argument is now `0` for active (material
+  is unchanged, so both laws still hold). No law's statement changed.
+- `test/simtests.bend`: **T34** (one move per tick, and the mover is active
+  again) and **T35** (the work-list phase acts on its colour only).
+
+**Retirement (A.72).** With the phase fold off the colour sub-lattice, `Grid`'s
+M9 helpers (`color_base`/`color_at`/`color_last`/`color_s`/`next_color`) and the
+fast-suite witness T25 became dead — the engine no longer scans a colour's
+32768-cell sub-lattice. They were removed (not kept as a stale mirror);
+`Rules.color_of` stays live (`Sim.filter_color` uses it). The M9 note in PLAN
+§5.2 records the retirement.
+
+**Measured (honest).** Native 64³ `build+pull+30 ticks` is **unchanged** (~40 ms
+vs the A.59 ~36 ms): the phase sub-lattice scans are gone, but `any_active`,
+`Support.pass` and the new `active_list` still scan the whole world, so the
+replacement is net-neutral. `C3` is therefore **not** closed by this entry — the
+phase half is done and the evaluated set is exact, but cost is not yet
+disturbance-proportional. That is `V0-4b-2`.
+
+**Not done (deliberately).** No maintained work list across ticks; no support
+work list; `Support.sup` case 6 still wakes within the pass (`G16`); `sup_m` is
+untouched (it mirrors `Support.sup`, which `V0-4b-2` will replace).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 26/26 PASS (T25 retired with the sublattice).
+- `bend test/simtests.bend` native -> 16/16 PASS (T34/T35 added; the goldens
+  T1–T9/T18/T20 and T23–T28/T33 still pass, which is the equivalence witness for
+  the work-list fold).
+- `bend_canary` -> 6 ok, 0 bad.

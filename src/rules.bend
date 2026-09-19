@@ -34,9 +34,15 @@ def diag_index(i: U32, k: U32) -> U32:
     case _:
       i
 
+# A movement write: the mover's material/support, `fall` advanced, and the active
+# bit **cleared**. Rule 9 says a write marks the target active for the *next*
+# tick; the move already emits `WWake{nb}` (deferred by V0-4a), which re-activates
+# it at tick end. Keeping the bit set here would let a later colour phase
+# re-evaluate the mover in the same tick (a per-tick fall speed > 1). The impact
+# path (`Ops.set_fall0`) already clears active and relies on the same wake.
 def mov(+w: U32) -> U32:
   nf = U32.min(U32.add(Cell.fall(w), 1), 63)
-  Cell.encode(Cell.material(w), Cell.cohesion(w), Cell.active(w), Cell.support(w), nf)
+  Cell.encode(Cell.material(w), Cell.cohesion(w), 0, Cell.support(w), nf)
 
 # ============================================================================
 # V0-1 — purity of phases (`C1`/`R1`/`R3`/`R9`)
@@ -165,20 +171,28 @@ def dmg_of(+w: U32, +b: U32) -> Bool:
 #   sel 8..13  diagonal search over the four horizontal-below directions
 #   sel 21..23 impact: crush rock or clear fall
 #   sel 30..32 contention resolve: read the opposite claimant, then move or forfeit
-#   sel 14..16 end of cell / next cell of the colour
+#   sel 14     end of cell: advance to the next `todo` index, or stop
+#
+# V0-4b: the scan domain is the work list `todo` (the active cells of this phase)
+# instead of the colour sub-lattice. `c` was only ever used for the advance
+# (`color_last`/`next_color`); the per-cell decisions never read it, and V0-1
+# makes a phase's result independent of evaluation order, so any order of `todo`
+# gives the same write set. The evaluated set is exact because a move now clears
+# the mover's active bit and wake is deferred (V0-4a), so the active set only
+# shrinks within a tick.
 def plan(
   fuel: Nat,
   gp: Array<U32> & U32,
   +sel: U32,
   +i: U32,
-  +c: U32,
   +w: U32,
   +k: Dir4,
   +b: U32,
   +d: U32,
   +ic: U32,
   sets: List<Write>,
-  wakes: List<Write>
+  wakes: List<Write>,
+  todo: List<&2, U32>
 ) -> Array<U32> & List<Write> & List<Write>:
   match fuel:
     case 0n:
@@ -191,51 +205,51 @@ def plan(
           match sel:
             case 0:
               +ab = U32.is_ne(Cell.active(gv), 0)
-              plan(p, (world, gv), Bool.pick(U32, ab, 1, 2), i, c, gv, k, b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, ab, 1, 2), i, gv, k, b, d, ic, sets, wakes, todo)
             case 1:
               +m = Cell.material(w)
               +skip = Bool.or(Bool.or(U32.is_eq(m, 0), Cell.static(m)), U32.is_ne(Cell.cohesion(w), 0))
-              plan(p, (world, gv), Bool.pick(U32, skip, 4, 5), i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, skip, 4, 5), i, w, k, b, d, ic, sets, wakes, todo)
             case 2:
-              plan(p, (world, gv), 14, i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, (world, gv), 14, i, w, k, b, d, ic, sets, wakes, todo)
             case 4:
-              plan(p, (world, gv), 14, i, c, w, k, b, d, ic,
-                WSet{i, Cell.deactivate(w)} <> sets, wakes)
+              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+                WSet{i, Cell.deactivate(w)} <> sets, wakes, todo)
             case 5:
               q = Array.get(U32, world, Grid.below(i))
-              plan(p, q, 6, i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, q, 6, i, w, k, b, d, ic, sets, wakes, todo)
             case 6:
               +can = Bool.and(can_enter(w, gv), Grid.step_inside(i, 0, 4294967295, 0))
-              plan(p, (world, gv), Bool.pick(U32, can, 7, 8), i, c, w, k, gv, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, can, 7, 8), i, w, k, gv, d, ic, sets, wakes, todo)
             case 7:
               +nb = Grid.below(i)
-              plan(p, (world, gv), 14, i, c, w, k, b, d, ic,
+              plan(p, (world, gv), 14, i, w, k, b, d, ic,
                 WSet{nb, mov(w)} <> (WSet{i, gv} <> sets),
-                WWake{nb} <> (WWake{i} <> wakes))
+                WWake{nb} <> (WWake{i} <> wakes), todo)
             case 8:
               +sl = Cell.slides(Cell.material(w))
-              plan(p, (world, gv), Bool.pick(U32, sl, 9, 21), i, c, w, K0{}, b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, sl, 9, 21), i, w, K0{}, b, d, ic, sets, wakes, todo)
             case 9:
               q = Array.get(U32, world, side4(i, k))
-              plan(p, q, 10, i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, q, 10, i, w, k, b, d, ic, sets, wakes, todo)
             case 10:
               +ce = can_enter(w, gv)
-              plan(p, (world, gv), Bool.pick(U32, ce, 11, 12), i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, ce, 11, 12), i, w, k, b, d, ic, sets, wakes, todo)
             case 11:
               q = Array.get(U32, world, diag4(i, k))
-              plan(p, q, 13, i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, q, 13, i, w, k, b, d, ic, sets, wakes, todo)
             case 12:
               +fin = dir_last(k)
-              plan(p, (world, gv), Bool.pick(U32, fin, 21, 9), i, c, w, dir_next(k), b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, fin, 21, 9), i, w, dir_next(k), b, d, ic, sets, wakes, todo)
             case 13:
               +ce2 = Bool.and(can_enter(w, gv), Grid.step_inside(i, dir_dx(k), 4294967295, dir_dz(k)))
-              plan(p, (world, gv), Bool.pick(U32, ce2, 30, 12), i, c, w, k, b, gv, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, ce2, 30, 12), i, w, k, b, gv, ic, sets, wakes, todo)
             case 30:
               +dx = dir_dx(k)
               +dz = dir_dz(k)
               +ic0 = Grid.neighbor(i, U32.add(dx, dx), 0, U32.add(dz, dz))
               q = Array.get(U32, world, ic0)
-              plan(p, q, 31, i, c, w, k, b, d, ic0, sets, wakes)
+              plan(p, q, 31, i, w, k, b, d, ic0, sets, wakes, todo)
             case 31:
               # The opposite claimant only counts if it is inside the box: a
               # wrapped neighbour cannot reach the shared target (boundary moves
@@ -244,32 +258,30 @@ def plan(
               +two_dz = U32.add(dir_dz(k), dir_dz(k))
               +lose = Bool.and(Grid.step_inside(i, two_dx, 0, two_dz),
                         Bool.and(capable(gv), U32.is_lt(ic, i)))
-              plan(p, (world, gv), Bool.pick(U32, lose, 21, 32), i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, lose, 21, 32), i, w, k, b, d, ic, sets, wakes, todo)
             case 32:
               +nd = diag4(i, k)
-              plan(p, (world, gv), 14, i, c, w, k, b, d, ic,
-                WSet{nd, w} <> (WSet{i, d} <> sets),
-                WWake{nd} <> (WWake{i} <> wakes))
+              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+                WSet{nd, Cell.deactivate(w)} <> (WSet{i, d} <> sets),
+                WWake{nd} <> (WWake{i} <> wakes), todo)
             case 21:
               +dmg = Bool.and(dmg_of(w, b), Grid.step_inside(i, 0, 4294967295, 0))
-              plan(p, (world, gv), Bool.pick(U32, dmg, 22, 23), i, c, w, k, b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, dmg, 22, 23), i, w, k, b, d, ic, sets, wakes, todo)
             case 22:
               +nb = Grid.below(i)
-              plan(p, (world, gv), 14, i, c, w, k, b, d, ic,
+              plan(p, (world, gv), 14, i, w, k, b, d, ic,
                 WSet{nb, Ops.crush_if_rock(b)} <> (WSet{i, Ops.set_fall0(w)} <> sets),
-                WWake{nb} <> (WWake{i} <> wakes))
+                WWake{nb} <> (WWake{i} <> wakes), todo)
             case 23:
-              plan(p, (world, gv), 14, i, c, w, k, b, d, ic,
-                WSet{i, Ops.set_fall0(w)} <> sets, wakes)
+              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+                WSet{i, Ops.set_fall0(w)} <> sets, wakes, todo)
             case 14:
-              +last = U32.is_eq(i, Grid.color_last(c))
-              plan(p, (world, gv), Bool.pick(U32, last, 15, 16), i, c, w, k, b, d, ic, sets, wakes)
-            case 15:
-              (world, sets, wakes)
-            case 16:
-              +ni = Grid.next_color(i, c)
-              q = Array.get(U32, world, ni)
-              plan(p, q, 0, ni, c, 0, K0{}, 0, 0, 0, sets, wakes)
+              match todo:
+                case Nil{}:
+                  (world, sets, wakes)
+                case Con{+h, t}:
+                  q = Array.get(U32, world, h)
+                  plan(p, q, 0, h, 0, K0{}, 0, 0, 0, sets, wakes, t)
             case _:
               (world, sets, wakes)
 
@@ -307,7 +319,13 @@ def phase_pending(r: Array<U32> & List<Write> & List<Write>) -> Array<U32> & Lis
 # pending. The tick threads the returned wake lists through all eight phases and
 # applies them once at the end, so a later phase of the same tick cannot evaluate
 # a cell an earlier phase woke (the `G12` deviation).
-def phase_plan(world: Array<U32>, +c: U32) -> Array<U32> & List<Write>:
-  +i0 = Grid.color_base(c)
-  q = Array.get(U32, world, i0)
-  phase_pending(plan(U32.to_nat(16777216), q, 0, i0, c, 0, K0{}, 0, 0, 0, Nil{}, Nil{}))
+#
+# V0-4b: the phase runs over its work list `todo` (the active cells of the phase
+# colour, in any order) instead of the colour sub-lattice.
+def phase_plan_w(world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<Write>:
+  match todo:
+    case Nil{}:
+      (world, Nil{})
+    case Con{+h, t}:
+      q = Array.get(U32, world, h)
+      phase_pending(plan(U32.to_nat(16777216), q, 0, h, 0, K0{}, 0, 0, 0, Nil{}, Nil{}, t))

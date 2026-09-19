@@ -52,7 +52,7 @@ def nempty_mov(+w: U32) -> {nempty(Rules.mov(w)) == nempty(w) : Nat}:
       Cell.material(Rules.mov(w)),
       U32.and(Cell.material(w), 31),
       Cell.material(w),
-      W.mat_encode(Cell.material(w), Cell.cohesion(w), Cell.active(w), Cell.support(w), nf),
+      W.mat_encode(Cell.material(w), Cell.cohesion(w), 0, Cell.support(w), nf),
       W.and31_absorb(w)))
 
 def nempty_wake(+w: U32) -> {nempty(U32.or(w, 2048)) == nempty(w) : Nat}:

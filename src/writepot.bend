@@ -219,7 +219,7 @@ def pot_mov(+w: U32, +i: U32)
       Cell.material(Rules.mov(w)),
       U32.and(Cell.material(w), 31),
       Cell.material(w),
-      mat_encode(Cell.material(w), Cell.cohesion(w), Cell.active(w), Cell.support(w), nf),
+      mat_encode(Cell.material(w), Cell.cohesion(w), 0, Cell.support(w), nf),
       and31_absorb(w)))
 
 def pot_crush_rock(+w: U32, +i: U32, +h: {Cell.material(w) == 3 : U32})

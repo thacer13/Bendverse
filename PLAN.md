@@ -369,7 +369,7 @@ mul-wrap spikes; T6 gen determinism; T7 terrain structure; T8 build = gen over
 all cells; T10 parity/neighbor-x; T11 low6 add + ∓1 cancel; T12 dir φ
 cancellation; T13 neighbor index cancellation; T14 scan-order totality; T15
 `List.set` split + sum; T16 chunk key/local roundtrip + gen; T17 chunk store
-set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4); T22 movement Φ witness (the `Rules.step` movement drops Φ by `(dens(w) − dens(gv))·(iy(i) − iy(j))` for empty and lighter targets, and `mov` preserves pot at the target); T25 phase color sub-lattice; T29 `Rules.Dir4` == the `U32` direction table; T30 the direction-parity classification; T31 point writes at `Commit.ne_idx`-distinct leaves commute, and `ne_idx` is sharp (V3c-1).
+set/get/overwrite; T18 store assemble = worldgen; T19 write→Φ bridge (support/active writes preserve pot, rock crumble lowers it, non-rock crush is the identity — `G9`); T20 chunk sleeping/eviction (empty store regenerates worldgen, all-gen store evicts to worldgen, one-resident eviction preserves the world, predicates); T21 conservation witness (non-empty indicator preserved by every material-preserving write; rock crush 3→4); T22 movement Φ witness (the `Rules.step` movement drops Φ by `(dens(w) − dens(gv))·(iy(i) − iy(j))` for empty and lighter targets, and `mov` preserves pot at the target); T29 `Rules.Dir4` == the `U32` direction table; T30 the direction-parity classification; T31 point writes at `Commit.ne_idx`-distinct leaves commute, and `ne_idx` is sharp (V3c-1).
 
 Simulation, native-recommended (`test/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
@@ -457,9 +457,9 @@ This table is what would have caught T23/T24 on the day they landed.
 
 | Ref | Target | Status | Open deviation / evidence |
 |---|---|---|---|
-| `C1` | Purity of phases | conforming | `Rules.plan`/`phase_plan` (V0-1, A.63): the phase reads only the pre-phase array and applies its write set afterwards, so no part reads a value another part produced. T23/T24 re-witnessed as conformance |
+| `C1` | Purity of phases | conforming | `Rules.plan`/`phase_plan_w` (V0-1, A.63): the phase reads only the pre-phase array and applies its write set afterwards, so no part reads a value another part produced. T23/T24 re-witnessed as conformance |
 | `C2` | Closure (box, no wrap) | conforming | `V0-2` (A.64): every rule target is guarded by `Grid.step_inside`, so a boundary step is inert rather than wrapping; T27/T28 witness it with the shell painted away. `Grid.neighbor` still wraps, but no rule follows a wrapped step. (`Ops.wake` still marks wrapped neighbours — `G15` — which moves no material) |
-| `C3` | Cost tracks disturbance | deviating | `Sim.any_active` and `Support.pass` scan all 262144 cells every tick; `src/store.bend`'s chunks are not wired into the tick. `V0-4a` (A.71) landed the wake semantics the disturbance bound needs (a tick's evaluates set is fixed at tick start) |
+| `C3` | Cost tracks disturbance | deviating | `Sim.any_active` and `Support.pass` still scan all 262144 cells every tick, and `V0-4b-1` builds the work list with a third full scan, so the measured tick is unchanged at 64³. What landed is the phase half: the eight phase folds now run over the active-cell work list (`Rules.plan`/`phase_plan_w`) instead of the colour sub-lattice, and the evaluated set is now exact (moves clear active, wake is deferred). Closing `C3` needs the work list *maintained* across ticks and `Support` driven from it (`V0-4b-2`) |
 | `R1` | Pre-phase reads only, bounded radius | conforming | `Rules.plan` never writes the array it reads (V0-1, A.63); every read is of the pre-phase state |
 | `R2` | Conservation: swap/transform only | conforming | count laws closed (`V4`); write sites enumerated (`G10` closed) |
 | `R3` | At most one writer per cell per phase | conforming | contention is resolved from the pre-phase state: of the two opposite-axis diagonal claimants of one target, the smaller index owns it (V0-1, A.63; T23). Drop/crush targets are injective within a colour |
@@ -468,7 +468,7 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R6` | Cohesion rigidity is local | deviating | `Ops.shell_adjacent` (renamed from `adjacent_static`, A.62) seeds support from **coordinates**, not the neighbourhood: it hardcodes the 64³ shell (literals `1`/`62`) and never reads an adjacent cell |
 | `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* is the separate `C3` deviation |
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
-| `R9` | Activity effects land next tick | conforming (phase wake) | `V0-4a` (A.71): a phase's wakes are accumulated across all eight phases and applied once at tick end, so no phase evaluates a cell an earlier phase of the same tick woke; T33 witnesses it (woken cell inert this tick, active after; a cell active at tick start falls in the same tick). Residual: `Support.sup` case 6 still wakes within the support pass (`G16`) |
+| `R9` | Activity effects land next tick | conforming | `V0-4a` (A.71) defers each phase's wakes to tick end (T33); `V0-4b-1` (A.72) made a move **clear** the mover's active bit so the mover is not re-evaluated by a later colour phase in the same tick (T34) — before this a grain fell two cells per tick. Residual: `Support.sup` case 6 still wakes within the support pass (`G16`) |
 | `R10` | Determinism under any schedule | conforming | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The composition step now has a law — point writes at `ne_idx`-distinct leaves commute (`point_writes_commute`, V3c-1, A.68); the full region-split *equality* (the list/region fold, and `ne_idx`'s refinement to `U32.is_eq`) is still `V3c`/`G3` |
 | `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
 | `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
@@ -480,9 +480,11 @@ direction half — a closed direction datatype and an injective per-batch target
 map — and `V0-3b` (A.66) closed the colour half — `color_of` bit extraction and
 the classification that a same-colour collision forces equal displacement
 parities, leaving only the opposite-diagonal class to the rule-3 tie-break.
-`R9` is *conforming for phase wake*: `V0-4a` (A.71) accumulates each phase's
-pending wakes and applies them once at tick end (`G12` closed; T33). The
-support pass's own crush-wake is the remaining same-tick instance (`G16`).
+`R9` is *conforming*: `V0-4a` (A.71) accumulates each phase's pending wakes
+and applies them once at tick end (`G12` closed; T33), and `V0-4b-1` (A.72)
+cleared the mover's active bit so a move cannot re-activate its own target
+mid-tick (T34). The support pass's own crush-wake is the remaining same-tick
+instance (`G16`).
 `R10`'s composition step now has an algebraic law (`point_writes_commute`,
 A.68): the phase's writes apply order-independently when their targets are
 distinct, which is what a region merge needs; the fold over a `List<Write>` and
@@ -491,7 +493,7 @@ the `ne_idx`↔`U32.is_eq` refinement are the open remainder.
 "rigidity is local" is not yet true; `V0-2`/`V0-4b` replace it with a real
 neighbour test. No row is closed by rewording a rule to match the code.
 
-**Retirement (A.63).** `Rules.step` was replaced by `Rules.plan`/`phase_plan`, so the
+**Retirement (A.63).** `Rules.step` was replaced by `Rules.plan`/`phase_plan_w`, so the
 `step_m` mirror in `src/step.bend` (law `step_mirror_balance`) no longer mirrors
 the engine. It is **retired**: still a true theorem about the old selector
 machine, no longer evidence for the engine. Per §3.4 it is kept, not deleted, and
@@ -568,13 +570,14 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `—` | pi tooling: proof loop, lemma index, audit | A.24–A.25 |
 | `G9`/`G10` | engine write-site enumeration complete: `Rules.step` mirrored on `PT` (`step_m`, pair invariant, all-fuel `step_preserves`, law `step_mirror_balance`), joining the `Support.sup` mirror; closes `G10`/`G2`'s last residual | A.48, A.56 |
 | `V3c-0` | engine-level write-target separation, partial: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`) — the `Rules`-level form of V3a | A.58 |
-| `M9` | CPU perf pass: cell-resolution render, settled-world tick fixpoint, color-restricted phase scan (active tick ≈ 21→4.5 ms, settled ≈ 0.09 ms), T25 | A.59 |
+| `M9` | CPU perf pass: cell-resolution render, settled-world tick fixpoint, color-restricted phase scan (active tick ≈ 21→4.5 ms, settled ≈ 0.09 ms), T25 — the colour-sublattice scan was **retired by `V0-4b-1` (A.72)** in favour of the active-cell work list | A.59 |
 | `—` | BendHub reuse: `src/list.bend` (the `List` lemmas Base does not ship) and count-fold completeness (`cells_m`, `cnts_m_len`, `to_counts_len`) | A.60 |
-| `V0-1` | phase purity: `Rules.plan`/`phase_plan` replace `Rules.step` — a read-only intent fold (`plan`) that decides from the pre-phase state, resolves contention by a local tie-break, and accumulates `sets`/`wakes`, then `commit_sets`/`commit_wakes` apply it; the `step_m` mirror is retired | A.63 |
+| `V0-1` | phase purity: `Rules.plan`/`phase_plan_w` replace `Rules.step` — a read-only intent fold (`plan`) that decides from the pre-phase state, resolves contention by a local tie-break, and accumulates `sets`/`wakes`, then `commit_sets`/`commit_wakes` apply it; the `step_m` mirror is retired | A.63 |
 | `V0-2` | closure: `Grid.step_inside` guards every rule target, so a boundary step is inert and the box is a property of the grid, not the shell; T27/T28 witnesses | A.64 |
 | `V0-3a` | direction batching core: the live phase uses the closed `Rules.Dir4` direction set (a total match, so no `k ≥ 4` self-target fallback), and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective` — a translation on the torus, inverted by `neighbor_cancel`); every write target flips the phase `y` bit (`diag_write_flips_y_phase` joining `below_write_flips_y_phase`); T29 guards the refactor | A.65 |
 | `V0-3b` | colour × direction classification: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction target-parity laws (`color_target_x_par`/`_z_par`, `color_collision_x_par`/`_z_par` — a same-colour collision forces equal displacement parities), so cross-direction overlap is exactly the opposite-diagonal parity class; T30 witnesses the direction-parity table | A.66 |
-| `V0-4a` | deferred phase wake (rule 9, `G12` closed): `Rules.phase_plan` returns `(written world, pending wakes)`; `Sim.phase` is the writes-only transform, `Sim.tick_active` threads all eight phases' wakes and `Rules.commit_wakes` applies them once at tick end, so no phase evaluates a cell an earlier phase of the same tick woke. `Rules.phase` (immediate wake) removed as dead code; T33 witnesses the differential (woken cell inert this tick, active after) | A.71 |
+| `V0-4a` | deferred phase wake (rule 9, `G12` closed): `Rules.phase_plan_w` returns `(written world, pending wakes)`; `Sim.phase` is the writes-only transform, `Sim.tick_active` threads all eight phases' wakes and `Rules.commit_wakes` applies them once at tick end, so no phase evaluates a cell an earlier phase of the same tick woke. `Rules.phase` (immediate wake) removed as dead code; T33 witnesses the differential (woken cell inert this tick, active after) | A.71 |
+| `V0-4b-1` | move clears active + work-list phase fold: `Rules.mov` (and the slide write) clear the mover's active bit, so a later colour phase cannot re-evaluate it in the same tick (T34: one cell per tick; `mov_preserves_pot`/`nempty_mov` proof terms updated). `Rules.plan` is driven by `todo: List<&2, U32>` (the active cells of the phase) instead of the colour sub-lattice, `Sim.active_list`/`filter_color` build it; T35 witnesses the colour filter. The evaluated set is now exact | A.72 |
 | `V3c-1` | schedule-invariance kernel: point writes at leaves that `Commit.ne_idx` separates commute (`swap_m (swap_m t n i v) n j w = swap_m (swap_m t n j w) n i v`, law `point_writes_commute`), so a merged write set applies order-independently; `ne_idx` mirrors `swap_m`'s own walk (a split at some level, `False` at a leaf) and is exactly distinctness for in-range indices; T31 witnesses both the commutation and the predicate's sharpness. The engine no longer needs a `read/write` ordering argument (V0-1): this is the *composition* half. The list/region fold (V3c-1b) and the `ne_idx`↔`U32.is_eq` refinement remain | A.68 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
@@ -596,7 +599,7 @@ index).
 - [ ] **V0** Semantics rewrite (contracts `C1` purity, `C2` closure, `C3` cost) · next · deps: — · serves: C3
   — scoped in A.61; sub-steps land and test alone. `V0-1`/`V0-2`/`V0-3` are
   **landed**; **the critical path is `V0-4b` (`C3`)** — see `NEXT` below.
-  **V0-1 done (A.63):** `Rules.plan`/`Rules.phase_plan` replace `Rules.step`;
+  **V0-1 done (A.63):** `Rules.plan`/`Rules.phase_plan_w` replace `Rules.step`;
   `phase(state) = commit_sets(plan(state))`, `plan` reads only the pre-phase
   state and resolves contention from it; T23/T24 re-witnessed as conformance and
   T26 (a grain in an empty column settles) added. **V0-2 done (A.64):** every rule
@@ -613,21 +616,30 @@ index).
   **V0-4a done (A.71, `G12` closed):** a phase's wakes are pending — `Sim.phase`
   returns the written world, `tick_active` threads all eight phases' wake lists
   and `Rules.commit_wakes` applies them once at tick end, so a later phase never
-  evaluates a cell an earlier phase of the same tick woke. This is the
-  semantic prerequisite for the disturbance bound (the evaluates set is fixed at
-  tick start); T33 witnesses it. `Rules.phase` (immediate wake) was removed as
-  dead code.
-  **NEXT — `V0-4b` (the `C3` work set):** drive `Support` and the tick from the
-  chunk work set instead of a world scan. This is the asymptotic scaling claim
-  ("cost tracks disturbance, not world size"); the pieces exist (`M8`
-  store/sleeping, `M9` color scan), and `V0-1` + `V0-4a` make the read set local
-  and the evaluates set fixed. First close the remaining same-tick wake — the
-  support pass's crush-wake (`G16`) — then derive the work set from the active
-  chunks and prove the tick's writes stay inside the neighbourhood margin. It is
-  **independent of `V3c`** (the A.59 coupling predated `V0-1` and is void).
+  evaluates a cell an earlier phase of the same tick woke; T33 witnesses it.
+  `Rules.phase` (immediate wake) was removed as dead code.
+  **V0-4b-1 done (A.72):** a move clears the mover's active bit (`Rules.mov`,
+  slide case 32), so the mover is not re-evaluated by a later colour phase in the
+  same tick — this closed the last source of in-tick activation and made the
+  evaluated set exact (T34: one cell per tick). The eight phase folds now run
+  over an **active-cell work list** (`Sim.active_list`/`filter_color`,
+  `Rules.plan` takes `todo: List<&2, U32>` and drops the colour sub-lattice
+  advance) instead of scanning 32768 cells per colour; T35 witnesses the colour
+  filter. Measured runtime is unchanged at 64³ because the full-world scans
+  remain (see `NEXT`).
+  **NEXT — `V0-4b-2` (maintain the work set):** the phase half is done, but the
+  tick still scans the world three times (`any_active`, `Support.pass`,
+  `active_list`), so cost is not yet disturbance-proportional. Thread the work
+  list across ticks (update it from the tick's deactivations and wakes instead of
+  rebuilding it), fuse `any_active` into it, and drive `Support` from it (the
+  support fold acts only on active cells, so the work list is sound once its
+  bottom-up order is handled). That is the asymptotic `C3` step; the pieces
+  exist (`M8` store/sleeping). First close the remaining same-tick wake — the
+  support pass's crush-wake (`G16`). It is **independent of `V3c`** (the A.59
+  coupling predated `V0-1` and is void).
   `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
   **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
-  `Support.sup`, which `V0-4b` will replace (see §3.4 retirement, §4.1).
+  `Support.sup`, which `V0-4b-2` will replace (see §3.4 retirement, §4.1).
 
 #### Optional track — droppable, does not gate the frontier
 
@@ -705,7 +717,11 @@ scale track; dropping V2 costs the settling guarantee.
   `next_color`/`color_last` enumerate a phase color's 32768 cells in flat-index
   order and `Rules.step`/`Sim.phase` visit only those (the same acted-on cells,
   in the same order, so it is semantics-preserving), active tick ≈ 21 → ≈ 4.5
-  ms; `build+pull+30 ticks` 0.62 s → 0.036 s. T25 witnesses the sublattice.
+  ms; `build+pull+30 ticks` 0.62 s → 0.036 s. T25 witnessed the sublattice.
+  **Retired by `V0-4b-1` (A.72):** the phase fold now runs over the active-cell
+  work list, so the colour sub-lattice helpers (`Grid.color_base`/`color_at`/
+  `color_last`/`color_s`/`next_color`) and T25 were removed. The measured tick is
+  unchanged because the full-world scans remain (`V0-4b-2`).
   **Correction to the original win list:** the literal "skip sleeping regions in
   the scan" is *not* semantics-preserving on its own — a phase's `wake` marks
   neighbours that later phases of the same tick evaluate. `V0-4a` (A.71) closed
@@ -785,11 +801,12 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | closed | G2 G10 | closed (A.38–A.40): `Word.cmp` reflection (A.38) makes the guard provable; the engine guards both crush sites with `Ops.crush_if_rock` (A.39); `array_guarded_crush_lowers_phi` (A.40) proves the guarded write's Φ effect at every index — rock: `crush_gap`, non-rock: identity — with no `material(w) == 3` hypothesis. Runtime-witnessed by T19 |
 | `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` was by inspection, not mirrored; each write primitive's effect is proven. Subject `Rules.step` **retired by A.63**; the live `Rules.plan` enumeration is `G14` | closed | G2 G9 | **closed (A.48, A.53–A.56):** both state machines are mirrored on `PT`. `Support.sup` (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`), an abstract wake fuel, and law `sup_mirror_preserves_phi`. `Rules.step` (A.56): `src/step.bend`'s `step_m` mirrors the full selector machine (`StepSel`, abstract wake fuel) and carries a pair invariant `Φ(current) + da == Φ(start) + db`; every write composes its exact leaf balance via `pt_write_balance`, wakes fold through `sr_phi_cong`, `step_preserves` is the all-fuel theorem, and law `step_mirror_balance` closes over `step_pass_m` (the `Sim.phase` entry point). Unconditional, so no fall-regime or `can` hypothesis is needed; the earlier `G9` resolution (A.38–A.40) covers both crush sites. The selector/read threading of the mirror is by inspection (the `G5` caveat) |
 | `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | closed | G10 M8d | **closed (A.53):** a `leaf_base(t,base,n,i)` function gives the leaf index `chg_m` actually uses, so `nfst`/`nsnd(chg_m)` project onto `pot_at(tget(..), leaf_base(..))` — definitional at `PL`, where A.52's `base+i` form was false. `swap_balance` then gives one write's `new − old` at that leaf, and the two balances telescope into the unconditional cross law `array_mov_cross` (the residuals `p+q` and `r+s` are the pre/post potentials of the two leaves). `fall_gap := mov_S − mov_T` and `array_mov_lowers_phi` give the decrease under the fall-regime hypothesis `mov_T + fall_gap == mov_S`; the regime is now a single order Bool with the Nat order lemma proven (A.54: `n_add_sub_le`, law `array_mov_lowers_phi_regime`); reflecting the engine's `can` guard to it is the remaining `G10` `step_m` work |
-| `G12` | unproven | wake is applied at the end of each *phase*, not accumulated for the next tick (rule 9); a later phase of the same tick can evaluate a cell an earlier phase woke | closed | — | **closed (A.71, V0-4a):** the tick threads each phase's pending wakes and applies the accumulated list once at tick end (`Rules.phase_plan` returns `(written world, wakes)`, `Sim.tick_active`/`phases` fold the wakes and `Rules.commit_wakes` applies them). A phase's evaluates set is now fixed at tick start. T33 witnesses it: a cell woken by phase 0's drop but of a later colour stays put this tick and is active afterwards, while the control (same cell active at tick start) falls in the same tick. A.63 had fixed only the same-phase case (T24). Residual: `Support.sup` case 6 wakes within the support pass — recorded as `G16` |
+| `G12` | unproven | wake is applied at the end of each *phase*, not accumulated for the next tick (rule 9); a later phase of the same tick can evaluate a cell an earlier phase woke | closed | — | **closed (A.71, V0-4a):** the tick threads each phase's pending wakes and applies the accumulated list once at tick end (`Rules.phase_plan_w` returns `(written world, wakes)`, `Sim.tick_active`/`phases` fold the wakes and `Rules.commit_wakes` applies them). T33 witnesses it: a cell woken by phase 0's drop but of a later colour stays put this tick and is active afterwards, while the control (same cell active at tick start) falls in the same tick. A.63 had fixed only the same-phase case (T24). The evaluated set is exact only after `V0-4b-1` (A.72) cleared the move's active bit (T34). Residual: `Support.sup` case 6 wakes within the support pass — recorded as `G16` |
 | `G13` | accepted | V0-1's contention tie-break over-forfeits: a diagonal mover yields to an opposite-axis `capable` neighbour even when that neighbour is not actually claiming the shared target (it may drop, or slide another way) | accepted | count | V0-3b proves the collision class is exactly the opposite-diagonal parity class, so the tie-break is *sufficient* but still over-forfeits within that class (it does not recompute the neighbour's chosen target); behaviour-only, no safety consequence |
 | `G14` | unproven | V0-1's `Rules.plan` write-*site* enumeration is by inspection, not mirrored: the write primitives it emits (`mov`, `crush_if_rock`, `set_fall0`, `deactivate`, `wake`) each have proven Φ/conservation effects, but that `plan`'s write set is exactly those is not a theorem | open | G5 | mirror `plan` on `PT` (a fresh enumeration, since `step_m` mirrored the retired `Rules.step`), or prove the `plan`→write-set correspondence directly |
 | `G15` | accepted | `Ops.wake` still marks wrapped neighbours from a boundary cell (the opposite face) when the shell is painted away; no material moves, so `C2` holds, but activity leaks across the box | accepted | — | bound `Ops.wake` by `Grid.step_inside` (this touches the wake laws and the `sup_m` mirror) |
 | `G16` | unproven | the support pass still applies wake within the pass (`Support.sup` case 6 wakes after a crush), so a cell it wakes is evaluated by the same tick's phases — the rule-9 residual after `V0-4a` | open | — | defer the support wake too (accumulate it into the tick's pending-wake list), or prove the support pass's wake cannot reach a cell a later phase evaluates before the next tick |
+| `G17` | unproven | a move wrote the target with the mover's active bit set (`Rules.mov`, and the slide write of `w`), so a later colour phase re-evaluated the mover in the same tick — the evaluated set was not fixed and a grain could fall more than one cell per tick | closed | — | **closed (A.72, V0-4b-1):** `Rules.mov` and the slide write now clear the active bit (`Cell.deactivate`); the move's already-emitted `WWake` re-activates the target at tick end (V0-4a). T34 witnesses one cell per tick. `mov_preserves_pot`/`nempty_mov` proof terms updated (material is unchanged, so the laws still hold) |
 
 ### 5.4 Deferred — publishing a proven slice to BendHub
 
