@@ -1767,3 +1767,58 @@ cliff: prefixes through the mirror checked in 4 s, the cliff was found in one
 **Next.** Rebuild `src/step.bend` with `wf` from the start and the pair
 invariant, land `step_preserves`, then the `step_pass_m` top-level law
 (`Sim.phase`'s `step_m(16777216, pack-unpack world, 0, c)`), closing `G10`.
+
+### A.56 — `G10` closed: the `Rules.step` fuel-loop mirror (`step_m`) and the pair invariant
+
+**Status:** proof. Gate green (58 laws). Adds `src/step.bend` and law
+`step_mirror_balance`; closes `G10`, the last residual of `G2`, so both engine
+write-site enumerations (`Support.sup`, `Rules.step`) are machine-checked. The
+mirror's selector/read threading is by inspection (the `G5` caveat).
+
+**The pair invariant.** A move is only a Φ decrease under the fall regime, so
+`step_m` does not commit to a single gap. It returns
+`StepRes{t, da, db}` and follows the engine on the invariant
+
+    Φ(current) + da == Φ(start) + db
+
+Every write composes its **exact** leaf balance `(old pot, new pot)` through
+`sr_add_phi`; a wake (`wake_z_m`) preserves Φ and is folded by `sr_phi_cong`.
+The identity is unconditional — the engine's `can`/fall-regime is never
+re-derived — which is what A.55 sized up and left to land.
+
+**What landed.**
+- `StepSel` (numeric selector -> constructor, the `G5` refinement by inspection,
+  as with `Tick.SupSel`) and `step_m(fuel, t, gv, sel, i, c, w, k, wf, n, base)`:
+  the whole `Rules.step` selector machine mirrored on `PT`, including both
+  movement sites (sel 6 `mov(w)` at `below(i)`, sel 12 plain `w` at `diag_index`),
+  the guarded crush (sel 22), `set_fall0` (sel 23), deactivate (sel 18), and the
+  wakes. The wake fuel is threaded as an abstract `Nat` (`wf`); `3` is
+  instantiated only in `step_pass_m` (A.55 cliff 1).
+- `wr_old`/`wr_new` and `pt_write_balance`: one write's exact balance at the
+  array (`to_pots`) presentation, `Refine.swap_balance` transported across
+  `to_pots(pack(swap_m ..)) == pots_m(swap_m ..)`.
+- `sr_add`/`sr_add_phi`: the one-write composition (pure Nat shuffling),
+  `sr_phi_cong`: retargeting an inner invariant across an equal-Φ wake.
+- `step_preserves`: the all-fuel theorem, selector by selector.
+- `step_pass_m` + law `step_mirror_balance`: the `Sim.phase` entry point
+  (`step_m(fuel, pack-unpack world, 0, c)`, wake fuel `3`).
+
+**Two things that kept the proof small.**
+1. *Exact balances, not named gaps.* Using `wr_old`/`wr_new` at every write
+   avoids threading a `material(w) == material(tget(t,i))` invariant: at the
+   movement sites the source value `w` is the **pre-deactivation** value carried
+   from sel 18, so it differs from the current (deactivated) leaf in the active
+   bit. The balance `(old pot, new pot)` is exact regardless, and the folded
+   `da`/`db` equal `mov_S`/`mov_T` only when that material equality holds (which
+   it does in the engine, by construction).
+2. *Nested `sr_add`, not one combined gap.* Composing the two writes/wakes of a
+   movement as nested `sr_add_phi` steps (with `sr_phi_cong` across the wakes)
+   reuses the single generic Nat lemma instead of a bespoke telescope per site.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (58 laws).
+- `bend test/tests.bend` → 23/23 PASS.
+
+**Next.** `V3c` (schedule invariance), then `M7d`. `G10` closing is the
+per-claim refinement `G5` asked for at the write-site level; the remaining
+`G5` instance is the selector/read threading of the mirrors, by inspection.

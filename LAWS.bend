@@ -14,6 +14,7 @@ import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
 import ./src/count.bend as Count
 import ./src/fall.bend as Fall
+import ./src/step.bend as Step
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -348,3 +349,10 @@ law array_mov_lowers_phi_regime:
   for +j: U32
   for +hge: {Nat.is_ge(Fall.mov_S(t, base, n, i, j), Fall.mov_T(t, base, n, i, j)) == True{} : Bool}
   {Nat.add(Settle.suml(Settle.to_pots(Fall.mov_array(t, n, i, j), base, n)), Fall.fall_gap(t, base, n, i, j)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+law step_mirror_balance:
+  for fuel: Nat
+  for +t: Refine.PT
+  for +n: U32
+  for +c: U32
+  {Step.step_phi(Step.step_pass_m(fuel, t, n, c), 0, n) == Nat.add(Settle.suml(Settle.to_pots(Refine.pack(t), 0, n)), Step.step_db(Step.step_pass_m(fuel, t, n, c))) : Nat}

@@ -16,6 +16,7 @@ import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
 import ./src/count.bend as Count
 import ./src/fall.bend as Fall
+import ./src/step.bend as Step
 import ./src/word.bend as WR
 
 def Laws.sanity():
@@ -198,3 +199,6 @@ def Laws.array_mov_lowers_phi(t, base, n, i, j, hg):
 
 def Laws.array_mov_lowers_phi_regime(t, base, n, i, j, hge):
   Fall.array_mov_lowers_phi_regime(t, base, n, i, j, hge)
+
+def Laws.step_mirror_balance(fuel, t, n, c):
+  Step.step_preserves(fuel, t, Tick.tget(t, n, 0), Step.E0{}, 0, c, 0, 0, U32.to_nat(3), n, 0)
