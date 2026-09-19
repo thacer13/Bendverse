@@ -84,17 +84,60 @@ type Write is Data:
   WSet{idx: U32, val: U32}
   WWake{idx: U32}
 
-def dir_dx(+k: U32) -> U32:
+# V0-3: the four slide directions are a *closed set*, not a `U32` loop index.
+# The retired `side_index`/`diag_index` (kept below for the frozen `step_m`
+# mirror) take a `U32 k` and end with `case _: i`, so a `k` outside `{0,1,2,3}`
+# silently becomes a self-target (PLAN §4.2 landmine). The live phase uses
+# `Dir4`, where every direction is a constructor and every match is total, so
+# the silent default does not exist in the engine that runs.
+#
+# A `Dir4` is exactly a displacement `(dir_dx, -1, dir_dz)`: the `-1` is the
+# move's `y` component (slide-and-fall), so a direction batch is the translation
+# `i |-> Grid.neighbor(i, dir_dx(k), 4294967295, dir_dz(k))`. `batch.bend` proves
+# that translation injective, which is rule 4's "distinct targets".
+type Dir4 is Data:
+  K0{}
+  K1{}
+  K2{}
+  K3{}
+
+def dir_dx(+k: Dir4) -> U32:
   match k:
-    case 0: 4294967295
-    case 1: 1
+    case K0{}: 4294967295
+    case K1{}: 1
     case _: 0
 
-def dir_dz(+k: U32) -> U32:
+def dir_dz(+k: Dir4) -> U32:
   match k:
-    case 2: 4294967295
-    case 3: 1
+    case K2{}: 4294967295
+    case K3{}: 1
     case _: 0
+
+def side4(i: U32, +k: Dir4) -> U32:
+  match k:
+    case K0{}: Grid.neighbor(i, 4294967295, 0, 0)
+    case K1{}: Grid.neighbor(i, 1, 0, 0)
+    case K2{}: Grid.neighbor(i, 0, 0, 4294967295)
+    case K3{}: Grid.neighbor(i, 0, 0, 1)
+
+def diag4(i: U32, +k: Dir4) -> U32:
+  match k:
+    case K0{}: Grid.neighbor(i, 4294967295, 4294967295, 0)
+    case K1{}: Grid.neighbor(i, 1, 4294967295, 0)
+    case K2{}: Grid.neighbor(i, 0, 4294967295, 4294967295)
+    case K3{}: Grid.neighbor(i, 0, 4294967295, 1)
+
+def dir_last(+k: Dir4) -> Bool:
+  match k:
+    case K3{}: True{}
+    case _: False{}
+
+def dir_next(+k: Dir4) -> Dir4:
+  match k:
+    case K0{}: K1{}
+    case K1{}: K2{}
+    case K2{}: K3{}
+    case K3{}: K0{}
 
 # Would `w` enter a cell holding `t`? (empty, or strictly lighter than `w`.)
 def can_enter(+w: U32, +t: U32) -> Bool:
@@ -130,7 +173,7 @@ def plan(
   +i: U32,
   +c: U32,
   +w: U32,
-  +k: U32,
+  +k: Dir4,
   +b: U32,
   +d: U32,
   +ic: U32,
@@ -171,20 +214,19 @@ def plan(
                 WWake{nb} <> (WWake{i} <> wakes))
             case 8:
               +sl = Cell.slides(Cell.material(w))
-              plan(p, (world, gv), Bool.pick(U32, sl, 9, 21), i, c, w, 0, b, d, ic, sets, wakes)
+              plan(p, (world, gv), Bool.pick(U32, sl, 9, 21), i, c, w, K0{}, b, d, ic, sets, wakes)
             case 9:
-              q = Array.get(U32, world, side_index(i, k))
+              q = Array.get(U32, world, side4(i, k))
               plan(p, q, 10, i, c, w, k, b, d, ic, sets, wakes)
             case 10:
               +ce = can_enter(w, gv)
               plan(p, (world, gv), Bool.pick(U32, ce, 11, 12), i, c, w, k, b, d, ic, sets, wakes)
             case 11:
-              q = Array.get(U32, world, diag_index(i, k))
+              q = Array.get(U32, world, diag4(i, k))
               plan(p, q, 13, i, c, w, k, b, d, ic, sets, wakes)
             case 12:
-              +nk = U32.add(k, 1)
-              +fin = U32.is_eq(nk, 4)
-              plan(p, (world, gv), Bool.pick(U32, fin, 21, 9), i, c, w, nk, b, d, ic, sets, wakes)
+              +fin = dir_last(k)
+              plan(p, (world, gv), Bool.pick(U32, fin, 21, 9), i, c, w, dir_next(k), b, d, ic, sets, wakes)
             case 13:
               +ce2 = Bool.and(can_enter(w, gv), Grid.step_inside(i, dir_dx(k), 4294967295, dir_dz(k)))
               plan(p, (world, gv), Bool.pick(U32, ce2, 30, 12), i, c, w, k, b, gv, ic, sets, wakes)
@@ -204,7 +246,7 @@ def plan(
                         Bool.and(capable(gv), U32.is_lt(ic, i)))
               plan(p, (world, gv), Bool.pick(U32, lose, 21, 32), i, c, w, k, b, d, ic, sets, wakes)
             case 32:
-              +nd = diag_index(i, k)
+              +nd = diag4(i, k)
               plan(p, (world, gv), 14, i, c, w, k, b, d, ic,
                 WSet{nd, w} <> (WSet{i, d} <> sets),
                 WWake{nd} <> (WWake{i} <> wakes))
@@ -227,7 +269,7 @@ def plan(
             case 16:
               +ni = Grid.next_color(i, c)
               q = Array.get(U32, world, ni)
-              plan(p, q, 0, ni, c, 0, 0, 0, 0, 0, sets, wakes)
+              plan(p, q, 0, ni, c, 0, K0{}, 0, 0, 0, sets, wakes)
             case _:
               (world, sets, wakes)
 
@@ -264,4 +306,4 @@ def phase_commit(r: Array<U32> & List<Write> & List<Write>) -> Array<U32>:
 def phase(world: Array<U32>, +c: U32) -> Array<U32>:
   +i0 = Grid.color_base(c)
   q = Array.get(U32, world, i0)
-  phase_commit(plan(U32.to_nat(16777216), q, 0, i0, c, 0, 0, 0, 0, 0, Nil{}, Nil{}))
+  phase_commit(plan(U32.to_nat(16777216), q, 0, i0, c, 0, K0{}, 0, 0, 0, Nil{}, Nil{}))

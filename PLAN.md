@@ -462,7 +462,7 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R1` | Pre-phase reads only, bounded radius | conforming | `Rules.plan` never writes the array it reads (V0-1, A.63); every read is of the pre-phase state |
 | `R2` | Conservation: swap/transform only | conforming | count laws closed (`V4`); write sites enumerated (`G10` closed) |
 | `R3` | At most one writer per cell per phase | conforming | contention is resolved from the pre-phase state: of the two opposite-axis diagonal claimants of one target, the smaller index owns it (V0-1, A.63; T23). Drop/crush targets are injective within a colour |
-| `R4` | Colour × direction batches, injective targets | deviating (partial) | contention no longer arises (V0-1: a pre-phase tie-break, T23), but the schedule is still colour-only and the tie-break is a local check, not the batch injectivity theorem; direction batching + proof is `V0-3` (`G3`) |
+| `R4` | Colour × direction batches, injective targets | deviating (partial) | direction batches are now a closed set (`Rules.Dir4`, no `k ≥ 4` fallback) and each batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`, V0-3a, A.65); every write target flips the phase `y` bit (`below_write_flips_y_phase`, `diag_write_flips_y_phase`). Remaining: *cross-direction* disjointness (the two opposite-diagonal claimants) is still a local tie-break (V0-1/T23), and the full `color_of` bit extraction is unproven — `V0-3b` (`G3`) |
 | `R5` | Falling is universal | conforming | `fall_*` laws |
 | `R6` | Cohesion rigidity is local | deviating | `Ops.shell_adjacent` (renamed from `adjacent_static`, A.62) seeds support from **coordinates**, not the neighbourhood: it hardcodes the 64³ shell (literals `1`/`62`) and never reads an adjacent cell |
 | `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* is the separate `C3` deviation |
@@ -474,9 +474,11 @@ This table is what would have caught T23/T24 on the day they landed.
 
 `C3` is open engineering (`V0-4`). `V0-1` (A.63) closed the purity cluster
 `C1`/`R1`/`R3`/`R10`, and `V0-2` (A.64) closed `C2`: the box is now enforced in
-the grid, not by the shell. `R4` and `R9` remain *partial*: the schedule is still
-colour-only (the batch theorem is `V0-3`/`G3`) and wake is per-phase, not
-per-tick (`G12`).
+the grid, not by the shell. `R4` is *partial*: `V0-3a` (A.65) closed the
+direction half — the engine's directions are a closed datatype and each batch's
+target map is injective — but cross-direction disjointness is still the V0-1
+tie-break and the full `color_of` separation is unproven (`V0-3b`/`G3`). `R9`
+is *partial*: wake is per-phase, not per-tick (`G12`).
 `R6`/`R7` are a second, independent deviation: the support seed is positional, so
 "rigidity is local" is not yet true; `V0-2`/`V0-4` replace it with a real
 neighbour test. No row is closed by rewording a rule to match the code.
@@ -502,10 +504,13 @@ bounded/unreached:
   `Rules.plan` still has a `case _` fallback, but every selector is an internal
   literal chosen by `Bool.pick`, so it is unreachable by construction — it remains
   only as the compiler-required default for a `U32` scrutinee.
-- **Silent candidate default (open).** `side_index`/`diag_index` end with
-  `case _: i`, so a `k` outside `{0,1,2,3}` (the engine's loop bound) silently
-  becomes a self-target instead of an error. `V0-1` did not change this; `V0-3`'s
-  injectivity proof must establish the `k < 4` bound so the branch is dead.
+- **Silent candidate default (bounded for the live engine, A.65).** The retired
+  `side_index`/`diag_index` end with `case _: i`, so a `k` outside `{0,1,2,3}`
+  silently becomes a self-target instead of an error. `V0-3a` adds the closed
+  `Rules.Dir4` datatype and moves the live `Rules.plan` onto it — every match is
+  total, so the live engine's path has no silent default and no `k` loop bound to
+  establish. `side_index`/`diag_index` are frozen with the retired `step_m`
+  mirror (which still uses them); they are not on the live path.
 - **Silent material default.** `Cell.density`/`static`/`slides`/`cohesion`/
   `default_cohesion` all end with `case _`, so any material id ≥ 6 is treated as
   empty-like (density 0, non-static): a bad id is invisible and can be fallen
@@ -559,6 +564,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `—` | BendHub reuse: `src/list.bend` (the `List` lemmas Base does not ship) and count-fold completeness (`cells_m`, `cnts_m_len`, `to_counts_len`) | A.60 |
 | `V0-1` | phase purity: `Rules.plan`/`phase` replace `Rules.step` — a read-only intent fold (`plan`) that decides from the pre-phase state, resolves contention by a local tie-break, and accumulates `sets`/`wakes`, then `commit_sets`/`commit_wakes` apply it; the `step_m` mirror is retired | A.63 |
 | `V0-2` | closure: `Grid.step_inside` guards every rule target, so a boundary step is inert and the box is a property of the grid, not the shell; T27/T28 witnesses | A.64 |
+| `V0-3a` | direction batching core: the live phase uses the closed `Rules.Dir4` direction set (a total match, so no `k ≥ 4` self-target fallback), and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective` — a translation on the torus, inverted by `neighbor_cancel`); every write target flips the phase `y` bit (`diag_write_flips_y_phase` joining `below_write_flips_y_phase`); T29 guards the refactor | A.65 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -582,9 +588,13 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   resolves contention from it; T23/T24 re-witnessed as conformance and T26
   (a grain in an empty column settles) added. **V0-2 done (A.64):** every rule
   target is guarded by `Grid.step_inside`, so a boundary step is inert and the
-  box is a grid property, not the shell (T27/T28). Remaining:
-  **V0-3** batch by (colour × direction) and prove the target map injective, so
-  `resolve` is trivial and rule 4 holds by construction; **V0-4** drive `Support`
+  box is a grid property, not the shell (T27/T28). **V0-3a done (A.65):** the
+  live engine's directions are the closed `Rules.Dir4` set (no `k ≥ 4` default),
+  each direction batch's target map is proven injective, and every write target
+  flips the phase `y` bit; T29 guards the refactor. Remaining:
+  **V0-3b** the *cross-direction* half — the opposite-diagonal claimants still
+  rely on the V0-1 tie-break, and the full `color_of` bit extraction (all three
+  parity bits, `is_ne` reflection) is unproven; **V0-4** drive `Support`
   and the tick from the chunk work set instead of a world scan (`C3`).
   Acceptance: T23/T24 re-witnessed as *conformance* tests (the engine no longer
   exhibits them) plus a new witness "a grain in an empty column settles".
@@ -700,7 +710,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
-| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; V0-3 still owes the explicit (colour × direction) batching, its injectivity proof, and making `side_index`/`diag_index`'s `k < 4` bound dead |
+| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; **A.65 landed V0-3a**: the live engine's directions are the closed `Rules.Dir4` set (the `k ≥ 4` self-target default is off the live path) and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`), with every write target flipping the phase `y` bit (`diag_write_flips_y_phase`, T29). Remaining **V0-3b**: cross-direction disjointness (the two opposite-diagonal claimants) as a theorem rather than the V0-1 tie-break — it needs the full `color_of` bit extraction and `is_ne` reflection |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the remaining instance (write-site enumeration `G10`) is now closed (A.48, A.53–A.56), so what remains is the selector/read threading from `Rules.plan`/`Support.sup` to their `PT` mirrors, by inspection (`G14` is the live instance) |
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
@@ -710,7 +720,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` was by inspection, not mirrored; each write primitive's effect is proven. Subject `Rules.step` **retired by A.63**; the live `Rules.plan` enumeration is `G14` | closed | G2 G9 | **closed (A.48, A.53–A.56):** both state machines are mirrored on `PT`. `Support.sup` (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`), an abstract wake fuel, and law `sup_mirror_preserves_phi`. `Rules.step` (A.56): `src/step.bend`'s `step_m` mirrors the full selector machine (`StepSel`, abstract wake fuel) and carries a pair invariant `Φ(current) + da == Φ(start) + db`; every write composes its exact leaf balance via `pt_write_balance`, wakes fold through `sr_phi_cong`, `step_preserves` is the all-fuel theorem, and law `step_mirror_balance` closes over `step_pass_m` (the `Sim.phase` entry point). Unconditional, so no fall-regime or `can` hypothesis is needed; the earlier `G9` resolution (A.38–A.40) covers both crush sites. The selector/read threading of the mirror is by inspection (the `G5` caveat) |
 | `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | closed | G10 M8d | **closed (A.53):** a `leaf_base(t,base,n,i)` function gives the leaf index `chg_m` actually uses, so `nfst`/`nsnd(chg_m)` project onto `pot_at(tget(..), leaf_base(..))` — definitional at `PL`, where A.52's `base+i` form was false. `swap_balance` then gives one write's `new − old` at that leaf, and the two balances telescope into the unconditional cross law `array_mov_cross` (the residuals `p+q` and `r+s` are the pre/post potentials of the two leaves). `fall_gap := mov_S − mov_T` and `array_mov_lowers_phi` give the decrease under the fall-regime hypothesis `mov_T + fall_gap == mov_S`; the regime is now a single order Bool with the Nat order lemma proven (A.54: `n_add_sub_le`, law `array_mov_lowers_phi_regime`); reflecting the engine's `can` guard to it is the remaining `G10` `step_m` work |
 | `G12` | unproven | wake is applied at the end of each *phase*, not accumulated for the next tick (rule 9); a later phase of the same tick can evaluate a cell an earlier phase woke | open | — | defer wake to tick end (a pending-wake accumulator) or prove the phase-order independence of per-phase wake; A.63 fixed only the same-phase case (T24) |
-| `G13` | accepted | V0-1's contention tie-break over-forfeits: a diagonal mover yields to an opposite-axis `capable` neighbour even when that neighbour is not actually claiming the shared target (it may drop, or slide another way) | accepted | count | refine the tie-break to recompute the neighbour's chosen target once V0-3's batching makes it unnecessary; behaviour-only, no safety consequence |
+| `G13` | accepted | V0-1's contention tie-break over-forfeits: a diagonal mover yields to an opposite-axis `capable` neighbour even when that neighbour is not actually claiming the shared target (it may drop, or slide another way) | accepted | count | V0-3a's *within*-batch injectivity does not remove the tie-break — the collision is cross-direction — so refining it waits on V0-3b proving the opposite-diagonal pair disjoint, or on recomputing the neighbour's chosen target; behaviour-only, no safety consequence |
 | `G14` | unproven | V0-1's `Rules.plan` write-*site* enumeration is by inspection, not mirrored: the write primitives it emits (`mov`, `crush_if_rock`, `set_fall0`, `deactivate`, `wake`) each have proven Φ/conservation effects, but that `plan`'s write set is exactly those is not a theorem | open | G5 | mirror `plan` on `PT` (a fresh enumeration, since `step_m` mirrored the retired `Rules.step`), or prove the `plan`→write-set correspondence directly |
 | `G15` | accepted | `Ops.wake` still marks wrapped neighbours from a boundary cell (the opposite face) when the shell is painted away; no material moves, so `C2` holds, but activity leaks across the box | accepted | — | bound `Ops.wake` by `Grid.step_inside` (this touches the wake laws and the `sup_m` mirror) |
 

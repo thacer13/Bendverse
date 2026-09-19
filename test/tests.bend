@@ -547,6 +547,31 @@ def color_all(fuel: Nat, +c: U32, bad: U32) -> U32:
 def color_bad() -> U32:
   color_all(U32.to_nat(8), 0, 0)
 
+# T29 (V0-3): the live engine's closed `Rules.Dir4` direction set agrees, for all
+# four constructors, with the retired `U32` index table `diag_index`/`side_index`
+# — behaviour-preservation witness for the `k < 4` landmine fix (the silent
+# `case _: i` default no longer exists on the live path).
+def dir4_check(+i: U32, bad: U32) -> U32:
+  b0 = inc_if_false(U32.is_eq(Rules.diag4(i, Rules.K0{}), Rules.diag_index(i, 0)), bad)
+  b1 = inc_if_false(U32.is_eq(Rules.diag4(i, Rules.K1{}), Rules.diag_index(i, 1)), b0)
+  b2 = inc_if_false(U32.is_eq(Rules.diag4(i, Rules.K2{}), Rules.diag_index(i, 2)), b1)
+  b3 = inc_if_false(U32.is_eq(Rules.diag4(i, Rules.K3{}), Rules.diag_index(i, 3)), b2)
+  b4 = inc_if_false(U32.is_eq(Rules.side4(i, Rules.K0{}), Rules.side_index(i, 0)), b3)
+  b5 = inc_if_false(U32.is_eq(Rules.side4(i, Rules.K1{}), Rules.side_index(i, 1)), b4)
+  b6 = inc_if_false(U32.is_eq(Rules.side4(i, Rules.K2{}), Rules.side_index(i, 2)), b5)
+  b7 = inc_if_false(U32.is_eq(Rules.side4(i, Rules.K3{}), Rules.side_index(i, 3)), b6)
+  b7
+
+def dir4_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      dir4_go(p, U32.add(i, 1), dir4_check(i, bad))
+
+def dir4_bad() -> U32:
+  dir4_go(U32.to_nat(4096), 0, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -573,3 +598,4 @@ def main() -> IO(Unit):
     report("T21 conservation of non-Empty writes", cnt_bad())
     report("T22 movement Phi cross + fall account", mov_bad())
     report("T25 phase color sub-lattice + successor", color_bad())
+    report("T29 Dir4 == U32 direction table (all 4)", dir4_bad())

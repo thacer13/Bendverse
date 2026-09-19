@@ -361,3 +361,32 @@ law step_mirror_balance:
 law below_write_flips_y_phase:
   for i: U32
   {Parity.par32(Grid.iy(Grid.below(i))) == Bool.not(Parity.par32(Grid.iy(i))) : Bool}
+
+# V0-3 — (colour × direction) batch injectivity (rule 4).
+#
+# A direction batch fixes the displacement, so its target map is a translation
+# and `neighbor_cancel` is its inverse: equal targets force equal (torus) sources.
+# The `Dir`-value form is the general lemma; `diag_target_injective` is the
+# engine's `Rules.Dir4` slide instantiation and `below_write_flips_y_phase` /
+# `diag_write_flips_y_phase` are the colour half (a write target flips the phase
+# `y` bit).
+law batch_target_injective:
+  for i: U32
+  for j: U32
+  for +a: Priority.Dir
+  for +b: Priority.Dir
+  for +c: Priority.Dir
+  for +h: {Grid.neighbor(i, Priority.dir_val(a), Priority.dir_val(b), Priority.dir_val(c)) == Grid.neighbor(j, Priority.dir_val(a), Priority.dir_val(b), Priority.dir_val(c)) : U32}
+  {U32.and(i, 262143) == U32.and(j, 262143) : U32}
+
+law diag_target_injective:
+  for i: U32
+  for j: U32
+  for +k: Rules.Dir4
+  for +h: {Rules.diag4(i, k) == Rules.diag4(j, k) : U32}
+  {U32.and(i, 262143) == U32.and(j, 262143) : U32}
+
+law diag_write_flips_y_phase:
+  for i: U32
+  for +k: Rules.Dir4
+  {Parity.par32(Grid.iy(Rules.diag4(i, k))) == Bool.not(Parity.par32(Grid.iy(i))) : Bool}

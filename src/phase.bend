@@ -98,3 +98,15 @@ def below_y_flip(+i: U32)
   -> {Parity.par32(Grid.iy(Grid.below(i))) == Bool.not(Parity.par32(Grid.iy(i))) : Bool}:
   neighbor_y_flip(i, 0, 0)
 
+# V0-3: the *slide* write target `diag4(., k)` also has `dy = -1`, so it flips
+# the `y`-parity too. Every write target of a movement phase (drop and slide)
+# therefore lands on the opposite `y`-parity — the colour-separation fact that
+# makes a colour batch act on cells disjoint from the ones it writes.
+def diag4_y_flip(+i: U32, +k: Rules.Dir4)
+  -> {Parity.par32(Grid.iy(Rules.diag4(i, k))) == Bool.not(Parity.par32(Grid.iy(i))) : Bool}:
+  match k:
+    case Rules.K0{}: neighbor_y_flip(i, 4294967295, 0)
+    case Rules.K1{}: neighbor_y_flip(i, 1, 0)
+    case Rules.K2{}: neighbor_y_flip(i, 0, 4294967295)
+    case Rules.K3{}: neighbor_y_flip(i, 0, 1)
+

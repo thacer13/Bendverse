@@ -18,6 +18,7 @@ import ./src/count.bend as Count
 import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
+import ./src/batch.bend as Batch
 import ./src/word.bend as WR
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
@@ -210,3 +211,12 @@ def Laws.step_mirror_balance(fuel, t, n, c):
 
 def Laws.below_write_flips_y_phase(i):
   Phase.below_y_flip(i)
+
+def Laws.batch_target_injective(i, j, a, b, c, h):
+  Batch.move_inj(i, j, a, b, c, h)
+
+def Laws.diag_target_injective(i, j, k, h):
+  Batch.diag4_inj(i, j, k, h)
+
+def Laws.diag_write_flips_y_phase(i, k):
+  Phase.diag4_y_flip(i, k)

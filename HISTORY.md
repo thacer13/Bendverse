@@ -2382,3 +2382,61 @@ partial and `G12`/`G14` remain open.
 - `bend test/tests.bend` → 24/24 PASS.
 - `bend test/simtests.bend -o bin && ./bin` (rebuilt) → **13/13** PASS.
 - `bend_canary` → 6 ok, 0 bad.
+
+### A.65 — V0-3a: direction batching — a closed direction set and an injective target map
+
+**Status:** engine refactor (behaviour-preserving) + 3 new laws. Gate green
+(**62** laws, +3), fast suite **25/25** (+T29), sim suite **13/13** (rebuilt),
+canaries 6 ok.
+
+**Why.** `R4`/`G3` asked for (colour × direction) batches with an *injective*
+target map. `V0-1` resolved contention with a local tie-break but proved nothing
+about the batch map, and the direction index was a raw `U32 k` with a silent
+`case _: i` fallback (`PLAN §4.2` landmine): a `k` outside `{0,1,2,3}` became a
+self-target. `V0-3a` closes the direction half: make the directions a closed set
+and prove that a fixed displacement's target map is injective.
+
+**What changed.**
+- `src/rules.bend`: `Rules.Dir4` (`K0..K3`) — the four slide directions as a
+  datatype, with `dir_dx`/`dir_dz`, `side4`/`diag4`, `dir_last`/`dir_next` total
+  matches. `Rules.plan` now threads `k : Dir4`; the diagonal loop ends via
+  `dir_last`/`dir_next` instead of `U32.add k 1`/`is_eq · 4`. The retired
+  `side_index`/`diag_index` (`U32`, with the `case _: i` default) stay for the
+  frozen `step_m` mirror; they are no longer on the live path, so the silent
+  default is off the engine that runs.
+- `src/batch.bend` (new): `move_inj` — for a fixed `(dx, dy, dz)`, equal targets
+  force equal (torus) sources. The proof composes the assumed collision with
+  `Priority.neighbor_cancel` (the translation's two-sided inverse), so it is a
+  three-step `Equal` chain, not a per-cell argument. `below_inj` and `diag4_inj`
+  instantiate it for the drop and for each of the four slides (the `Dir4` match
+  is total).
+- `src/phase.bend`: `diag4_y_flip` — a slide target has `dy = -1`, so it flips
+  the phase `y` bit, matching `below_y_flip` for the drop. Every movement write
+  target therefore lands on the opposite `y`-parity (colour half, `y` bit).
+- `LAWS.bend`: laws `batch_target_injective`, `diag_target_injective`,
+  `diag_write_flips_y_phase`; proofs in `PROOF.bend` (imports `batch.bend`).
+- `test/tests.bend`: **T29** checks, over 4096 cells, that `diag4`/`side4` agree
+  with the retired `diag_index`/`side_index` table for all four constructors —
+  the behaviour-preservation witness for the refactor and a total-match check.
+
+**Rule-4 reading.** A direction batch fixes the displacement, so its target map
+is a translation `i ↦ neighbor(i, d)`; `neighbor_cancel` inverts it, giving
+injectivity — "distinct cells have distinct targets", with no coordination. The
+endpoint colour separation (every write target flips the `y` bit) is the first
+of the three parity bits.
+
+**Honest residual (`V0-3b`, `G3` narrowed).** What is *not* yet a theorem: the
+*cross-direction* half. Two same-colour cells in *different* directions can still
+share a target — exactly the opposite-diagonal pair (`(4,40,4)`/`(6,40,4)` →
+`(5,39,4)`), which the V0-1 tie-break (T23) resolves locally. Proving they are
+the only cross-direction collision needs the full `color_of` bit extraction
+(`bit1(color_of i) = par32(iy i)`, then the x/z parities) and `is_ne` reflection;
+`V0-3a` does not attempt it, so `R4` stays *partial* and `G13`'s over-forfeit is
+unchanged. The old `side_index`/`diag_index` defaults remain in the frozen
+mirror (not extended, not on the live path).
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (62 laws; +3, none retired).
+- `bend test/tests.bend` → 25/25 PASS (+T29).
+- `bend test/simtests.bend -o bin && ./bin` (rebuilt) → 13/13 PASS.
+- `bend_canary` → 6 ok, 0 bad.
