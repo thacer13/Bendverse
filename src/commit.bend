@@ -5,7 +5,7 @@ import ./refine.bend as R
 # Schedule invariance, the algebraic core: point writes at *distinct* indices
 # commute.
 #
-# `Rules.phase` is a pure function of the pre-phase state (V0-1, A.63), so each
+# `Rules.plan` is a pure function of the pre-phase state (V0-1, A.63), so each
 # evaluated cell decides its writes from the same `world` regardless of what any
 # other cell does. What is left for "a region-split fold equals the sequential
 # fold" is therefore not a read/write ordering argument any more — it is that

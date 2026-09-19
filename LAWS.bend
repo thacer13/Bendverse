@@ -452,7 +452,7 @@ law color_collision_z_par:
 
 # V3c-1 — the schedule-invariance kernel (rule 10, the composition step).
 #
-# `Rules.phase` reads only the pre-phase state (V0-1), so each evaluated cell's
+# `Rules.plan` reads only the pre-phase state (V0-1), so each evaluated cell's
 # write set is independent of the others; what remains for a region-split fold to
 # equal the sequential fold is that *applying* the merged writes is
 # order-independent. That is exactly this: two point writes at leaves that

@@ -217,10 +217,11 @@ def t23() -> U32:
   is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(5, 39, 4))), Cell.sand()))
 
 def t24() -> U32:
-  # V0-1 conformance: wake lands only after the phase. The mover at (4,40,4)
-  # wakes the inactive `sand` at (6,40,4), but that cell is not in this phase's
-  # evaluated set, so it does not fall and (6,39,4) stays EMPTY (0). Intra-phase
-  # activation is gone; the woken cell is evaluated on the next tick.
+  # V0-1 conformance: wake does not pull a cell into the phase it is woken by.
+  # `Sim.phase` is the tick-composable transform (writes applied, wakes pending),
+  # so the inactive `sand` at (6,40,4) that the mover at (4,40,4) wakes is not in
+  # this phase's evaluated set: it does not fall and (6,39,4) stays EMPTY (0).
+  # Intra-phase activation is gone; the wake is applied at tick end (T33).
   w0 = Sim.build()
   w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
   w2 = w1[Grid.index(6, 40, 4)] <- Cell.encode(Cell.sand(), 0, 0, 0, 0)
@@ -274,6 +275,34 @@ def t28() -> U32:
   w8 = Sim.phase(w7, 0)
   is_bad(U32.is_eq(Cell.material(Grid.value_at(w8, Grid.index(0, 40, 4))), Cell.sand()))
 
+# T33 V0-4a/G12 conformance: a phase's wake is *pending* until tick end, so a cell
+# woken by an earlier phase is not evaluated by a later phase of the same tick.
+# `t33_mk(bact)` builds the site: A (color 0, active) drops into (4,39,4) in phase
+# 0 and wakes its neighbours; B at (5,39,4) (color 3, so a later phase) is one of
+# them. With B inactive at tick start it stays put, but is active afterwards;
+# with B active at tick start (control) phase 3 evaluates it and it falls.
+def t33_mk(+bact: U32) -> Array<U32>:
+  w0 = Sim.build()
+  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w2 = w1[Grid.index(4, 39, 4)] <- 0
+  w3 = w2[Grid.index(5, 39, 4)] <- Cell.encode(Cell.sand(), 0, bact, 0, 0)
+  w3[Grid.index(5, 38, 4)] <- 0
+
+def t33_stayed() -> Bool:
+  w = Sim.tick(t33_mk(0))
+  U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(5, 39, 4))), Cell.sand())
+
+def t33_woken() -> Bool:
+  w = Sim.tick(t33_mk(0))
+  U32.is_ne(Cell.active(Grid.value_at(w, Grid.index(5, 39, 4))), 0)
+
+def t33_control() -> Bool:
+  w = Sim.tick(t33_mk(1))
+  U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(5, 38, 4))), Cell.sand())
+
+def t33() -> U32:
+  is_bad(Bool.and(Bool.and(t33_stayed(), t33_woken()), t33_control()))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -289,3 +318,4 @@ def main() -> IO(Unit):
     report("T26 grain in an empty column settles", t26())
     report("T27 floor painted away: no wrap at y=0", t27())
     report("T28 wall painted away: no wrap at x=0", t28())
+    report("T33 wake is pending until tick end (G12)", t33())

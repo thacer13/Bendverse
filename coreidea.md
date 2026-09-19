@@ -128,13 +128,15 @@ Where the code stands (do not confuse this with the target)
 
 `PLAN.md` §4 is the conformance table: it records, per rule, whether the engine
 conforms, deviates, or holds by construction. Contract 1 now holds: a phase is a
-pure function of the state it is handed (`Rules.plan`/`Rules.phase`, V0-1), so
+pure function of the state it is handed (`Rules.plan`/`Rules.phase_plan`, V0-1), so
 rule 10 holds by construction and contention is resolved from the pre-phase
 state. Contract 2 now holds too (V0-2): every rule target is guarded by
 `Grid.step_inside`, so a boundary step is inert and the shell is generation, not
-the box. Deviations remain and are recorded there rather than papered over: a
-tick's cost is still proportional to world size (contract 3); wake is applied per
-phase rather than per tick (rule 9's residual); and rigidity's support seed is
+the box. Rule 9's phase wake now lands at tick end (V0-4a): each phase's wakes
+are accumulated and applied once, so the evaluates set is fixed at tick start.
+Deviations remain and are recorded there rather than papered over: a tick's cost
+is still proportional to world size (contract 3); the support pass's crush-wake
+is still same-tick (rule 9's residual, `G16`); and rigidity's support seed is
 still positional rather than neighbourhood-derived (rules 6/7).
 
 Ambition (in the open)

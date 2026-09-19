@@ -2664,3 +2664,57 @@ dependency-graph tooling — a markdown table is enough.
 - `bend_canary` -> 6 ok, 0 bad.
 - extension: `bun build lib.ts` clean; `milestoneDigest` unit-checked on the five
   open labels.
+
+### A.71 — V0-4a: deferred phase wake (rule 9, `G12` closed)
+
+**Status:** engine semantics + witness. Gate green (70 laws; no law changed, no
+proof touched). Touches `src/rules.bend`, `src/sim.bend`, three comment
+references, `test/simtests.bend` (T33 added). Closes `G12`; opens `G16` for the
+support pass's remaining same-tick wake. `coreidea.md` and `PLAN.md` §4.1/§5.1/
+§5.2/§5.3/§8 updated.
+
+**Why.** `C3` (cost tracks disturbance) needs the set of cells a tick evaluates
+to be fixed at tick start, otherwise a work set derived from a pre-tick activity
+snapshot would silently drop work that a phase's `wake` pulls in later in the
+same tick (`G12`; the A.59 correction). `V0-1` had fixed only the *same-phase*
+case (T24): a phase does not evaluate a cell it wakes, but the wake *mark* was
+committed at the end of that phase, so a later phase of the same tick still saw
+it. `V0-4a` defers the mark to tick end.
+
+**What changed.**
+- `src/rules.bend`: `phase_pending` now commits only the write set and returns
+  the pending `wakes` as `(world, wakes)`; `phase_plan(world, c)` exposes it.
+  The old `phase`/`phase_wakes`/`phase_commit` (immediate wake) were removed as
+  dead code — the tick is the only caller and it defers.
+- `src/sim.bend`: `Sim.phase` is now the tick-composable *writes-only*
+  transform (`phase_get(phase_w(world, c))`); `phases`/`phases_commit` run all
+  eight colours, accumulate their wake lists (`List.append`, since `<>` is
+  cons), and `Rules.commit_wakes` applies them once. `tick_active` is the only
+  entry point. The fold threads the phase result as a parameter and matches
+  `fuel` before `pair` (Bend matches parameters in binder order).
+- `test/simtests.bend`: **T33** — a differential witness. A (colour 0, active)
+  drops in phase 0 and wakes B at (5,39,4) (colour 3). With B inactive at tick
+  start it does not move this tick but is active afterwards; with B active at
+  tick start (control) phase 3 evaluates it and it falls. T24's comment updated:
+  `Sim.phase` is the writes-only transform, wake lands at tick end.
+- Comment references to the removed `Rules.phase` updated in `LAWS.bend`
+  (V3c-1 header), `src/commit.bend`, and `src/step.bend` (no law meaning
+  changed — comment text only).
+
+**Why this is safe.** Deferring activation only makes the engine more
+conservative: the wake marks themselves are unchanged, so the post-tick active
+set is a subset of the old one and every golden/sim test passes. The change only
+removes same-tick movement of a cell an earlier phase woke.
+
+**Not done (deliberately).** `Support.sup` case 6 still wakes after a crush
+within the support pass, so a cell it wakes *is* evaluated by the same tick's
+phases. That is now the only rule-9 residual, recorded as `G16` (not `G12`);
+`V0-4b`'s Support rewrite closes it. No proof work: the `sup_m`/`step_m` mirrors
+are untouched.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 27/27 PASS.
+- `bend test/simtests.bend` native -> 14/14 PASS (T33 added; T23/T24/T26–T28
+  unaffected).
+- `bend_canary` -> 6 ok, 0 bad.

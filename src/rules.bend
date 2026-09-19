@@ -297,13 +297,17 @@ def commit_wakes(writes: List<Write>, world: Array<U32>) -> Array<U32>:
         case WSet{idx, val}:
           commit_wakes(t, world)
 
-def phase_commit(r: Array<U32> & List<Write> & List<Write>) -> Array<U32>:
+# One phase, writes applied and wakes pending.
+def phase_pending(r: Array<U32> & List<Write> & List<Write>) -> Array<U32> & List<Write>:
   match r:
     case (world, sets, wakes):
-      commit_wakes(wakes, commit_sets(sets, world))
+      (commit_sets(sets, world), wakes)
 
-# One phase: read-only intent fold over colour `c`, then apply the write set.
-def phase(world: Array<U32>, +c: U32) -> Array<U32>:
+# V0-4a (rule 9): the phase's *writes* land now, its *wakes* are returned
+# pending. The tick threads the returned wake lists through all eight phases and
+# applies them once at the end, so a later phase of the same tick cannot evaluate
+# a cell an earlier phase woke (the `G12` deviation).
+def phase_plan(world: Array<U32>, +c: U32) -> Array<U32> & List<Write>:
   +i0 = Grid.color_base(c)
   q = Array.get(U32, world, i0)
-  phase_commit(plan(U32.to_nat(16777216), q, 0, i0, c, 0, K0{}, 0, 0, 0, Nil{}, Nil{}))
+  phase_pending(plan(U32.to_nat(16777216), q, 0, i0, c, 0, K0{}, 0, 0, 0, Nil{}, Nil{}))
