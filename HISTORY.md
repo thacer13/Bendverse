@@ -2894,3 +2894,47 @@ in A.72): the active transient is ≈ 15 % faster. Settled tick is unchanged
 - `bend test/tests.bend` -> 26/26 PASS.
 - `bend test/simtests.bend` native -> 17/17 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.76 — `V0-4b-3b` scoping: two maintained-work-set designs, two toolchain blockers
+
+**Status:** documentation/scoping only (the two code attempts were reverted; the
+tree is at A.75). Gate green (70 laws), fast 26/26, sim 17/17, canaries 6 ok.
+`PLAN.md` §5.2/§8 updated. No engine, law, or test change.
+
+**Why.** `V0-4b-3b` is the last step to `C3`: stop scanning the world for the
+settled check (`any_active`) and the work-list build (`active_list`) by carrying
+the work set across ticks. The next active set is exactly the cells the deferred
+wakes marked, so the tick must collect those marks and return them.
+
+**Design (a) — carry the active-cell list.** The tick returns the marked
+neighbours (a `List<&2, U32>`); the next tick folds it. Duplicates are safe (a
+phase is a pure pre-phase fold, so re-processing a cell produces idempotent
+writes), but the **support** pass reads `below(i)` and needs the list in
+ascending index order for its bottom-up propagation, so the list must be sorted.
+**Blocker:** `List.sort` does not compile in this Base — its own definition
+references an undefined `List.sort.go` — and an O(n²) insertion sort is
+unacceptable at `n = 2^18`. A hand-written merge sort is possible but needs a
+split/merge pair whose mutual recursion Bend's no-forward-reference rule makes
+awkward; not landed.
+
+**Design (b) — carry a dirty-chunk mask.** Two `U32`s (64 chunks of 16³ cells).
+A wake marks the 26 neighbours' chunks; the next tick scans only dirty chunks
+(4096 cells each, ascending) to build the work list, so no sort and no dedup.
+The chunk scan, `is_dirty`, `chunk_of` and the mask-setting wake were written and
+each compiled and ran in isolation (scanning all 64 chunks is fine).
+**Blocker:** the full tick stack-overflowed in the checker ("a deep recursion, or
+a literal too large to expand") when the work list was passed *symbolically*
+through the support/phase fold (`tick_sup`); the same call with a literal empty
+list compiled. The mask threading through `Ops.wake`/`Rules.commit_mark` was not
+the trigger (each worked alone). This is a toolchain/plumbing issue, not a
+semantics one.
+
+**Concrete next step.** Land (b) but thread the mask only through the *commit*
+(where wakes are applied), keeping the support/phase entry points monomorphic
+(no symbolic work list across the fold), or diagnose the symbolic-list overflow.
+Both designs are recorded here so the next session does not re-derive them.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 17/17 PASS.
+- `bend_canary` -> 6 ok, 0 bad.

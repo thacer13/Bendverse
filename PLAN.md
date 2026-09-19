@@ -644,11 +644,21 @@ index).
   Measured: the active transient is ≈ 15 % faster than A.74; settled unchanged
   (still one `any_active` scan).
   **NEXT — `V0-4b-3b` (maintain the work set):** remove the two remaining scans
-  (`any_active` + `active_list`) by carrying the work list across ticks: the next
-  active set is exactly the cells marked by the deferred wakes, so collect the
-  marked neighbours, dedup, and return the list from the tick. Then a settled
-  tick costs nothing and an active tick is proportional to the disturbance. That
-  is the asymptotic `C3` step.
+  (`any_active` + `active_list`) so a settled tick costs nothing and an active
+  tick is proportional to the disturbance. The next active set is exactly the
+  cells the deferred wakes marked, so the tick must carry a work set instead of
+  rescanning. Two designs were tried (A.76) and both hit toolchain blockers:
+  (a) carry the **active-cell list** — the next list is the marked neighbours,
+  but support needs them in ascending index order and `List.sort` does not
+  compile in this Base (`List.sort.go` is undefined), and an O(n²) insertion
+  sort is unacceptable; (b) carry a **dirty-chunk mask** (two `U32`s, 64 chunks)
+  and scan only dirty chunks — this avoids sorting, but the first cut
+  stack-overflowed in the checker when the work list was passed symbolically
+  through the support/phase fold (`tick_sup`). The concrete next step is to
+  land (b) with the mask threaded only through the *commit* (which is where the
+  wakes are applied) and to keep the support/phase entry points monomorphic, or
+  to find why the symbolic-work-list path overflows. Neither is a semantics
+  problem; both are plumbing.
   `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
   **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
   `Support.sup`, which `V0-4b-2` will replace (see §3.4 retirement, §4.1).
@@ -963,12 +973,13 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   is pure, so the residual is write-set commutativity (`V3c-1` banked). It gates
   only the optional `M7d`; `C3` does not depend on it.
 - **Cost (`C3`/`V0-4b`).** The scan-to-work-set change touches the imperative
-  engine (the `G5` refinement side). The per-tick wake cone is now closed:
-  `V0-4a`/`V0-4b-1`/`V0-4b-2` defer every wake to tick end and clear the mover's
-  bit, so the evaluated set is exact (`G12`/`G16`/`G17` closed). What remains is
-  the scan itself: drive `Support` from the work list and maintain it across
-  ticks (`V0-4b-3`), then prove the tick's writes stay inside the neighbourhood
-  margin.
+  engine (the `G5` refinement side). The per-tick wake cone is now closed
+  (`V0-4a`/`V0-4b-1`/`V0-4b-2`) and the phase and support folds run over the work
+  list (`V0-4b-3a`). What remains is *maintaining* the set across ticks
+  (`V0-4b-3b`); two designs (active-cell list, dirty-chunk mask) hit toolchain
+  blockers in A.76 — `List.sort` is broken in this Base, and the chunk-mask cut
+  overflowed the checker on a symbolic work list. Resolve the plumbing, then
+  prove the tick's writes stay inside the neighbourhood margin.
 - **Law proof difficulty.** Bit-level inductions can stall — the downgrade
   protocol (§3.4) exists for this.
 - **No CUDA (`G4`).** GPU work degrades to CPU-parallel validation; keep `!`
