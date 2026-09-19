@@ -463,11 +463,13 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      guarded write's Φ effect at every index (rock gap, or identity), so both
      crush sites are covered without a `G9` hypothesis. The `wake`/activate
      infrastructure is done (A.41): `array_activate_write_preserves_phi` and the
-     `wake_*_m` mirrors. The `sup_m` mirror (with a `SupSel` datatype selector)
-     typechecks; its Φ theorem is blocked on a Bend2 normalisation cliff (A.42,
-     §8) — the support-write branches blow up. Next: the `sup_step` opacity
-     mitigation.
-  See `HISTORY.md` A.36–A.42 for the analysis and probes.
+     `wake_*_m` mirrors. Both mirror obstacles are resolved (A.42, A.45): use a
+     datatype selector (`SupSel`) rather than matching an opaque `U32`, and thread
+     the wake fuel as an abstract `Nat` (a concrete `3` unrolls into a
+     normalisation cliff). The full `sup_m` + `sup_m_preserves` is verified to
+     check in ≤5 s. Remaining: land it (plus the top-level instantiation) and
+     then mirror `Rules.step`.
+  See `HISTORY.md` A.36–A.45 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
 M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
@@ -592,17 +594,22 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   `crush_word` to a non-provably-rock target, so mirroring the control flow alone
   cannot close it. Mitigation throughout: explicit refinement lemmas, never assumptions.
   `G9` is resolved (A.38–A.40); `G10`'s write primitives are all proven (A.39–A.41).
-- **`G10` mirror: selector representation + a checker performance cliff (A.42).**
-  Two obstacles, both isolated. (1) A literal mirror of `Support.sup` matches on
-  `sel: U32`; in a proof `sel` is abstract so `match sel` never reduces — the fix
-  is a datatype selector (`SupSel`), after which the mirror typechecks in 3 s.
-  (2) The Φ theorem still hits a normalisation cliff (>120 s at 100 % CPU): the
-  `set_support` write unfolds via `Cell.encode` into a large bit term nested in
-  `swap_m`→`pack`→`to_pots`, and `sup_m` appears twice in the statement. Each
-  piece typechecks alone in ≤3 s. Likely a Bend2 normaliser/sharing limit rather
-  than a wrong answer. Mitigation under test: pass the write value through a
-  `sup_step` helper so the huge term is an opaque argument; if that fails, `G10`
-  is tooling-blocked, not conceptually open.
+- **`G10` mirror: selector representation + the concrete-fuel cliff (A.42, A.45).**
+  Two obstacles, both isolated and resolved. (1) A literal mirror of
+  `Support.sup` matches on `sel: U32`; in a proof `sel` is abstract so `match sel`
+  never reduces — fix: a datatype selector (`SupSel`), after which the mirror
+  typechecks in 3 s. (2) The Φ theorem hit a normalisation cliff (>120 s at
+  100 % CPU). **A.45 corrects A.42's attribution** (A.42 was contaminated by the
+  leaked compile): the trigger is not the `set_support` writes but **S6's
+  concrete wake fuel** — `wake_z_m(U32.to_nat(3), …)`. Minimal repro: a
+  proposition containing `pack(wake_z_m(U32.to_nat(3), …))` hangs (>30 s), while
+  changing *only* `U32.to_nat(3)` to an abstract `+wf: Nat` checks in 4 s. With
+  concrete fuel the checker unrolls the 3·3·3 wake loop and then case-splits the
+  abstract tree through `pack`/`to_pots` at every `swap_m`/`tget`. **Fix
+  (verified):** thread the wake fuel as an abstract `Nat` parameter through
+  `sup_m`/`sup_m_preserves` and instantiate it at `3` only at the top-level
+  engine binding; the full proof then checks in 5 s for all fuels. General rule:
+  never put a concrete-fuel loop application in a type (§3.7, §7).
 - **Schedule invariance (`G3`).** A region-split fold may differ from the
   sequential fold in tie-break corners. Mitigation: V3a+V3b stay proven; M7d
   waits for V3c or is dropped.

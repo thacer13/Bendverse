@@ -1341,3 +1341,51 @@ soundness), and record it here (and in §5.3 if it is a boundary).
 - `tools/checker-canary.sh` → 6 ok, 0 bad; extension transpiles
   (`bun build … --external '*'`);
 - `bend PROOF.bend` → `All terms check.` (53 laws).
+
+### A.45 — A.42 corrected: the cliff is the *concrete* wake fuel, and it has a fix
+
+**Status:** probes only, no landed engine/proof change; gate green (53 laws).
+This corrects A.42's attribution — which was contaminated by the leaked 100%-CPU
+compile — and reduces the cliff to a 10-line repro plus a verified fix.
+
+**Corrected root cause.** A.42 blamed the `set_support` branches (S3/S4). Clean
+delta-debugging (remove one branch from the full mirror, time it) shows the
+opposite: **S6 is the trigger**. Removing S3+S4 still hangs; removing S6 → 3 s.
+Inside S6 the culprit is the *concrete* wake fuel:
+`Tick.wake_z_m_preserves(U32.to_nat(3), …)` with `Tick.wake_m(i, t2, n)`.
+
+**Minimal repro** (in-repo; needs `src/`):
+```python
+import Base
+import ./src/tick.bend as Tick
+import ./src/refine.bend as R
+import ./src/settle.bend as S
+
+def th_con(+t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {S.suml(S.to_pots(R.pack(Tick.wake_z_m(U32.to_nat(3), 0, i, t, n)), base, n))
+      == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  Tick.wake_z_m_preserves(U32.to_nat(3), 0, i, t, n, base)
+```
+Concrete fuel: **>30 s (timeout)**. Change *only* `U32.to_nat(3)` to an abstract
+`+wf: Nat`: **4 s, checks**. One literal vs a variable decides the cliff.
+Mechanism: with concrete fuel the checker unrolls the 3·3·3 wake loop, and to
+reduce `pack`/`to_pots`/`suml` over the result it case-splits the abstract tree at
+every `swap_m`/`tget` (the A.37 partial-refinement behaviour) — a large /
+exponential normal form. Abstract fuel is stuck at the first `match` and never
+unrolls.
+
+**Verified fix.** Parameterise the mirror over the wake fuel and keep it abstract:
+`sup_m(…, +wf: Nat)` using `Tick.wake_z_m(wf, 0, i, t2, n)` and
+`Tick.wake_z_m_preserves(wf, …)`, instantiating `wf := U32.to_nat(3)` only at the
+top-level engine binding. The full `sup_m_preserves` (all ten selectors, S6
+included) then checks in **5 s**, and the Φ theorem holds for *all* wake fuels
+(stronger). This unblocks `G10`.
+
+**Assessment.** A Bend2 normalizer performance issue, not a wrong answer: a
+concrete-fuel recursion inside a proposition is fully unrolled, and the resulting
+term is then normalised through `pack`/`to_pots`. The workaround is robust and
+general: **never put a concrete-fuel loop application in a type; thread the fuel
+as an abstract parameter and instantiate at the use site.**
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (53 laws); probe files removed; no strays.
