@@ -1725,3 +1725,45 @@ reflection) or to add the regime to the mirror's guard.
 - `bend PROOF.bend` → `All terms check.` (57 laws).
 - `bend test/tests.bend` → 23/23 PASS (incl. T22).
 - `bend test/simtests.bend` native → T1, T2, T3, T4, T4b, T9, T18, T20 PASS.
+
+### A.55 — `step_m` scoped: the pair invariant and two normalisation cliffs
+
+**Status:** analysis only, no code (the mirror typechecked but its preservation
+law did not land); gate green (57 laws). Scopes the `Rules.step` mirror and
+records two expansion triggers so the next attempt starts warm.
+
+**Design that typechecks.** A `StepSel` datatype (numeric selector -> constructor,
+the `G5` refinement by inspection, as with `Tick.SupSel`) and
+`step_m(fuel, t, gv, sel, i, c, w, k, wf, n, base) -> StepRes{t, gv, da, db}`.
+Because a movement is only a Φ decrease *under the fall regime*, the mirror does
+**not** carry a single gap and does **not** add a guard; it carries a **pair** of
+accumulators with the invariant `Φ(current) + da == Φ(start) + db`: a movement
+adds `mov_S`/`mov_T` (from `mov_cross`), a guarded crush adds `guard_gap`/`0`,
+and every other write preserves both. This is unconditional and faithful (the
+engine's `can` check is never re-derived).
+
+**Two cliffs (both are the known PLAN §7 triggers).**
+1. *Concrete wake fuel in a proposition (A.41/A.45).* `wake_m` is
+   `wake_z_m(U32.to_nat(3), …)`; mentioning it in a lemma *statement* makes the
+   elaborator unroll the 3-fuel loop. Fix: thread `wf : Nat` abstractly through
+   `step_m` (exactly as `sup_m` does), instantiate `3` only in the top-level
+   `step_pass_m`. After that the whole module checked in ~4 s.
+2. *Two potential presentations.* `mov_cross`/`mov_lowers_phi` live over
+   `pots_m`, while the `pt_wake`/array-bridged laws live over
+   `to_pots(pack t)`. Mixing them in one goal fails definitionally. Fix: keep a
+   single presentation per helper and bridge explicitly (`pt_swap_phi`,
+   `pt_mov_cross` via `afst_swap_m`/`to_pots_swap_pack`).
+
+**Composition that was left unfinished.** `sr_add_phi` (compose the inner
+invariant with one write's balance `Φ(after) + ds == Φ(before) + dt`) and the
+selector-by-selector `step_preserves` were ~90% written; the remaining failures
+were presentational (the `pt_crush` bridge), not conceptual.
+
+**Also learned.** Bisect probes with `head -n` *inside `src/`* (relative imports
+do not resolve under `/tmp`), and never launch a 300 s compile on an unknown
+cliff: prefixes through the mirror checked in 4 s, the cliff was found in one
+40 s probe.
+
+**Next.** Rebuild `src/step.bend` with `wf` from the start and the pair
+invariant, land `step_preserves`, then the `step_pass_m` top-level law
+(`Sim.phase`'s `step_m(16777216, pack-unpack world, 0, c)`), closing `G10`.
