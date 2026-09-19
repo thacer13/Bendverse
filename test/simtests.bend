@@ -200,6 +200,39 @@ def t20() -> U32:
   b = Sim.ticks(U32.to_nat(10), Fixtures.spawn(Sim.build()))
   U32.add(init_bad, is_bad(list_eq(Grid.to_list(a), Grid.to_list(b))))
 
+def t23() -> U32:
+  # V3c witness: within one phase two same-color movers can target the SAME
+  # cell and BOTH move -- a lighter mover first, a denser one after it, which
+  # re-reads the just-written target. `sand` at (4,40,4) and `rubble` at
+  # (6,40,4) both slide onto (5,39,4); scan order puts sand first, then rubble
+  # sees sand (100 < 150) and overwrites it. So the target ends as RUBBLE (4),
+  # not sand: the phase fold is an ordered cascade, not "first mover wins".
+  w0 = Sim.build()
+  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w2 = w1[Grid.index(6, 40, 4)] <- Cell.encode(Cell.rubble(), 0, 1, 0, 0)
+  w3 = w2[Grid.index(5, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
+  w4 = w3[Grid.index(3, 40, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w5 = w4[Grid.index(4, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w6 = w5[Grid.index(6, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w7 = Sim.phase(w6, 0)
+  is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(5, 39, 4))), 4))
+
+def t24() -> U32:
+  # V3c witness: activity propagates WITHIN a phase. `i` at (4,40,4) slides
+  # onto (5,39,4), whose wake reaches the INACTIVE `sand` at (6,40,4). That
+  # cell's index is later in the scan, so it is evaluated this same phase and
+  # falls onto (6,39,4). So (6,39,4) holds sand (2): the fold cannot be a
+  # radius-2 recomputation from the initial state.
+  w0 = Sim.build()
+  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.sand(), 0, 1, 0, 0)
+  w2 = w1[Grid.index(6, 40, 4)] <- Cell.encode(Cell.sand(), 0, 0, 0, 0)
+  w3 = w2[Grid.index(5, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
+  w4 = w3[Grid.index(6, 39, 4)] <- Cell.encode(Cell.empty(), 0, 0, 0, 0)
+  w5 = w4[Grid.index(3, 40, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w6 = w5[Grid.index(4, 39, 4)] <- Cell.encode(Cell.rock(), 48, 0, 31, 0)
+  w7 = Sim.phase(w6, 0)
+  is_bad(U32.is_eq(Cell.material(Grid.value_at(w7, Grid.index(6, 39, 4))), 2))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -210,3 +243,5 @@ def main() -> IO(Unit):
     report("T9 pull-base collapses rock", t9())
     report("T18 chunk store tick equivalence", t18())
     report("T20 evict -> assemble -> tick equivalence", t20())
+    report("T23 phase contention is an ordered cascade", t23())
+    report("T24 activity propagates within a phase", t24())

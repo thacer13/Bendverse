@@ -1822,3 +1822,74 @@ re-derived — which is what A.55 sized up and left to land.
 **Next.** `V3c` (schedule invariance), then `M7d`. `G10` closing is the
 per-claim refinement `G5` asked for at the write-site level; the remaining
 `G5` instance is the selector/read threading of the mirrors, by inspection.
+
+### A.57 — V3c scoped: the phase fold is an ordered cascade, not a local recomputation
+
+**Status:** analysis + witnesses, no new laws (gate green, 58 laws). `V3c`
+(schedule invariance) is deferred: the naive target statement is **false**, and
+the two runtime witnesses below pin down why. `G3` stays open with a sharper
+"closes by".
+
+**Target statement.** "A region-split fold equals the sequential fold": that
+splitting a phase's cell range into regions, folding each, and combining gives
+the same world as the global scan (`Rules.step`, index order).
+
+**Why the naive form is false (both runtime-witnessed).**
+1. *Contention is an ordered cascade, not a single winner* (T23). Two
+   same-phase movers can target the same cell and **both move**. `sand` at
+   `(4,40,4)` and `rubble` at `(6,40,4)` both slide onto `(5,39,4)`: scan order
+   puts sand first, then rubble re-reads the just-written sand
+   (`100 < 150`) and overwrites it, taking the sand into its own source. The
+   target ends `rubble` (`4`), its source `sand` (`2`). Plan §2.5's prose
+   ("later movers see the target occupied and stay") describes the *blocked*
+   case only; a denser later mover passes the density guard. So the phase result
+   is a function of the ordered candidate list, not of a local winner predicate.
+2. *Activity propagates within a phase* (T24). `Ops.wake` activates all 26
+   neighbors immediately, and the scan visits newly activated cells whose index
+   is later, in the **same** phase. `i` at `(4,40,4)` slides onto `(5,39,4)`,
+   waking the **inactive** `sand` at `(6,40,4)`, which is then evaluated and
+   falls to `(6,39,4)`. So a cell's output is *not* a bounded-radius function of
+   the initial state — the activation chain (and with it the dependency cone)
+   grows along the scan direction. Rule 9's prose says "marks its neighbors
+   active next tick"; the implementation also pulls them in this tick when they
+   are scanned later.
+
+Together: the phase fold is a **forward fold over the global index order** with
+a local per-cell transition, where writes can (a) overwrite a shared target and
+(b) activate later cells. It is deterministic by construction (fixed scan), but
+it is not a local recomputation, and it cannot be region-split freely.
+
+**What IS proven (the parallel-safety contract that stands).** `V3a` gives write
+confinement — a move target is always in a *different* phase color — and `V3b`
+gives the two properties a contended parallel fold can use: the candidate set
+targeting a cell is local (`neighbor_cancel`, torus radius 2) and the tie-break
+order is total (`scan_order_total`). So contention is local; what remains is the
+*order*, and the activation closure.
+
+**Decomposition for a future attempt.**
+- **V3c-0** (tractable): engine-level target-phase separation —
+  `color_of(below(i)) != color_of(i)`, likewise `side_index`/`diag_index` — the
+  `Rules`-level form of V3a, and a `Rules.side_index`/`diag_index` candidate-set
+  locality lemma restating `neighbor_cancel`.
+- **V3c-1**: extract a one-cell transition from `Rules.step` and prove the
+  global fold is its left fold over index order. This is the real prerequisite
+  and is where the engine's selector machine must be reflected (the same `G5`
+  by-inspection caveat as `step_m`).
+- **V3c-2**: characterise the phase's *evaluated set* as a forward closure
+  (monotone in index). No bounded radius exists; the cone can span a region.
+- **V3c-3**: the equivalence a sound parallel fold needs — either regions
+  processed in index order with the intra-phase wake dependency respected (i.e.
+  essentially sequential, and not a speedup), or an explicit model change that
+  makes the activation closure a fixed point computed before any parallel write.
+  The latter must be shown to preserve the sequential result; it is the open
+  research question, and it is a *model* change, not a scheduling one.
+
+**Consequences.** `M7d` (parallel phase folds) stays blocked on `G3`; the
+verified safety contract is V3a+V3b. The intra-phase activation (finding 2) is
+also worth a human design decision: if rule 9's "next tick" is the intent, the
+fold's activity closure is the model bug; if not, it is the scheduling blocker.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (58 laws; no law changed).
+- `bend test/simtests.bend` native → 10/10 PASS, incl. the new **T23**
+  (contention cascade) and **T24** (intra-phase activity) witnesses.

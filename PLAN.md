@@ -327,7 +327,8 @@ Simulation, native-recommended (`test/simtests.bend`): T1 tick determinism over
 10 ticks; T2 conservation of the non-Empty count; T3 Bedrock static; T4 activity
 settles and far cells are untouched; T4b a settled world is a fixed point; T9
 pull-base collapses rock; T18 chunk-store tick equivalence; T20 evict → assemble
-→ tick equivalence.
+→ tick equivalence; T23 phase contention is an ordered cascade; T24 activity
+propagates within a phase (both V3c scoping witnesses, A.57).
 
 ### 3.6 Proof-development loop
 
@@ -441,7 +442,13 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   `G9` (non-rock crush) and `G10` (write-site enumeration).
 - [x] **V2 Global settling** — complete (ii and iii landed); `M8d` landed (A.30).
 - [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
-  fold. Large and stall-prone; the fallback is V3a+V3b proven with `G3` kept open.
+  fold. Scoped in A.57 and **deferred**: the naive statement is false (T23: a
+  denser later mover re-reads and overwrites a shared target — an ordered
+  cascade, not "first wins"; T24: `Ops.wake` activates later-index cells that
+  the scan then evaluates in the *same* phase, so no bounded-radius
+  recomputation exists). The phase fold is a forward index fold with a local
+  transition; the proven parallel-safety contract is V3a+V3b (`neighbor_cancel`
+  candidate locality + `scan_order_total`). `G3` stays open.
 - [x] **M8d** Chunk sleeping/eviction — landed (A.30): `assemble` regenerates
   missing chunks from pure gen, so the store is a sparse overlay; `Store.evict`
   drops sleeping chunks that are bit-equal to gen (a checkable, conservative
@@ -516,7 +523,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
-| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven) |
+| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3) |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the remaining instance (write-site enumeration `G10`) is now closed (A.48, A.53–A.56), so what remains is the selector/read threading from `Rules.step`/`Support.sup` to their `PT` mirrors, by inspection |
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
