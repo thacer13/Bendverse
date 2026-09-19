@@ -1593,3 +1593,40 @@ final cancellation is replaced by a residual-gap argument.
 **Verification**
 - `bend PROOF.bend` → `All terms check.` (54 laws); witness probe checks; no code
   changed.
+
+### A.52 — The movement Φ decrease is blocked: `PT` is size-free (registered `G11`)
+
+**Status:** analysis only, no code; gate green (54 laws). Scopes the last piece of
+`G10` and registers it as `G11` rather than leaving a half-proof.
+
+**The blocked step.** The movement law wants
+`Nat.add(suml(after), gap) == suml(before)` with `gap = (dens(w) − dens(gv)) ·
+(iy(L_i) − iy(L_j))`. Composing the two `array_swap_decreases` balances gives
+`A1 + a == A0 + b` and `A2 + c == A1 + d` (the old/new pots at the two leaves),
+so `A2 + (a+c) == A0 + (b+d)` and `gap = (a+c) − (b+d)`. That needs `a,b,c,d`
+concretely — i.e. the projection `nfst(chg_m(t, base, n, i, v)) ==
+pot_at(tget(t,n,i), base+i)`.
+
+**Why it fails.** `PT` carries no size: `PL` is a leaf regardless of the `n` it is
+handed, and `chg_m`'s `PL` case returns `pot_at(x, base)`, ignoring `i`. So the
+projection's `PL` case requires `iy(base) = iy(base+i)`, which is false for
+`i ≠ 0` (a spike fails there immediately). Equivalently, the leaf's linear index
+is not recoverable from `(base, i)` alone. Worse, a *single* swap can raise Φ
+(`b > a` when the target is lighter and the source moves down), so the two
+balances cannot be collapsed by a per-step gap — only the net over the pair
+decreases, which is exactly the quantity the projection would expose.
+
+**Routes to close `G11`.** (1) A `leaf_base(t, base, n, i)` function plus a
+`chg_m` projection against it, then a `leaf_base`-difference gap; (2) a
+size-indexed `PT` (a `PL` constructor that pins `n = 1`), which makes the `PL`
+projection definitional; or (3) a direct list-surgery proof that the concrete
+pot segment around `i`/`j` is `fall_before(D, G, L)`/`fall_after(D, G, L)`, then
+invoke `fall_lowers_world` (settle.bend). Option (1) is the least invasive.
+
+**What is *not* blocked.** The support-pass mirror (A.48), and the `Rules.step`
+write primitives for `deactivate` (sel 18) and `set_fall0` (sel 22/23) (A.49).
+`G11` gates only the movement sites and the tick-level Φ composition.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (54 laws); projection spike fails at
+  `PL` as described; no code changed.

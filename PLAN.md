@@ -476,7 +476,9 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      primitives are proven at the array level (`array_deactivate_write`,
      `array_fall_write`, A.49), so the movement (sel 6/12) is the last missing
      piece — and it is a Φ *decrease* by the drop, not a preserve (A.51), so
-     `step_m` accumulates a fall gap as well as the crush gap.
+     `step_m` accumulates a fall gap as well as the crush gap. That decrease is
+     now a registered gap (`G11`, A.52): the size-free `PT` model blocks the
+     `chg_m` projection the telescope needs.
   See `HISTORY.md` A.36–A.48 for the analysis and probes.
 
 Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
@@ -508,6 +510,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G8` | accepted | array laws must be stated over the `PT` presentation; an arbitrary `Array` variable cannot be named twice (linearity forbids the copy) | accepted | all Array claims | a language feature for non-linear array quantification; semantically closed, since every array is `pack(unpack(a))` |
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | closed | G2 G10 | closed (A.38–A.40): `Word.cmp` reflection (A.38) makes the guard provable; the engine guards both crush sites with `Ops.crush_if_rock` (A.39); `array_guarded_crush_lowers_phi` (A.40) proves the guarded write's Φ effect at every index — rock: `crush_gap`, non-rock: identity — with no `material(w) == 3` hypothesis. Runtime-witnessed by T19 |
 | `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | accepted | G2 G9 | mirror both state machines on `PT` (large, mechanical). **`G9` is resolved** (A.38–A.40): the guarded-crush write site now has an unconditional Φ theorem (`array_guarded_crush_lowers_phi`), so no crush site carries an unproven hypothesis. The `Support.sup` fuel-loop mirror is landed (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`) and an abstract wake fuel, plus law `sup_mirror_preserves_phi`. Remaining: the `Rules.step` fuel-loop mirror; unlike the support pass it also accumulates a **fall gap** (a movement lowers Φ by `(dens(w) − dens(gv)) · (iy(i) − iy(j))`, A.51), so it needs a `fall_gap` and the fall condition. Would also widen `M8d` eviction |
+| `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | open | G10 M8d | a `fall_gap` + `array_mov_lowers_phi`. **Obstacle (A.52):** `PT` is size-free, so `chg_m`'s leaf base cannot be projected to `pot_at(tget(t,n,i), base+i)` — the `PL` case ignores `i`, and the projection fails on `iy(base) = iy(base+i)` (failed spike). Individual swaps can *raise* Φ, so only the net over the pair decreases. Routes: a `leaf_base` function + `chg_m` projection, a size-indexed `PT`, or a direct list-surgery proof against `fall_before`/`fall_after` |
 
 ---
 
