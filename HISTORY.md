@@ -2596,3 +2596,37 @@ IH-right. The unsatisfiable leaf hypothesis `{False == True}` is eliminated by
 - `bend test/tests.bend` -> 27/27 PASS (+T31).
 - `bend test/simtests.bend -o bin && ./bin` (rebuilt) -> 13/13 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.69 — Plan correction: `C3` is the critical path; the `V3c`→`M7d` coupling is void
+
+**Status:** documentation/governance only (no engine, law, or test change).
+Gate green (70 laws, unchanged), fast 27/27, canaries untouched.
+
+**Why.** The `§5.2` ordering and the `V3c`↔`C3` coupling were written before
+`V0-1` (A.63). A.59 tied the remaining CPU scale lever ("region-skipping the
+scan") to `V3c`/`G3` because `Ops.wake` pulled later cells into the same phase
+(T24). `V0-1` removed exactly that: the evaluated set is fixed and wake lands
+after the phase, so the read-set bound is `V3a`/`V3b` locality (proven) and the
+residual is the per-tick wake cone (`G12`). **`C3`/`V0-4` is therefore
+independent of `V3c`** — and `C3` (cost tracks disturbance) is the asymptotic
+product claim, while `M7d` is a droppable core-count multiplier.
+
+**What changed (PLAN.md only).**
+- `§5.2`: the `V0` item names **`V0-4` (`C3`) as `NEXT`/critical path**; the
+  `V3c` item is **off the critical path** (gates only `M7d`); `M7d` is optional
+  and droppable; the `M9` "correction" no longer routes the region-skip through
+  `V3c`; the **Suggested order** is now
+  `V0-4 (C3) → (optional) V3c-1b/M7d → (M7b/M7e on CUDA)`.
+- `§5.3` `G3`: the obsolete "per-cell transition + forward activation closure"
+  framing is removed and marked obsolete; the row gates only `M7d`.
+- `§8`: the schedule-invariance risk is restated as off-critical-path, and a
+  `C3`/`V0-4` risk (imperative-engine refinement + the per-tick wake cone) is
+  added.
+
+**Not done (deliberately).** No engine work; `V0-4`/`C3` starts next. The stale
+notion survives only in `HISTORY.md` (the log), which is where it belongs.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 27/27 PASS.
+- `bend_canary` -> 6 ok, 0 bad.

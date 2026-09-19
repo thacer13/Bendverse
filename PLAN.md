@@ -589,8 +589,9 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   `point_write_lowers` is the composition step. Closes `G2`; the two residuals are
   `G9` (non-rock crush) and `G10` (write-site enumeration).
 - [x] **V2 Global settling** — complete (ii and iii landed); `M8d` landed (A.30).
-- [ ] **V0** Phase purity (contract `C1`) — the unblocker for `V3c`/`M7d` and
-  for `C3`. Scoped in A.61; sub-steps are each landable and testable alone.
+- [ ] **V0** Semantics rewrite (contracts `C1` purity, `C2` closure, `C3` cost)
+  — scoped in A.61; sub-steps land and test alone. `V0-1`/`V0-2`/`V0-3` are
+  **landed**; **the critical path is `V0-4` (`C3`)** — see `NEXT` below.
   **V0-1 done (A.63):** `Rules.plan`/`Rules.phase` replace `Rules.step`;
   `phase(state) = commit(plan(state))`, `plan` reads only the pre-phase state and
   resolves contention from it; T23/T24 re-witnessed as conformance and T26
@@ -604,31 +605,41 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   classification (`color_collision_x_par`/`_z_par`: a same-colour collision
   forces equal displacement parities), so the only cross-direction overlap is
   the opposite-diagonal class, resolved by the rule-3 tie-break; T30 witnesses
-  the direction-parity table. Remaining: **V0-4** drive `Support`
-  and the tick from the chunk work set instead of a world scan (`C3`).
-  Acceptance: T23/T24 re-witnessed as *conformance* tests (the engine no longer
-  exhibits them) plus a new witness "a grain in an empty column settles".
+  the direction-parity table.
+  **NEXT — `V0-4` (`C3`, the product thesis):** drive `Support` and the tick from
+  the chunk work set instead of a world scan. This is the asymptotic scaling
+  claim ("cost tracks disturbance, not world size"); the pieces exist (`M8`
+  store/sleeping, `M9` color scan), and `V0-1` made the read set local. It is
+  **independent of `V3c`** (the A.59 coupling predated `V0-1` and is void).
+  De-risk first: the per-tick wake closure — a phase's wake feeds later phases
+  of the same tick (`G12`) — handled by a wake-updated worklist or a
+  neighbourhood margin.
   `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
   **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
   `Support.sup`, which `V0-4` will replace (see §3.4 retirement, §4.1).
 - [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
-  fold. The A.57 rationale (T23 cascade, T24 intra-phase activation) is
-  **obsolete**: `V0-1` (A.63) made the phase a pure function of the pre-phase
-  state, so the evaluated set is fixed (wake lands after the phase) and a cell's
-  decision no longer depends on scan order. The residual is the *composition*:
-  applying the merged write set must be order-independent. **V3c-1 done (A.68):**
-  point writes at `Commit.ne_idx`-distinct leaves commute
+  fold — **off the critical path; pursue only if `M7d` ships.** The A.57
+  rationale (T23 cascade, T24 intra-phase activation, "forward activation
+  closure") is **obsolete**: `V0-1` (A.63) made the phase a pure function of the
+  pre-phase state, so the evaluated set is fixed (wake lands after the phase) and
+  a cell's decision no longer depends on scan order. What remains is the
+  *composition*: applying the merged write set is order-independent. **V3c-1
+  done (A.68):** point writes at `Commit.ne_idx`-distinct leaves commute
   (`point_writes_commute`; `ne_idx` mirrors `swap_m`'s walk and is distinctness
-  for in-range indices; T31). Remaining: **V3c-1b** fold it over a `List<Write>`
-  and state the region-split equality; **V3c-2** refine `ne_idx` to the engine's
-  `U32.is_eq(i, j) == False` (needs `U32` order/subtraction arithmetic). The
-  proven parallel-safety contract remains V3a+V3b. `G3` stays open.
+  for in-range indices; T31). Remaining, **only if `M7d` is pursued**:
+  **V3c-1b** fold it over a `List<Write>` and state the region-split equality;
+  **V3c-2** refine `ne_idx` to the engine's `U32.is_eq(i, j) == False` (needs
+  `U32` order/subtraction arithmetic). The proven parallel-safety contract
+  remains V3a+V3b. `G3` gates only `M7d`, **not `C3`**.
 - [x] **M8d** Chunk sleeping/eviction — landed (A.30): `assemble` regenerates
   missing chunks from pure gen, so the store is a sparse overlay; `Store.evict`
   drops sleeping chunks that are bit-equal to gen (a checkable, conservative
   regenerability test), and eviction is lossless. Test-witnessed (T20); widening
   eviction to all sleeping chunks needs the sleep-invariance proof (`G10`).
-- [ ] **M7d** Parallel phase folds (CPU) — gated on V3c.
+- [ ] **M7d** Parallel phase folds (CPU) — **optional, droppable**, gated on
+  `V3c`. A core-count multiplier on top of `C3`, not a scale prerequisite: no
+  CUDA (`G4`), the 64³ world is too small to showcase it, and dropping M7/M8
+  costs nothing above the scale track.
 - [ ] **M7b** / **M7e** GPU worldgen / phases — blocked on a CUDA host (`G4`).
 - [x] **M9 CPU perf pass** — landed (A.59). Native at 64³, before: a tick was
   **≈ 21 ms and flat** (settled or active) because every pass scanned all
@@ -643,12 +654,12 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   in the same order, so it is semantics-preserving), active tick ≈ 21 → ≈ 4.5
   ms; `build+pull+30 ticks` 0.62 s → 0.036 s. T25 witnesses the sublattice.
   **Correction to the original win list:** the literal "skip sleeping regions in
-  the scan" is *not* semantics-preserving on its own — T24 shows `Ops.wake`
-  activates same-color cells later in scan order that the phase must still
-  evaluate, so a pre-phase activity snapshot needs a worklist or a neighbourhood
-  margin and belongs with `V3c`/`G3`, not M9. Independent of V3c in the form
-  landed. CUDA stays deferred: it needs CUDA 12 at `/usr/local/cuda` (absent
-  here) and only pays off at M8 scale.
+  the scan" is *not* semantics-preserving on its own — a phase's `wake` still
+  marks neighbours that later phases of the same tick evaluate (`G12`), so a
+  pre-phase activity snapshot needs a wake-updated worklist or a neighbourhood
+  margin. That work is **`V0-4`/`C3`**, not `M9` and not `V3c` (the same-phase
+  case was removed by `V0-1`). CUDA stays deferred: it needs CUDA 12 at
+  `/usr/local/cuda` (absent here) and only pays off at M8 scale.
 - [ ] **P1** Publish a proven slice to BendHub — **deferred** until the engine is
   more complete; §5.4 records what a publish must contain, the guardrails, and
   why it is not done yet.
@@ -698,12 +709,14 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
      are now machine-checked and `G10` is closed.
   See `HISTORY.md` A.36–A.56 for the analysis and probes.
 
-Suggested order: `V3c → M7d → (M7b/M7e on CUDA)`; `M8a–M8d` have landed.
-`M9` (CPU perf) has landed (A.59); its remaining scale lever (region-skipping
-in the scan) is tied to `V3c`/`G3` rather than independent.
-M7 and V2b are independent; V2b may proceed first if the GPU path stalls.
-Dropping M7/M8 costs nothing above the scale track; dropping V2 costs the
-settling guarantee.
+Suggested order: **`V0-4` (`C3`) first** — it is the asymptotic scaling claim and
+the largest gap between the pitch and the artifact, and the region-skip is
+**independent of `V3c`** (that coupling predated `V0-1` and is void). Then, only
+if the parallel track is still wanted, `V3c-1b`/`V3c-2` → `M7d`; otherwise
+`M7d` is dropped (`M7b`/`M7e` stay blocked on `G4`). `M8a–M8d` and `M9` have
+landed. M7 and V2b are independent; V2b may proceed first if the GPU path
+stalls. Dropping M7/M8 costs nothing above the scale track; dropping V2 costs
+the settling guarantee.
 
 **GPU expectation (honest).** The 64³ world is too small to showcase a GPU; the
 GTX 1050 is discrete VRAM (transfer cost) and falling-sand work is divergent,
@@ -721,7 +734,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
-| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; **A.65 landed V0-3a**: the live engine's directions are the closed `Rules.Dir4` set (the `k ≥ 4` self-target default is off the live path) and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`), with every write target flipping the phase `y` bit (`diag_write_flips_y_phase`, T29). **A.66 landed V0-3b**: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction classification (`color_collision_x_par`/`_z_par` — a same-colour target collision forces equal `par dx` and `par dz`), so the only cross-direction overlap is the opposite-diagonal parity class `{K0,K1}`/`{K2,K3}`, which the V0-1 tie-break resolves; T30 witnesses the parity table. `is_ne` reflection of the drop-vs-slide disjointness is not needed for the claim (it is stated over parities) and the schedule-invariance *equality* (V3c) remains. **A.68 landed V3c-1**: the composition half is now a theorem — point writes at `Commit.ne_idx`-distinct leaves commute (`point_writes_commute`, T31). `ne_idx` is a computable predicate mirroring `swap_m`'s top-down walk whose stability under the recursion is what makes the induction go through with no `U32` arithmetic; it is exactly `i != j` for in-range indices, and refining it to the engine's `U32.is_eq(i, j) == False` is the open residual. What remains for the equality: fold the kernel over the engine's `List<Write>`/region split (V3c-1b) — the per-phase `plan` reflection (`G14`) is the other live thread. The A.57 phrase "forward activation closure" is now moot: V0-1 fixed the evaluated set and defers wake past the phase |
+| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). **The A.57 framing — T23 cascade, T24 intra-phase activation, "a per-cell transition + the forward activation closure (V3c-1/V3c-2)" — is obsolete:** `V0-1` removed both counterexamples, so the evaluated set is fixed and there is no activation closure left to characterise. What remains is the *composition* equality, and it gates only `M7d`, not `C3`. A.58 landed the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; **A.65 landed V0-3a**: the live engine's directions are the closed `Rules.Dir4` set (the `k ≥ 4` self-target default is off the live path) and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`), with every write target flipping the phase `y` bit (`diag_write_flips_y_phase`, T29). **A.66 landed V0-3b**: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction classification (`color_collision_x_par`/`_z_par` — a same-colour target collision forces equal `par dx` and `par dz`), so the only cross-direction overlap is the opposite-diagonal parity class `{K0,K1}`/`{K2,K3}`, which the V0-1 tie-break resolves; T30 witnesses the parity table. `is_ne` reflection of the drop-vs-slide disjointness is not needed for the claim (it is stated over parities) and the schedule-invariance *equality* (V3c) remains. **A.68 landed V3c-1**: the composition half is now a theorem — point writes at `Commit.ne_idx`-distinct leaves commute (`point_writes_commute`, T31). `ne_idx` is a computable predicate mirroring `swap_m`'s top-down walk whose stability under the recursion is what makes the induction go through with no `U32` arithmetic; it is exactly `i != j` for in-range indices, and refining it to the engine's `U32.is_eq(i, j) == False` is the open residual. What remains for the equality: fold the kernel over the engine's `List<Write>`/region split (V3c-1b) — the per-phase `plan` reflection (`G14`) is the other live thread. The A.57 phrase "forward activation closure" is now moot: V0-1 fixed the evaluated set and defers wake past the phase |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the remaining instance (write-site enumeration `G10`) is now closed (A.48, A.53–A.56), so what remains is the selector/read threading from `Rules.plan`/`Support.sup` to their `PT` mirrors, by inspection (`G14` is the live instance) |
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
@@ -874,9 +887,12 @@ All of `src/` is pure (zero IO). Runners are thin shells.
   `sup_m`/`sup_m_preserves` and instantiate it at `3` only at the top-level
   engine binding; the full proof then checks in 5 s for all fuels. General rule:
   never put a concrete-fuel loop application in a type (§3.7, §7).
-- **Schedule invariance (`G3`).** A region-split fold may differ from the
-  sequential fold in tie-break corners. Mitigation: V3a+V3b stay proven; M7d
-  waits for V3c or is dropped.
+- **Schedule invariance (`G3`).** Off the critical path: post-`V0-1` the phase
+  is pure, so the residual is write-set commutativity (`V3c-1` banked). It gates
+  only the optional `M7d`; `C3` does not depend on it.
+- **Cost (`C3`/`V0-4`).** The scan-to-work-set change touches the imperative
+  engine (the `G5` refinement side) and must close the per-tick wake cone
+  (`G12`); de-risk with a design spike before committing.
 - **Law proof difficulty.** Bit-level inductions can stall — the downgrade
   protocol (§3.4) exists for this.
 - **No CUDA (`G4`).** GPU work degrades to CPU-parallel validation; keep `!`
