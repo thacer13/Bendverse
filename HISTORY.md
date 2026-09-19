@@ -2074,3 +2074,99 @@ lemmas (the hub has **zero** laws on `U32.and/or/xor/shl/shr`), then
 - `bend_canary` → 6 ok, 0 bad.
 - Mutation test: a falsified `length_append` makes the gate red, proving
   `src/list.bend` is traversed by the checker.
+
+### A.61 — Semantics rewrite: the contract, the conformance table, and `V0`
+
+**Status:** specification and governance. **No engine behaviour changed** — gate
+green, 59 laws, both suites pass. This entry exists so the next session cannot
+mistake the old shape's assumptions for decisions.
+
+**Why.** Reading `coreidea.md` against the code (prompted by A.57/A.58 and the
+BendHub survey in A.60) showed that the load-bearing rules were not merely
+imprecise — several were *false of the engine they governed*, and nothing
+mechanical said so. The test suite was the de facto specification, which is
+exactly why T23/T24 landed as "hard cases" instead of conformance failures.
+
+What is actually wrong, with evidence:
+
+1. **Rule 3 vs T23.** `Rules.step` sel 6/12 writes its target unconditionally,
+   and a later same-colour mover re-reads the freshly written target
+   (sel 5: `Array.get(world, Grid.below(i))`) and passes the density guard
+   (`100 < 150`). Two applications write one cell in one phase. This is the
+   "silent overwrite" rule 3 forbids, not a tie-break.
+2. **Rule 9 vs T24.** `Ops.wake` activates immediately, and sel 16 advances via
+   `Grid.next_color` to a cell first read *now*, so sel 0 evaluates a cell the
+   same phase woke. Rule 9 says next tick; `PLAN §2.9` said "immediately" and so
+   agreed with the bug.
+3. **Rule 4 is unachievable as written.** "No two cells being updated are
+   neighbours ⇒ zero coordination" ignores that a move also writes the *target*,
+   and two same-colour cells can share one (`(4,40,4)`/`(6,40,4)` → `(5,39,4)`,
+   both colour 0). Zero coordination is a property of the *schedule*, not of the
+   colouring alone.
+4. **Rule 1 as worded conflicts with conflict resolution**, which must read other
+   cells' targets.
+5. **The box is a convention, not a fact.** `Grid.neighbor` wraps mod 64 on all
+   axes, so `below` at `y=0` is `y=63` and Φ *increases* — outside
+   `array_mov_lowers_phi_regime`'s `mov_S ≥ mov_T` regime. The world is closed
+   only because `Worldgen.gen` paints bedrock on six faces, nothing proves the
+   shell survives, and `runners/window.bend` paints material `0`, so the floor
+   is removable from the shipped UI.
+6. **C3 is false.** `Sim.any_active` and `Support.pass` each scan all 262144
+   cells every tick, and `Support.sup` hardcodes that bound; the 8 phases walk
+   their colour sublattice. Cost is O(world), not O(disturbance) — ~0.09 ms
+   settled at 64³, ~370 s at 1024³. `src/store.bend`'s chunks and sleeping are
+   not wired into the tick at all.
+7. **Size is a constant in ≥4 places.** `Grid.size()=64`, `index` packs 6+6+6,
+   `Support.sup` hardcodes `is_eq(ni, 262144)`, `Sim.any_active` hardcodes
+   `to_nat(262143)`, and the laws hardcode `volume()`. 8 bits/axis fits the same
+   U32 index for free, so 64³ is a choice, not a limit.
+8. **Rule 6 and rule 7 were vibes.** There is no connected-component code; rule 7's
+   "recompute whenever anything nearby changes" implied O(world) rescans.
+9. **The mirror layer agrees with a non-conforming engine.** `step_m`'s
+   `step_preserves`/`step_mirror_balance` faithfully mirror the behaviour that
+   violates R1/R3/R4/R9. They are true, and they buy no conformance.
+
+**What changed (specification only).**
+- `coreidea.md` rewritten around a three-sentence **contract**: **C1** purity of
+  phases, **C2** closure (box, no wrap), **C3** cost tracks disturbance. Rules 3,
+  4, 9 and 10 are now stated as *corollaries* of C1 rather than independent
+  axioms. Rule 1 now says pre-phase reads; rule 4 now specifies (colour ×
+  direction) batches with a provable injective target map; rule 6 is a local
+  property (no cluster analysis); rule 7 is about staleness, scoped to disturbed
+  cells; rule 9 makes wake effects land next tick; rule 10 derives from C1;
+  rule 11 states that the shell is generation, not grid. Rule numbers and titles
+  are unchanged so existing references stay valid.
+- `PLAN.md`: **§2.0** restates the contract; **§4.1** is the new conformance
+  table (4 columns, so the §4 matrix parser is untouched) marking `C1`/`C2`/`C3`
+  and `R1`/`R3`/`R4`/`R9`/`R10` **deviating**, with evidence; §2.1 records the
+  torus; §2.12 reframes determinism as a consequence of C1; §3.4 adds
+  **retirement** for laws orphaned by a semantics change; §5.2 adds `V0` and
+  marks `V3c` superseded by it.
+- `AGENTS.md`: `coreidea.md` is no longer "immutable" — it is normative and
+  editable, with the edit procedure (log in `HISTORY.md`, update §4.1), plus the
+  retirement rule and an explicit ban on extending `step_m`/`sup_m`.
+
+**Decisions.**
+- **Purity first.** `V0-1` (intent/resolve/apply) is the unblocker; `V3c` becomes
+  a corollary, not a research problem.
+- **Box, not torus.** Closed in the grid (`V0-2`), because a rule that only holds
+  while the user does not paint the floor is not a rule.
+- **Colour × direction batches** (`V0-3`): fixing the displacement makes target
+  collision impossible, which is what makes rule 4 provable rather than asserted.
+- **Freeze the mirror layer.** No further `step_m`/`sup_m` work; it mirrors the
+  shape `V0-1` replaces. Sunk cost acknowledged and retired, per §3.4.
+- **No band-aids.** `paint_at` was *not* patched to protect the shell, because
+  the correct fix is grid-level (`V0-2`); a paint clamp would be exactly the
+  "kind of right" adaptation that hides the deviation.
+
+**Not done (deliberately).** No engine behaviour change this session, so no law
+is invalidated and no law needs retiring yet. `V0-1` is the first entry that will
+orphan anything, and it must land with the retirement recorded.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (59 laws; unchanged).
+- `bend test/tests.bend` → 24/24 PASS; `bend test/simtests.bend` native → 10/10
+  PASS.
+- `bend_canary` → 6 ok, 0 bad.
+- Nothing in `src/`, `LAWS.bend`, `PROOF.bend`, `test/` or `runners/` was touched,
+  so T23/T24 still witness the *old* behaviour; they are re-witnessed by `V0`.

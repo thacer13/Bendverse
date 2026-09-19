@@ -8,11 +8,18 @@ machine-checked by `PROOF.bend`.
 
 ## Document hierarchy (read in this order)
 
-- `coreidea.md` — **concept authority**. The immutable model: 11 rules, plus the
-  ambition note.
+- `coreidea.md` — **the contract and the rules**. Normative, not scripture:
+  the three-sentence contract (purity of phases, closure, cost) plus 11 rules,
+  of which rules 3/4/9/10 are *corollaries* of purity. Editable when a rule is
+  wrong, impossible as written, or being read in the wrong direction — but every
+  edit must be logged in `HISTORY.md` and reflected in the conformance table.
 - `PLAN.md` — **normative plan (v2)**. Design, verification architecture,
   traceability, state, the gap registry, file layout, guardrails, risks. Update
   §5 when work lands; the gap registry (§5.3) is machine-read by `bend_audit`.
+  §2.0 restates the contract and **§4.1 is the conformance table** — per rule and
+  per contract clause, whether the engine conforms, deviates, or holds by
+  construction. A deviation is recorded there, never closed by rewording the
+  rule to match the code.
 - `LAWS.bend` — **the claims**. Strictly append-only: never change an existing
   law's meaning; a correction is a new law.
 - `PROOF.bend` — **a proof of every law**. This is the gate; it must stay green.
@@ -54,6 +61,14 @@ machine-checked by `PROOF.bend`.
 - If a proof stalls, follow the downgrade protocol: record the unproven claim as
   a new gap in `PLAN.md` §5.3 (with what it gates and what would close it) —
   never leave the gate red, never delete a law, never weaken a statement silently.
+- **Changing semantics is allowed; lying about it is not.** A rule that is wrong
+  or impossible as written gets rewritten in `coreidea.md` (logged in
+  `HISTORY.md`, status updated in §4.1). An engine change that orphans laws is a
+  *retirement*: keep the law, mark it retired with the retiring entry, and say in
+  §4.1 that it is no longer evidence. Never leave an orphaned mirror claim
+  (`step_m`, `sup_m`) looking live — a mirror of a shape that no longer exists is
+  worse than no mirror. Sunk cost is acceptable; inheriting a dead shape's
+  assumptions into the next session is not.
 - Parallelize the code whenever the work is balanced.
 - **Commit autonomy (granted):** the human has given standing permission to
   commit autonomously at each step without asking first. Still run the gate

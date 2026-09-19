@@ -96,6 +96,29 @@ visibility only — they keep the model observable, they are not the product.
 
 ## 2. Normative design
 
+### 2.0 The contract
+
+The normative model is `coreidea.md`'s contract, restated here because the rest
+of this plan is written against it:
+
+- **C1 — Purity of phases.** A tick is the composition of phases; each phase is
+  a pure function of the state it is handed. No part of a phase reads a value
+  another part of the same phase produced.
+- **C2 — Closure.** The world is a closed box; rules never move material out of
+  it and there is no periodic wrap. A boundary move is inert.
+- **C3 — Cost tracks disturbance.** A tick's work is proportional to the
+  disturbed set, not to the world.
+
+Rules 10, 3, 4 and 9 of `coreidea.md` are *corollaries* of C1, not independent
+axioms: determinism is what purity buys, single-writer and collision-free
+batching are what a pure (colour × direction) schedule buys, and the settled
+fixpoint is what a pure phase plus activity gating buys.
+
+§4.1 is the conformance table: per contract clause and per rule, whether the
+engine conforms, deviates, or holds by construction. A claim that deviates is
+recorded there — never papered over with a hypothesis, and never "closed" by
+rewording the rule to match the code.
+
 ### 2.1 World and cell word
 
 World = one flat `Array<U32>`, 64×64×64 = 2^18 cells, built once by worldgen.
@@ -112,6 +135,14 @@ Cell word bit layout (24-bit-safe; bits 24–31 stay 0 — never rely on them):
 | 12–16 | support level | 0–31 |
 | 17–22 | fall distance (impact energy) | 0–63 |
 | 23 | reserved | 0 |
+
+**Box, not torus (C2).** `Grid.neighbor` currently wraps all three axes modulo
+64, so `below` at `y = 0` is `y = 63` and Φ *increases* on that move — outside
+`array_mov_lowers_phi_regime`'s `mov_S ≥ mov_T` regime. The world is closed only
+because `Worldgen.gen` paints a bedrock shell on all six faces; nothing proves
+the shell survives, and `runners/window.bend` can paint it away. Closing the box
+**in the grid** (boundary moves inert) is `V0-2`; that the shell is generation
+rather than grid is what rule 11 now says.
 
 ### 2.2 Materials (v1)
 
@@ -258,11 +289,19 @@ the world by calling it per cell (`build`; `build_at` is the parallel variant).
 - `scenarios/fixtures.bend`: shared setup (`spawn`, `pull`), so `src/sim.bend`
   stays only the tick pipeline.
 
-### 2.12 Determinism contract
+### 2.12 Purity and the determinism contract
 
 Given the same initial `Array<U32>` and constants, every run (JS, native,
 threaded, GPU) produces identical results. Witnessed by T1. This is the
 acceptance bar for any parallel or GPU work.
+
+Read through §2.0 this is not an extra requirement: a tick is a composition of
+pure phases (C1), so any evaluation order at any granularity computes the same
+function. Determinism is a *consequence* of the contract, and a parallel
+implementation is correct when it is a different schedule of the same pure
+phase — not when it reproduces the sequential scan's order effects. Until C1
+holds in the engine, determinism holds only because the scan is sequential, and
+that is recorded as a deviation (§4.1) rather than treated as proven.
 
 ---
 
@@ -313,6 +352,15 @@ quietly weaken a statement. Record the unproven claim in §5.3 with a new ID
 (what is unproven, what it gates, what would close it), keep or downgrade the
 property to a golden test, and proceed. `bend_audit` reads the registry, so the
 record is mechanical, not narrative.
+
+**Retirement, not deletion (added A.61).** A semantics change cannot edit a law,
+and cannot delete one either, so a rewritten engine orphans the laws stated about
+the old shape. The rule is *retirement*: keep the law, mark it retired by the
+entry that retires it, and keep it only while its subject module exists. A
+retired law is still true; it is no longer evidence. §4.1 records the retirement
+so a later session cannot mistake an orphaned claim for a live one. This exists
+specifically so that a rewrite does not silently inherit the old shape's
+assumptions — the failure mode the append-only discipline otherwise creates.
 
 ### 3.5 Golden tests (runtime witnesses)
 
@@ -378,22 +426,53 @@ an oversight to hide.
 
 | Rule | Constraint | Laws | Tests | Modules |
 |---|---|---|---|---|
-| `R1` | Locality: neighbor-only reads, bounded radius | `dir_phi_cancel` `neighbor_cancel` `low6_add_independent` `parity_flip_succ` `parity_flip_pred` | T11 T12 T13 T14 | parity mod priority order |
+| `R1` | Locality: pre-phase reads only, bounded radius | `dir_phi_cancel` `neighbor_cancel` `low6_add_independent` `parity_flip_succ` `parity_flip_pred` | T11 T12 T13 T14 | parity mod priority order |
 | `R2` | Conservation: swap/transform only | `array_point_write_preserves_count` `array_point_write_count_balance` `array_mov_swap_preserves_count` `array_support_write_preserves_count` `array_fall_write_preserves_count` `array_mov_write_preserves_count` `array_wake_write_preserves_count` `array_deactivate_write_preserves_count` | T2 T21 | count rules ops |
-| `R3` | Single-writer, deterministic tie-break | `scan_order_total` `neighbor_cancel` | T14 | order priority |
-| `R4` | Phase separation: no same-color neighbors | `neighbor_x_parity` `neighbor_y_parity` `neighbor_z_parity` `parity_flip_succ` `parity_flip_pred` | T10 | parity sim |
+| `R3` | Single-writer per phase; tie-break from the pre-phase state | `scan_order_total` `neighbor_cancel` | T14 | order priority |
+| `R4` | Phase separation: colour × direction batches, injective targets | `neighbor_x_parity` `neighbor_y_parity` `neighbor_z_parity` `parity_flip_succ` `parity_flip_pred` | T10 | parity sim |
 | `R5` | Falling is universal (density rule) | `fall_decreases` `fall_lowers_potential` `sand_sinks_in_water` `array_mov_cross` `array_mov_lowers_phi` `array_mov_lowers_phi_regime` | T9 T22 | rules potential fall |
-| `R6` | Cohesion = rigidity, not material type | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `guarded_crush_lowers_pot` `array_crumble_lowers_phi` `array_guarded_crush_lowers_phi` `rock_crumbles_lighter` | T9 T19 | support potential writepot tick |
-| `R7` | Support recomputed, never cached | — | T9 | support |
+| `R6` | Cohesion = rigidity, a local neighbourhood property | `crumble_decreases` `crumble_lowers_potential` `crumble_lowers_pot` `guarded_crush_lowers_pot` `array_crumble_lowers_phi` `array_guarded_crush_lowers_phi` `rock_crumbles_lighter` | T9 T19 | support potential writepot tick |
+| `R7` | Support derived, never carried; scoped to disturbed cells | — | T9 | support |
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
-| `R9` | Activity is explicit and always settles | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_activate_write_preserves_phi` `sup_mirror_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
-| `R10` | Determinism under any schedule | — (by construction) | T1 | sim |
-| `R11` | Worldgen is a pure seeding function | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
+| `R9` | Activity is explicit; wake effects land next tick | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_activate_write_preserves_phi` `sup_mirror_preserves_phi` | T4 T4b T19 | sim potential settle refine writepot tick |
+| `R10` | Determinism as a corollary of phase purity | — (by construction) | T1 | sim |
+| `R11` | Worldgen is a pure seeding function (shell included) | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
 | `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` `n_add_sub_le` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
 
 Reading the `—` rows: R7 is test-witnessed only (recorded as `G6`); R2 now has
 the `V4` count laws (A.31–A.32, A.34).
 R10 and R11 hold by construction and are witnessed by tests.
+
+### 4.1 Conformance — contract and rule status
+
+`Laws` above says what bears on a rule; this says whether the *engine* meets it.
+Deliberately four columns, so the §4 matrix parser is unaffected. Statuses:
+**conforming**; **deviating** (the engine contradicts the rule); **by
+construction** (true because of the code's shape, not by proof); **unproven**.
+This table is what would have caught T23/T24 on the day they landed.
+
+| Ref | Target | Status | Open deviation / evidence |
+|---|---|---|---|
+| `C1` | Purity of phases | deviating | a phase reads the array it is writing (`Rules.step` sel 5/8/9/10); T23 is an ordered cascade, T24 is intra-phase activation |
+| `C2` | Closure (box, no wrap) | deviating | `Grid.neighbor` wraps mod 64 on every axis; the box is a worldgen shell and paint can open it (`V0-2`) |
+| `C3` | Cost tracks disturbance | deviating | `Sim.any_active` and `Support.pass` scan all 262144 cells every tick; `src/store.bend`'s chunks are not wired into the tick |
+| `R1` | Pre-phase reads only, bounded radius | deviating | same as `C1`: mid-phase reads (T23/T24) |
+| `R2` | Conservation: swap/transform only | conforming | count laws closed (`V4`); write sites enumerated (`G10` closed) |
+| `R3` | At most one writer per cell per phase | deviating | two same-colour cells write one target in a phase (T23) |
+| `R4` | Colour × direction batches, injective targets | deviating | batches are colour-only, so same-colour diagonal movers contend (T23); direction batching is `V0-3` |
+| `R5` | Falling is universal | conforming | `fall_*` laws |
+| `R6` | Cohesion rigidity is local | conforming | `Support.sup` / `Ops.adjacent_static` are neighbourhood-local; no cluster code exists |
+| `R7` | Support derived, scoped to disturbed cells | conforming | activity-gated derivation; the *scan* is a `C3` deviation, not a staleness one |
+| `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
+| `R9` | Activity effects land next tick | deviating | `Ops.wake` activates immediately and the same phase then evaluates the woken cell (T24) |
+| `R10` | Determinism under any schedule | unproven | holds only because the scan is sequential; `C1` is the proof and does not hold yet |
+| `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
+| `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
+
+`C2` and `C3` are open engineering. `C1`/`R1`/`R3`/`R4`/`R9`/`R10` are one
+problem wearing six names — **a phase is not a pure function yet** — and `V0` is
+the work item that fixes it. No row is closed by rewording a rule to match the
+code.
 
 ---
 
@@ -444,8 +523,23 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   `point_write_lowers` is the composition step. Closes `G2`; the two residuals are
   `G9` (non-rock crush) and `G10` (write-site enumeration).
 - [x] **V2 Global settling** — complete (ii and iii landed); `M8d` landed (A.30).
+- [ ] **V0** Phase purity (contract `C1`) — the unblocker for `V3c`/`M7d` and
+  for `C3`. Scoped in A.61; sub-steps are each landable and testable alone.
+  **V0-1** define the per-cell `intent` as a pure function of the pre-phase
+  state and `phase(state) = apply(resolve(intent(state)))`; **V0-2** close the
+  box (grid boundary moves inert; the shell is generation, not the grid);
+  **V0-3** batch by (colour × direction) and prove the target map injective, so
+  `resolve` is trivial and rule 4 holds by construction; **V0-4** drive `Support`
+  and the tick from the chunk work set instead of a world scan (`C3`).
+  Acceptance: T23/T24 re-witnessed as *conformance* tests (the engine no longer
+  exhibits them) plus a new witness "a grain in an empty column settles".
+  `step_m`/`sup_m` (the mirror layer) are **not** to be extended: they mirror
+  the shape `V0-1` replaces (see §3.4 retirement, §4.1).
 - [ ] **V3c** Schedule invariance: a region-split fold equals the sequential
-  fold. Scoped in A.57 and **deferred**: the naive statement is false (T23: a
+  fold. **Superseded as a work item by `V0`** (A.61): the naive statement is
+  false *because* the engine reads mid-phase state, so under `C1` this becomes a
+  corollary of phase purity (locality + injective targets) rather than a
+  separate research problem. Scoped in A.57 and **deferred**: the naive statement is false (T23: a
   denser later mover re-reads and overwrites a shared target — an ordered
   cascade, not "first wins"; T24: `Ops.wake` activates later-index cells that
   the scan then evaluates in the *same* phase, so no bounded-radius
