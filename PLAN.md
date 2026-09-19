@@ -427,6 +427,7 @@ R10 and R11 hold by construction and are witnessed by tests.
 | `G9`/`G10` | engine write-site enumeration complete: `Rules.step` mirrored on `PT` (`step_m`, pair invariant, all-fuel `step_preserves`, law `step_mirror_balance`), joining the `Support.sup` mirror; closes `G10`/`G2`'s last residual | A.48, A.56 |
 | `V3c-0` | engine-level write-target separation, partial: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`) — the `Rules`-level form of V3a | A.58 |
 | `M9` | CPU perf pass: cell-resolution render, settled-world tick fixpoint, color-restricted phase scan (active tick ≈ 21→4.5 ms, settled ≈ 0.09 ms), T25 | A.59 |
+| `—` | BendHub reuse: `src/list.bend` (the `List` lemmas Base does not ship) and count-fold completeness (`cells_m`, `cnts_m_len`, `to_counts_len`) | A.60 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -477,6 +478,9 @@ Dropped by measurement (not by budget): `M7c` parallel render (A.19).
   margin and belongs with `V3c`/`G3`, not M9. Independent of V3c in the form
   landed. CUDA stays deferred: it needs CUDA 12 at `/usr/local/cuda` (absent
   here) and only pays off at M8 scale.
+- [ ] **P1** Publish a proven slice to BendHub — **deferred** until the engine is
+  more complete; §5.4 records what a publish must contain, the guardrails, and
+  why it is not done yet.
 - [x] **V4 (conservation)** — landed (A.31–A.32, A.34): every material-preserving
   write preserves the count, `array_point_write_count_balance` gives the exact
   displacement identity, and `array_mov_swap_preserves_count` proves the
@@ -546,7 +550,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
-| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains |
+| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). A.57 scopes it and shows the naive form false (T23 contention cascade, T24 intra-phase activation); a sound version needs a per-cell transition + the forward activation closure (V3c-1/V3c-2) and then either index-ordered regions or a fixed-point model change (V3c-3). A.58 lands the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the remaining instance (write-site enumeration `G10`) is now closed (A.48, A.53–A.56), so what remains is the selector/read threading from `Rules.step`/`Support.sup` to their `PT` mirrors, by inspection |
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
@@ -555,6 +559,34 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G9` | accepted | non-rock `crush_word` potential preservation (`material(w) != 3`) — Bend cannot case-split the opaque `U32` in `Cell.density`/`crush_material`, so the identity is not a theorem | closed | G2 G10 | closed (A.38–A.40): `Word.cmp` reflection (A.38) makes the guard provable; the engine guards both crush sites with `Ops.crush_if_rock` (A.39); `array_guarded_crush_lowers_phi` (A.40) proves the guarded write's Φ effect at every index — rock: `crush_gap`, non-rock: identity — with no `material(w) == 3` hypothesis. Runtime-witnessed by T19 |
 | `G10` | accepted | the tick's write-*site* enumeration over `Support.sup`/`Rules.step` is by inspection, not mirrored; each write primitive's effect is proven | closed | G2 G9 | **closed (A.48, A.53–A.56):** both state machines are mirrored on `PT`. `Support.sup` (A.48): `sup_m`/`sup_m_preserves` with a datatype selector (`SupSel`), an abstract wake fuel, and law `sup_mirror_preserves_phi`. `Rules.step` (A.56): `src/step.bend`'s `step_m` mirrors the full selector machine (`StepSel`, abstract wake fuel) and carries a pair invariant `Φ(current) + da == Φ(start) + db`; every write composes its exact leaf balance via `pt_write_balance`, wakes fold through `sr_phi_cong`, `step_preserves` is the all-fuel theorem, and law `step_mirror_balance` closes over `step_pass_m` (the `Sim.phase` entry point). Unconditional, so no fall-regime or `can` hypothesis is needed; the earlier `G9` resolution (A.38–A.40) covers both crush sites. The selector/read threading of the mirror is by inspection (the `G5` caveat) |
 | `G11` | unproven | the `Rules.step` movement (sel 6/12) lowers Φ by the drop; the two `array_swap_decreases` balances do not telescope | closed | G10 M8d | **closed (A.53):** a `leaf_base(t,base,n,i)` function gives the leaf index `chg_m` actually uses, so `nfst`/`nsnd(chg_m)` project onto `pot_at(tget(..), leaf_base(..))` — definitional at `PL`, where A.52's `base+i` form was false. `swap_balance` then gives one write's `new − old` at that leaf, and the two balances telescope into the unconditional cross law `array_mov_cross` (the residuals `p+q` and `r+s` are the pre/post potentials of the two leaves). `fall_gap := mov_S − mov_T` and `array_mov_lowers_phi` give the decrease under the fall-regime hypothesis `mov_T + fall_gap == mov_S`; the regime is now a single order Bool with the Nat order lemma proven (A.54: `n_add_sub_le`, law `array_mov_lowers_phi_regime`); reflecting the engine's `can` guard to it is the remaining `G10` `step_m` work |
+
+### 5.4 Deferred — publishing a proven slice to BendHub
+
+Not done; revisit when the engine is more complete. BendHub
+(`https://hub.bend-lang.com`) is a content-addressed store: a package is a
+directory named by the hash of its contents, with **no names, versions or
+accounts**, and `bend <file.bend> --publish` uploads one file plus everything it
+imports, printing the `import 0x…/….bend as X` line to paste elsewhere. It
+**refuses to publish an open law or a TODO** — the same rule as our gate, which
+is why the gate must stay green for any candidate slice.
+
+Consequences, recorded now so the decision is cheap later:
+
+- A publish must be a **standalone proven slice** (only the modules it
+transitively imports), never this repository: `G3`, `G5` and `G7` are open, and
+  a hash is permanent — a published claim cannot be corrected in place, only
+  superseded by a new hash.
+- `G7` (six `{==}` laws that could admit a weakened statement) should be closed
+  **first**: a permanent hash publishes the *statement*, not just the proof.
+- Adopt the ecosystem's `seal.bend` convention (a three-line file importing
+  `PROOF.bend`), so laws and proofs cannot travel apart.
+- Candidate first uploads, in order of self-containedness and general value
+  (A.60 survey of the hub): the `U32`/word bit-lemma library (`src/bits.bend`,
+  `src/mod.bend`, `src/parity.bend` — the hub has **zero** laws on
+  `U32.and/or/xor/shl/shr`); then `src/list.bend` with the count-fold
+  completeness lemmas; then the Φ/potential telescope (`src/fall.bend`,
+  `src/potential.bend`) and the conservation laws, which have no public
+  counterpart.
 
 ---
 
@@ -578,6 +610,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `src/sim.bend` | tick pipeline (passes + 8 phase folds) |
 | `src/bits.bend` | Word/Nat bit lemmas and index/cell models |
 | `src/nat.bend` | `Nat` arithmetic lemmas |
+| `src/list.bend` | `List.append`/`reverse`/`length` lemmas (Base ships none); imported from BendHub `0x085d89db…` |
 | `src/potential.bend` | Φ evaluation kernel |
 | `src/settle.bend` | settling lemmas (`suml`, `app`, `List.set` splits) |
 | `src/refine.bend` | array↔model refinement: `PT` model, pack/unpack, `Array.swap.go` correspondence, Φ decrease |

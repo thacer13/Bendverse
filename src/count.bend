@@ -2,6 +2,7 @@ import Base
 import ./nat.bend as NatL
 import ./cell.bend as Cell
 import ./settle.bend as S
+import ./list.bend as ListL
 import ./refine.bend as R
 import ./tick.bend as T
 import ./ops.bend as Ops
@@ -77,6 +78,39 @@ def cnts_m(t: R.PT) -> +List<Nat>:
       [nempty(x)]
     case R.PN{+xs, +ys}:
       S.app(cnts_m(xs), cnts_m(ys))
+
+# The number of cells a model tree represents. `cnts_m_len` proves the count
+# fold emits exactly one entry per leaf, so `suml` conservation cannot be
+# bought by dropping or duplicating a cell -- the half of rule 2 that `suml`
+# alone cannot state. It consumes `src/list.bend`'s `length_append`.
+def cells_m(+t: R.PT) -> Nat:
+  match t:
+    case R.PL{x}:
+      1n
+    case R.PN{+xs, +ys}:
+      Nat.add(cells_m(xs), cells_m(ys))
+
+def cnts_m_len(+t: R.PT) -> {List.length(&2, Nat, cnts_m(t)) == cells_m(t) : Nat}:
+  match t:
+    case R.PL{x}:
+      {==}
+    case R.PN{+xs, +ys}:
+      Equal.trans(Nat,
+        List.length(&2, Nat, S.app(cnts_m(xs), cnts_m(ys))),
+        Nat.add(List.length(&2, Nat, cnts_m(xs)), List.length(&2, Nat, cnts_m(ys))),
+        Nat.add(cells_m(xs), cells_m(ys)),
+        Equal.sym(Nat,
+          Nat.add(List.length(&2, Nat, cnts_m(xs)), List.length(&2, Nat, cnts_m(ys))),
+          List.length(&2, Nat, S.app(cnts_m(xs), cnts_m(ys))),
+          ListL.length_append(cnts_m(xs), cnts_m(ys))),
+        Equal.trans(Nat,
+          Nat.add(List.length(&2, Nat, cnts_m(xs)), List.length(&2, Nat, cnts_m(ys))),
+          Nat.add(cells_m(xs), List.length(&2, Nat, cnts_m(ys))),
+          Nat.add(cells_m(xs), cells_m(ys)),
+          Equal.cong(Nat, Nat, x => Nat.add(x, List.length(&2, Nat, cnts_m(ys))),
+            List.length(&2, Nat, cnts_m(xs)), cells_m(xs), cnts_m_len(xs)),
+          Equal.cong(Nat, Nat, x => Nat.add(cells_m(xs), x),
+            List.length(&2, Nat, cnts_m(ys)), cells_m(ys), cnts_m_len(ys))))
 
 # The written list and the (displaced, written) count pair, mirroring
 # `pots_swap_m`/`chg_m` but with no positional dependence (counts need no base).
@@ -269,6 +303,19 @@ def to_counts_pack(t: R.PT) -> {to_counts(R.pack(t)) == cnts_m(t) : +List<Nat>}:
         S.app(cnts_m(xs), to_counts(R.pack(ys))),
         S.app(cnts_m(xs), cnts_m(ys)),
         e1, e2)
+
+# The array-side form of `cnts_m_len`, routed through the `pack` bridge: the
+# `Array` fold `to_counts` emits one entry per leaf of the tree it packs. (The
+# array variable itself cannot be named twice -- linearity forbids the copy,
+# `G8` -- hence the `PT` presentation and `pack`.)
+def to_counts_len(+t: R.PT) -> {List.length(&2, Nat, to_counts(R.pack(t))) == cells_m(t) : Nat}:
+  Equal.trans(Nat,
+    List.length(&2, Nat, to_counts(R.pack(t))),
+    List.length(&2, Nat, cnts_m(t)),
+    cells_m(t),
+    Equal.cong(List<&2, Nat>, Nat, x => List.length(&2, Nat, x),
+      to_counts(R.pack(t)), cnts_m(t), to_counts_pack(t)),
+    cnts_m_len(t))
 
 # ------------------------- swap congruence -------------------------
 # A point write changes one leaf. Its non-empty count is the same as before

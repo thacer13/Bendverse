@@ -2013,3 +2013,64 @@ recorded, not closed.
 - `bend_canary` → 6 ok, 0 bad.
 - Native 64³: settled tick ≈ 0.09 ms (was ≈ 21 ms); active tick ≈ 4.5 ms (was
   ≈ 21 ms); `build+pull+30 ticks` 0.62 s → 0.036 s.
+
+### A.60 — BendHub survey; imported `List` lemmas and count-fold completeness
+
+**Status:** reuse landed (gate green, 59 laws unchanged); publishing recorded as
+deferred (`P1`, §5.4).
+
+**What was surveyed.** BendHub is a static, account-free store (`GET /index.json`;
+raw files at `/<hash>/<file>`): 69 packages, 312 files, ~1.8 MB. Ranked by actual
+proof content, ~30 packages are one author's "definitional laws" template
+(`LAWS`/`PROOF`/`lib`/`seal`, ~550 `{==}` reflexivity proofs, zero induction).
+Six packages carry real induction: `list.bend` (`0x085d89db…`), `string.bend`,
+`nat.bend`, the `0xd5e93625…` math library (5 026 LOC: `Dvd`, Bezout `Cop`,
+Euclid by subtraction, Gauss's lemma, `sqrt2`), tinygrad and bend-ml bills. The
+hub's `GLIDER` Life package (`0xbdd0ed82…`) has **no** proofs; its lemmas come
+from the book repo `github.com/nohzafk/bend2-from-zero`, which owns the actual
+cellular-automaton proofs.
+
+**Landed.**
+- `src/list.bend` — the six `List` lemmas Base does not ship (`append_nil2`,
+  `append_assoc2`, `reverse_go_spec`, `reverse_append2`, `reverse_reverse`,
+  `length_append`), imported from `0x085d89db…` and checked verbatim in Bend
+  2.0.5. It is indexed by `bend_lemmas`, and since `Settle.app` *is*
+  `List.append(&2, Nat, …)` the lemmas apply without a bridge. Verified
+  load-bearing by a mutation test (a false `length_append` turns the gate red),
+  so the module is not silently unchecked.
+- `src/count.bend` — `cells_m` (leaves of the `PT` model) and
+  `cnts_m_len`/`to_counts_len`: the count fold emits **exactly one entry per
+  leaf**. This is the half of rule 2 that `suml` alone cannot state (mass could
+  be conserved while dropping a cell), and `cnts_m_len` consumes
+  `ListL.length_append` — the hub import doing real work.
+
+**Findings.**
+- Nothing else was needed: `nat.bend` duplicates `src/nat.bend`, and the math
+  library is 250 KB of a foreign `Nat`/`Int` stack that would clash with ours —
+  its value is idioms (`Equal.trans/cong`, `Empty.absurd`, `Data` records as
+  reusable propositions), not code to vendor.
+- **Linearity confirms `G8` in practice.** An `Array` parameter cannot be marked
+  reusable (`+a: Array<U32>` is rejected: "expected Data, observed Type"), so the
+  hub's `reverse_go_spec` shape — which names its list argument twice — does not
+  transfer to `Grid.to_list_go`. Array-side statements must go through `PT` and
+  `pack`, which is exactly why `to_counts_len` is stated on `R.pack(t)`.
+- Prior art for `G3` (recorded in §5.3): `bend2-from-zero`'s
+  `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` by depth induction with a
+  `cells_add` loop-split lemma. It is the nearest public claim to V3c, but it
+  proves equal *outputs* only and is silent on contention — precisely the T23/T24
+  counterexamples — so it is a shape to borrow, not a theorem to reuse.
+
+**Deferred.** Publishing is recorded in `PLAN.md` §5.4 (and as `P1` in §5.2):
+`bend --publish` refuses an open law or a TODO, and a hash is permanent, so a
+publish must be a standalone proven slice, `G7` should be closed first, and the
+`seal.bend` convention adopted. Candidate first uploads: the `U32`/word bit
+lemmas (the hub has **zero** laws on `U32.and/or/xor/shl/shr`), then
+`src/list.bend` + the completeness lemmas, then the Φ telescope and conservation.
+
+**Verification**
+- `bend PROOF.bend` → `All terms check.` (59 laws; count unchanged).
+- `bend test/tests.bend` → 24/24 PASS; `bend test/simtests.bend` native → 10/10
+  PASS (no runtime code touched).
+- `bend_canary` → 6 ok, 0 bad.
+- Mutation test: a falsified `length_append` makes the gate red, proving
+  `src/list.bend` is traversed by the checker.
