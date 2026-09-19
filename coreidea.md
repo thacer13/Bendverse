@@ -132,14 +132,14 @@ construction. This section states only the *shape* of the current gap, in model
 terms; it changes only when a contract clause or a rule's status changes, not per
 milestone.
 
-Purity (contract 1) and closure (contract 2) hold: a phase reads only the state
-it is handed, and the box is a property of the grid rather than of the shell.
-The deviations are all consequences of one thing — the engine still sweeps the
-world. Cost is therefore not yet proportional to disturbance (contract 3);
+Purity (contract 1), closure (contract 2), and rule 9's "effects land next tick"
+all hold: a phase reads only the state it is handed, the box is a property of the
+grid rather than of the shell, and every wake is applied at tick end. The
+remaining deviations are consequences of one thing — the engine still sweeps the
+world. Cost is therefore not yet proportional to disturbance (contract 3), and
 support is seeded from a cell's position rather than derived from its
-neighbourhood (rules 6 and 7); and one activity effect, the support pass, still
-lands within its own pass rather than the next tick (rule 9). No deviation is
-closed by rewording a rule to match the code.
+neighbourhood (rules 6 and 7). No deviation is closed by rewording a rule to
+match the code.
 
 Ambition (in the open)
 

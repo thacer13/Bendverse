@@ -2809,3 +2809,55 @@ conformance.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
 - `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 16/16 PASS.
+
+### A.74 — V0-4b-2: deferred support wake (`G16` closed); the support scan builds the work list
+
+**Status:** engine semantics + structure. Gate green (70 laws; no law changed —
+`sup_m`'s crush step and its proof updated). Touches `src/support.bend`,
+`src/sim.bend`, `src/rules.bend`, `src/tick.bend`, `test/simtests.bend` (T36).
+Closes `G16`; `V0-4b-3` (drive/maintain the work set) is next. `PLAN.md`
+§4.1/§5.1/§5.2/§5.3/§8 and `coreidea.md` updated.
+
+**Why.** `V0-4a` deferred the *phase* wakes and `V0-4b-1` cleared the mover's
+active bit, but the support pass still applied its own wake inline after a crush
+(`G16`), so a cell it woke was evaluated by the same tick's phases. That was the
+last source of in-tick activation, and it also forced the tick to rebuild its
+work list *after* support (a second full scan) to see the woken cells.
+
+**What changed.**
+- `src/support.bend`: `sup` conses a crushed cell onto `wakes` instead of calling
+  `Ops.wake`, and threads a `todo` list — the active cells it sees at `sel 0`.
+  `pass_gated` returns `(world, wakes, todo)`; `pass`/`pass_all` (setup) apply the
+  wakes immediately via `wake_all`. Within a tick the pass now only ever *clears*
+  active bits, so the pre-tick active set is a superset of everything the phases
+  can act on.
+- `src/sim.bend`: the tick is `any_active` (cheap settled check) →
+  `Support.pass_gated` (which returns the work list) → the eight phases over that
+  list → `Rules.commit_wakes` applies the support and phase wakes together.
+  Removed the separate `active_list` scan from the tick path (`active_list`
+  remains only for the single-phase `Sim.phase` probe).
+- `src/rules.bend`: `wake_writes` converts the support pass's `List<U32>` wake
+  indices to `WWake` writes so they fold with the phase wakes.
+- `src/tick.bend`: `sup_m`'s `S6` and `sup_crush_step` drop the inline wake — the
+  mirror now tracks the crush writes only; the deferred wakes are Φ-neutral
+  (`wake_z_m_preserves` / law `wake_preserves_pot`). No law statement changed.
+- `test/simtests.bend`: **T36** — an active rock with an empty below is crushed,
+  and its neighbour stays put this tick (active afterwards).
+- `coreidea.md`: rule 9's "effects land next tick" now holds; the status
+  paragraph drops the support-pass clause (still conceptual, no identifiers).
+
+**Measured (honest).** Settled tick is **≈ 0.09 ms**, preserved (2000 settled
+ticks ≈ 180 ms, matching the A.59 baseline). The active path dropped one full
+scan (the separate `active_list` build). A `pull` transient is *longer* than
+before — the crumble now propagates one ring per tick (the intended rule-9
+physics), not faster within a tick. `C3` is still not closed: the tick sweeps
+the world twice (`any_active` + the gated `Support.pass`), which is `V0-4b-3`.
+
+**Not done (deliberately).** No support work list (support still scans); no
+maintained list across ticks; the chunk `M8` store is not wired in.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (70 laws; unchanged).
+- `bend test/tests.bend` -> 26/26 PASS.
+- `bend test/simtests.bend` native -> 17/17 PASS (T36 added; all goldens pass).
+- `bend_canary` -> 6 ok, 0 bad.

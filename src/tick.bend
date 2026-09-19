@@ -456,9 +456,11 @@ def wake_m(+i: U32, +t: R.PT, +n: U32) -> R.PT:
 # which is opaque in a proof, so the mirror uses a datatype selector (`SupSel`);
 # the `SupSel` -> numeric mapping is the `G5` refinement, by inspection. The
 # mirror carries the running Φ gap: `set_support` adds 0, the guarded crush at
-# sel 6 adds `guard_gap`. The wake fuel is threaded as an abstract `Nat` (A.45:
-# a concrete fuel inside a proposition unrolls into a normalisation cliff); the
-# top-level `sup_pass_m` instantiates it at 3.
+# sel 6 adds `guard_gap`. V0-4b-2 defers the crush's wake to tick end, so the
+# mirror's sel 6 is the crush alone; the deferred wakes are Φ-neutral
+# (`wake_z_m_preserves` / law `wake_preserves_pot`). The wake fuel is kept as an
+# abstract `Nat` (A.45: a concrete fuel inside a proposition unrolls into a
+# normalisation cliff); the top-level `sup_pass_m` instantiates it at 3.
 
 type SupSel is Data:
   S0{}
@@ -536,9 +538,8 @@ def sup_m(fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gated: Bool, +n
         case S6{}:
           +v = Ops.crush_if_rock(tget(t, n, i))
           +t2 = R.swap_m(t, n, i, v)
-          +t3 = wake_z_m(wf, 0, i, t2, n)
-          +q = tget(t3, n, i)
-          rr = sup_m(p, t3, q, S9{}, i, gated, n, wf, base)
+          +q = tget(t2, n, i)
+          rr = sup_m(p, t2, q, S9{}, i, gated, n, wf, base)
           sup_add_gap(rr, guard_gap(t, base, n, i))
         case S9{}:
           +ni = U32.add(i, 1)
@@ -568,33 +569,26 @@ def sup_support_step(+t: R.PT, +base: U32, +n: U32, +i: U32, +sv: U32)
     S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)),
     before, e1, array_support_write(t, base, n, i, sv))
 
-# A guarded crush + wake at index `i` lowers Φ by exactly `guard_gap` (sel 6).
-def sup_crush_step(+t: R.PT, +base: U32, +n: U32, +i: U32, +wf: Nat)
-  -> {Nat.add(S.suml(S.to_pots(R.pack(wake_z_m(wf, 0, i, R.swap_m(t, n, i, Ops.crush_if_rock(tget(t, n, i))), n)), base, n)),
+# A guarded crush at index `i` lowers Φ by exactly `guard_gap` (sel 6). The
+# crush's wake is deferred to tick end and is Φ-neutral, so the mirror need not
+# apply it.
+def sup_crush_step(+t: R.PT, +base: U32, +n: U32, +i: U32)
+  -> {Nat.add(S.suml(S.to_pots(R.pack(R.swap_m(t, n, i, Ops.crush_if_rock(tget(t, n, i)))), base, n)),
            guard_gap(t, base, n, i))
       == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
   +v = Ops.crush_if_rock(tget(t, n, i))
   +t2 = R.swap_m(t, n, i, v)
-  +t3 = wake_z_m(wf, 0, i, t2, n)
   +g = guard_gap(t, base, n, i)
   +e0 = to_pots_swap_pack(t, base, n, i, v)
   +e1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
     S.to_pots(R.pack(t2), base, n),
     S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n), e0)
-  +e3 = wake_z_m_preserves(wf, 0, i, t2, n, base)
-  Equal.trans(Nat, Nat.add(S.suml(S.to_pots(R.pack(t3), base, n)), g),
+  Equal.trans(Nat, Nat.add(S.suml(S.to_pots(R.pack(t2), base, n)), g),
     Nat.add(S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)), g),
     S.suml(S.to_pots(R.pack(t), base, n)),
-    Equal.trans(Nat,
-      Nat.add(S.suml(S.to_pots(R.pack(t3), base, n)), g),
-      Nat.add(S.suml(S.to_pots(R.pack(t2), base, n)), g),
-      Nat.add(S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)), g),
-      Equal.cong(Nat, Nat, x => Nat.add(x, g),
-        S.suml(S.to_pots(R.pack(t3), base, n)),
-        S.suml(S.to_pots(R.pack(t2), base, n)), e3),
-      Equal.cong(Nat, Nat, x => Nat.add(x, g),
-        S.suml(S.to_pots(R.pack(t2), base, n)),
-        S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)), e1)),
+    Equal.cong(Nat, Nat, x => Nat.add(x, g),
+      S.suml(S.to_pots(R.pack(t2), base, n)),
+      S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, i, v)), base, n)), e1),
     array_guarded_crush_lowers_auto(t, base, n, i))
 
 # The fuel-loop mirror: composing the write primitives along `Support.sup`'s
@@ -652,23 +646,22 @@ def sup_m_preserves(+fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gate
         case S6{}:
           +v = Ops.crush_if_rock(tget(t, n, i))
           +t2 = R.swap_m(t, n, i, v)
-          +t3 = wake_z_m(wf, 0, i, t2, n)
-          +q = tget(t3, n, i)
-          +ih = sup_m_preserves(p, t3, q, S9{}, i, gated, n, wf, base)
-          +st = sup_crush_step(t, base, n, i, wf)
+          +q = tget(t2, n, i)
+          +ih = sup_m_preserves(p, t2, q, S9{}, i, gated, n, wf, base)
+          +st = sup_crush_step(t, base, n, i)
           +g = guard_gap(t, base, n, i)
           Equal.trans(Nat,
-            sup_phi(sup_add_gap(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), g), base, n),
-            Nat.add(sup_phi(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), base, n), g),
+            sup_phi(sup_add_gap(sup_m(p, t2, q, S9{}, i, gated, n, wf, base), g), base, n),
+            Nat.add(sup_phi(sup_m(p, t2, q, S9{}, i, gated, n, wf, base), base, n), g),
             S.suml(S.to_pots(R.pack(t), base, n)),
-            sup_phi_add_gap(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), g, base, n),
+            sup_phi_add_gap(sup_m(p, t2, q, S9{}, i, gated, n, wf, base), g, base, n),
             Equal.trans(Nat,
-              Nat.add(sup_phi(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), base, n), g),
-              Nat.add(S.suml(S.to_pots(R.pack(t3), base, n)), g),
+              Nat.add(sup_phi(sup_m(p, t2, q, S9{}, i, gated, n, wf, base), base, n), g),
+              Nat.add(S.suml(S.to_pots(R.pack(t2), base, n)), g),
               S.suml(S.to_pots(R.pack(t), base, n)),
               Equal.cong(Nat, Nat, x => Nat.add(x, g),
-                sup_phi(sup_m(p, t3, q, S9{}, i, gated, n, wf, base), base, n),
-                S.suml(S.to_pots(R.pack(t3), base, n)), ih),
+                sup_phi(sup_m(p, t2, q, S9{}, i, gated, n, wf, base), base, n),
+                S.suml(S.to_pots(R.pack(t2), base, n)), ih),
               st))
         case S9{}:
           +ni = U32.add(i, 1)
@@ -685,7 +678,8 @@ def sup_m_preserves(+fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gate
           NatL.n_add_zero_right(S.suml(S.to_pots(R.pack(t), base, n)))
 
 # The top-level binding: the mirror run over the engine's entry point
-# (`pass_gated`'s `sup(16777216, get(world, 0), 0, 0, 0, gated)`), with the wake
-# fuel instantiated at 3. The main fuel stays abstract (all-fuel theorem).
+# (`pass_gated`'s `sup(16777216, get(world, 0), 0, 0, 0, gated, Nil, Nil)`), with
+# the wake fuel instantiated at 3. The main fuel stays abstract (all-fuel
+# theorem). The mirror tracks the crush writes; the deferred wakes are Φ-neutral.
 def sup_pass_m(fuel: Nat, +t: R.PT, +n: U32, +gated: Bool) -> R.PT & Nat:
   sup_m(fuel, t, tget(t, n, 0), S0{}, 0, gated, n, U32.to_nat(3), 0)

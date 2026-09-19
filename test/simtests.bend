@@ -341,6 +341,32 @@ def t35_color0() -> Bool:
 def t35() -> U32:
   is_bad(Bool.and(t35_color3(), t35_color0()))
 
+# T36 V0-4b-2/G16 conformance: the support pass's crush wake is deferred too. An
+# active rock R at (4,40,4) with an empty below is crushed in the support pass,
+# which wakes its neighbour B at (5,40,4) — but B is not evaluated by the same
+# tick's phases (it stays put), and is active afterwards (so it falls next tick).
+def t36_world() -> Array<U32>:
+  w0 = Sim.build()
+  w1 = w0[Grid.index(4, 40, 4)] <- Cell.encode(Cell.rock(), 48, 1, 31, 0)
+  w2 = w1[Grid.index(4, 39, 4)] <- 0
+  w3 = w2[Grid.index(5, 40, 4)] <- Cell.encode(Cell.sand(), 0, 0, 0, 0)
+  w3[Grid.index(5, 39, 4)] <- 0
+
+def t36_crushed() -> Bool:
+  w = Sim.tick(t36_world())
+  U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(4, 40, 4))), Cell.rubble())
+
+def t36_stayed() -> Bool:
+  w = Sim.tick(t36_world())
+  U32.is_eq(Cell.material(Grid.value_at(w, Grid.index(5, 40, 4))), Cell.sand())
+
+def t36_woken() -> Bool:
+  w = Sim.tick(t36_world())
+  U32.is_ne(Cell.active(Grid.value_at(w, Grid.index(5, 40, 4))), 0)
+
+def t36() -> U32:
+  is_bad(Bool.and(Bool.and(t36_crushed(), t36_stayed()), t36_woken()))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -359,3 +385,4 @@ def main() -> IO(Unit):
     report("T33 wake is pending until tick end (G12)", t33())
     report("T34 one move per tick (rule 9)", t34())
     report("T35 work-list phase acts on its colour only", t35())
+    report("T36 support crush wake is deferred (G16)", t36())

@@ -8,15 +8,8 @@ import ./worldgen.bend as Worldgen
 def build() -> Array<U32>:
   Support.pass_all(Worldgen.build())
 
-# M9 win 2: a settled world (no active cell, rule 9) is a tick fixpoint.
-# `Support.pass` is activity-gated and each phase is an intent fold that skips
-# inactive cells, so when no cell carries the active bit a whole tick is the
-# identity. Scanning first turns the flat ~21 ms settled tick into a single
-# cheap pass.
-#
-# `any_active_go` walks cells `0..262143`, carrying the pair `(world, value)` and
-# an OR accumulator. `fuel` is the number of cells *after* the current one, so
-# the last cell is handled by the base case and no out-of-range read happens.
+# V0-4b-2: a settled world (no active cell, rule 9) is a tick fixpoint. `any_active`
+# is the cheap check; a settled tick is that one scan and nothing else.
 def any_active_go(
   fuel: Nat, +i: U32, acc: Bool, gp: Array<U32> & U32
 ) -> Array<U32> & Bool:
@@ -39,19 +32,14 @@ def any_active(world: Array<U32>) -> Array<U32> & Bool:
 
 # ------------------------------------------------------------------ V0-4b
 # The phase fold runs over an *active-cell work list* instead of the colour
-# sub-lattice. `active_list` collects the active cells (one scan, after the
-# support pass); `filter_color` selects the phase's colour. Soundness: V0-1 makes
-# a phase's result independent of evaluation order, and within a tick the active
-# set only shrinks (a move clears the mover's bit, wake is deferred to tick end),
-# so the list is a superset of every cell the phases can act on and the phases
-# skip any that were deactivated.
-def cons_if(h: U32, xs: List<&2, U32>, b: Bool) -> List<&2, U32>:
-  match b:
-    case True{}:
-      h <> xs
-    case False{}:
-      xs
-
+# sub-lattice. The tick's list is built by the support scan (`Support.pass_gated`
+# returns the active cells it saw); `filter_color` selects a phase's colour.
+# Soundness: V0-1 makes a phase's result independent of evaluation order, and
+# within a tick the active set only shrinks (a move clears the mover's bit, wake
+# is deferred to tick end), so the list is a superset of every cell the phases
+# can act on and the phases skip any that were deactivated.
+#
+# `active_list` is the standalone work list for a single-phase probe (`Sim.phase`).
 def active_go(
   fuel: Nat, +i: U32, acc: List<&2, U32>, gp: Array<U32> & U32
 ) -> Array<U32> & List<&2, U32>:
@@ -59,11 +47,11 @@ def active_go(
     case 0n:
       match gp:
         case (world, v):
-          (world, cons_if(i, acc, U32.is_ne(Cell.active(v), 0)))
+          (world, Support.cons_if(i, acc, U32.is_ne(Cell.active(v), 0)))
     case 1n+p:
       match gp:
         case (world, v):
-          +acc2 = cons_if(i, acc, U32.is_ne(Cell.active(v), 0))
+          +acc2 = Support.cons_if(i, acc, U32.is_ne(Cell.active(v), 0))
           +ni = U32.add(i, 1)
           q = Array.get(U32, world, ni)
           active_go(p, ni, acc2, q)
@@ -77,7 +65,7 @@ def filter_color(+xs: List<&2, U32>, +c: U32) -> List<&2, U32>:
     case Nil{}:
       Nil{}
     case Con{h, t}:
-      cons_if(h, filter_color(t, c), U32.is_eq(Rules.color_of(h), c))
+      Support.cons_if(h, filter_color(t, c), U32.is_eq(Rules.color_of(h), c))
 
 # V0-1: the phase is `Rules.phase_plan_w` — a pure `plan` (read-only intent +
 # resolve) followed by `commit_sets`. V0-4a (rule 9): the wakes the phase
@@ -124,13 +112,13 @@ def phases_commit(r: Array<U32> & List<Rules.Write>) -> Array<U32>:
     case (world2, wakes):
       Rules.commit_wakes(wakes, world2)
 
-def tick_todo(r: Array<U32> & List<&2, U32>) -> Array<U32>:
+# V0-4b-2: the tick runs the support pass with its wakes *deferred*; the pass also
+# returns the active-cell work list, so the eight phases run over that list and
+# the support and phase wakes are applied together at tick end.
+def tick_sup(r: Array<U32> & List<U32> & List<&2, U32>) -> Array<U32>:
   match r:
-    case (world2, todo):
-      phases_commit(phases(8n, 0, (world2, Nil{}), todo, Nil{}))
-
-def tick_active(world: Array<U32>) -> Array<U32>:
-  tick_todo(active_list(Support.pass(world)))
+    case (world2, sws, todo):
+      phases_commit(phases(8n, 0, (world2, Nil{}), todo, Rules.wake_writes(sws)))
 
 def tick_got(r: Array<U32> & Bool) -> Array<U32>:
   match r:
@@ -139,7 +127,7 @@ def tick_got(r: Array<U32> & Bool) -> Array<U32>:
         case False{}:
           world2
         case True{}:
-          tick_active(world2)
+          tick_sup(Support.pass_gated(world2, True{}))
 
 def tick(world: Array<U32>) -> Array<U32>:
   tick_got(any_active(world))

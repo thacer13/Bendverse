@@ -309,6 +309,16 @@ def commit_wakes(writes: List<Write>, world: Array<U32>) -> Array<U32>:
         case WSet{idx, val}:
           commit_wakes(t, world)
 
+# V0-4b-2: the support pass returns its crushed-cell wake indices as a
+# `List<U32>`; convert them to `WWake` writes so the tick can apply the support
+# and phase wakes together at tick end.
+def wake_writes(xs: List<U32>) -> List<Write>:
+  match xs:
+    case Nil{}:
+      Nil{}
+    case Con{h, t}:
+      WWake{h} <> wake_writes(t)
+
 # One phase, writes applied and wakes pending.
 def phase_pending(r: Array<U32> & List<Write> & List<Write>) -> Array<U32> & List<Write>:
   match r:
