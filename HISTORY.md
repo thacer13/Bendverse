@@ -2990,6 +2990,11 @@ walk (comparable at 64³; the win is that cost no longer scales with the world).
 
 ### A.78 — `V3d`: the material-preserving write family becomes one law, and Φ gets a runtime oracle
 
+> **Annotation (A.79):** the selector types named below moved from `selector.bend`
+> (`Selector.WrSel`/`apply_w`) into the engine as `Rules.PresOp`/`Rules.apply_pres`
+> when the write effect was pushed into `Rules.Write`. Same family, same statements;
+> only the type's home and name changed. `G14` was subsequently closed by A.79.
+
 **Status:** verification + tests. Prompted by an outside review of whether the
 refinement ladder is actually tractable. Two things came out of it.
 
@@ -3049,3 +3054,84 @@ model rather than from a literal.
 - `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 20/20 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
 - Φ oracle validated three ways (y=1, y=5, y=63 against `Settle.pot_at`).
+
+### A.79 — `V3d-2`: write effects are typed (`G14` closed)
+
+**Status:** engine + verification. The A.78 review ended on a claim worth testing:
+that the remaining cost of this project is not the maths but a single untyped
+field. It was. `Rules.Write` was
+
+```
+type Write is Data:
+  WSet{idx: U32, val: U32}
+  WWake{idx: U32}
+```
+
+and every `WSet` value `plan` emits is `f(source_word)` for a *closed* set of `f`
+(`Cell.deactivate`, `mov`, the displaced target, `set_fall0`, `crush_if_rock`).
+The classification was already in the code's shape; `val: U32` threw it away. That
+is the whole content of `G14`, and it is why each write site needed its own mirror
+to re-derive what the type no longer said.
+
+**The fix.** The effect is now a value:
+
+```
+type PresOp is Data:      # material-preserving
+  OId{} OSupport{s: U32} OFall0{} OMov{} OAct{} ODeact{}
+type Op is Data:
+  OPres{op: PresOp} OCrushIfRock{}
+type Write is Data:
+  WSet{idx: U32, op: Op, src: U32}
+  WWake{idx: U32}
+```
+
+`apply_op` is total, so **`plan` cannot emit an unclassified write** — the write
+set is closed by construction, not by inspection. The split into `PresOp` and the
+material-changing crush is what lets the preserving laws be total over their own
+type: material preservation *is* the hypothesis `mat_pres` discharges.
+
+**The laws.** `write_effect_phi_balance` and `write_effect_count_balance` are
+**total over `Rules.Op`** and need no case split, because the exact point-write
+balance is already general in the written value (`Refine.array_swap_decreases`,
+`Count.array_point_write_count_balance`) — a `WSet` is *some* value written at a
+known index. The *decrease* is the refinement on top and splits by effect **shape**,
+not by site:
+
+| shape | law |
+|---|---|
+| material-preserving self-write | `write_selector_preserves_phi` (Φ unchanged) |
+| guarded crush self-write | `array_guarded_crush_lowers_phi` (Φ down by a gap) |
+| two-cell movement | `Fall.array_mov_cross` / `array_mov_lowers_phi` (fall regime) |
+
+The last row is why the shapes are not all the same, and it is the honest limit of
+this change: **movement is not a point write.** Its two halves (`WSet{nb, OMov{}, w}`
++ `WSet{i, OId{}, gv}`, and the slide's `ODeact` variant) must be *paired*, and its
+decrease needs the fall regime. That pairing is the `G3`/`G11` composition residual
+(V3c-1b), not an enumeration gap, and it is now recorded there rather than here.
+`G14`'s second residual — that the carried `src` word is the pre-phase word — is
+`R1`/`C1`'s existing by-construction claim.
+
+**Why the values stay precomputed.** `commit_sets` is `world[idx] <- apply_op(src, op)`;
+the values are still computed in `plan`, not re-read at commit. That is forced, not
+lazy: a move writes `nb` reading `i` and writes `i` reading `nb`, so a sequential
+commit that re-read the array would read the *already-updated* `nb` and be wrong.
+Reading from a snapshot would cost O(volume) per tick and kill `C3`. So the effect
+is typed **and** the value is precomputed — which is exactly why the effect could
+not be recovered from the value alone.
+
+**Engine change, and it is small.** `src/rules.bend` (the two effect types,
+`apply_pres`/`apply_op`, the `Write` type, six `plan` emission sites, `commit_sets`)
+plus one pattern in `src/sim.bend`. Behaviour-preserving: the fast suite (26/26) and
+the sim suite (20/20, including T38's 60-tick Φ monotonicity and T39's oracle check)
+are unchanged.
+
+**Prognosis, stated so it can be falsified.** Every future write site now costs one
+`Op` constructor plus one `mat_pres` case (~10 lines) *if* it is a point write. If a
+new optimisation needs a different traversal shape, the mirror cost returns in full.
+That is the tripwire: five milestones each costing a constructor means the
+architecture is right; one costing a mirror means it is not.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (77 laws).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` -> 20/20 PASS.
+- `bend_canary` -> 6 ok, 0 bad.

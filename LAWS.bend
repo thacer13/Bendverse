@@ -482,10 +482,11 @@ law point_writes_commute:
 #
 # Every material-preserving write has the same Φ and count obligation. Instead of
 # four hand-written `PT` recursions (`Tick.chg_support`/`chg_fall`/`chg_activate`/
-# `chg_deactivate`), the write choice is a `Data`-kinded selector (`Selector.WrSel`)
-# and the traversal is proved once. A `Data` selector is required rather than a
-# function parameter because Bend closures are affine: `f : U32 -> U32` can be
-# called at most once, and the traversal applies the write at every leaf.
+# `chg_deactivate`), the write effect is the engine's own `Rules.PresOp` — a
+# `Data`-kinded selector carried by `Rules.Write` — and the traversal is proved
+# once. A `Data` selector is required rather than a function parameter because Bend
+# closures are affine: `f : U32 -> U32` can be called at most once, and the
+# traversal applies the write at every leaf.
 #
 # The two generic laws are the family's whole content; the site-specific laws
 # below them are one-line instances, kept for traceability to §4.
@@ -495,20 +496,24 @@ law point_writes_commute:
 # `deactivate` are emitted by the live `Rules.plan` on every tick (sel 22/23 and 4)
 # and previously had no array-level Φ law — `step_m` covered them, but it mirrors
 # the retired `Rules.step` (A.63) and is no longer evidence (`G10`/`G14`).
+#
+# A.78 (same milestone): the type names below moved from a selector-local `WrSel`
+# to the engine's `Rules.PresOp` when the effect was pushed into `Rules.Write`. The
+# statements are unchanged — same family, same claim.
 law write_selector_preserves_phi:
-  for +sel: Selector.WrSel
+  for +op: Rules.PresOp
   for +t: Refine.PT
   for +base: U32
   for +n: U32
   for +i: U32
-  {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Selector.apply_w(Tick.tget(t, n, i), sel))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+  {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Rules.apply_pres(Tick.tget(t, n, i), op))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
 
 law write_selector_preserves_count:
-  for +sel: Selector.WrSel
+  for +op: Rules.PresOp
   for +t: Refine.PT
   for +n: U32
   for +i: U32
-  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Selector.apply_w(Tick.tget(t, n, i), sel))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
+  {Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Rules.apply_pres(Tick.tget(t, n, i), op))))) == Settle.suml(Count.to_counts(Refine.pack(t))) : Nat}
 
 law array_fall_write_preserves_phi:
   for +t: Refine.PT
@@ -530,3 +535,27 @@ law array_deactivate_write_preserves_phi:
   for +n: U32
   for +i: U32
   {Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Cell.deactivate(Tick.tget(t, n, i)))), base, n)) == Settle.suml(Settle.to_pots(Refine.pack(t), base, n)) : Nat}
+
+# The `G14` closure: the exact Φ and count balance of *any* write effect, total
+# over the engine's closed `Rules.Op` and any source word. `Rules.Write`'s `WSet`
+# carries an `Op`, so this covers whatever `plan` emits — the write set is closed by
+# construction, not by inspecting `plan`. The *decrease* is the refinement on top
+# (`write_selector_preserves_phi` for material-preserving self-writes,
+# `array_guarded_crush_lowers_phi` for the crush, `Fall.array_mov_cross` for the
+# two-cell movement).
+law write_effect_phi_balance:
+  for +op: Rules.Op
+  for +t: Refine.PT
+  for +base: U32
+  for +n: U32
+  for +i: U32
+  for +src: U32
+  {Nat.add(Settle.suml(Settle.to_pots(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Rules.apply_op(src, op))), base, n)), Refine.nfst(Refine.chg_m(t, base, n, i, Rules.apply_op(src, op)))) == Nat.add(Settle.suml(Settle.to_pots(Refine.pack(t), base, n)), Refine.nsnd(Refine.chg_m(t, base, n, i, Rules.apply_op(src, op)))) : Nat}
+
+law write_effect_count_balance:
+  for +op: Rules.Op
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +src: U32
+  {Nat.add(Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Rules.apply_op(src, op))))), Refine.nfst(Count.cnt_chg_m(t, n, i, Rules.apply_op(src, op)))) == Nat.add(Settle.suml(Count.to_counts(Refine.pack(t))), Refine.nsnd(Count.cnt_chg_m(t, n, i, Rules.apply_op(src, op)))) : Nat}

@@ -249,17 +249,23 @@ def Laws.color_collision_z_par(i, j, dxi, dzi, dxj, dzj, hc, ht):
 def Laws.point_writes_commute(t, n, i, j, v, w, hne):
   Commit.swap_m_comm(t, n, i, j, v, w, hne)
 
-def Laws.write_selector_preserves_phi(sel, t, base, n, i):
-  Selector.array_write_preserves_phi(sel, t, base, n, i)
+def Laws.write_selector_preserves_phi(op, t, base, n, i):
+  Selector.array_write_preserves_phi(op, t, base, n, i)
 
-def Laws.write_selector_preserves_count(sel, t, n, i):
-  Selector.array_write_preserves_count(sel, t, n, i)
+def Laws.write_selector_preserves_count(op, t, n, i):
+  Selector.array_write_preserves_count(op, t, n, i)
 
 def Laws.array_fall_write_preserves_phi(t, base, n, i):
-  Selector.array_write_preserves_phi(Selector.WFall0{}, t, base, n, i)
+  Selector.array_write_preserves_phi(Rules.OFall0{}, t, base, n, i)
 
 def Laws.array_mov_write_preserves_phi(t, base, n, i):
-  Selector.array_write_preserves_phi(Selector.WMov{}, t, base, n, i)
+  Selector.array_write_preserves_phi(Rules.OMov{}, t, base, n, i)
 
 def Laws.array_deactivate_write_preserves_phi(t, base, n, i):
-  Selector.array_write_preserves_phi(Selector.WDeact{}, t, base, n, i)
+  Selector.array_write_preserves_phi(Rules.ODeact{}, t, base, n, i)
+
+def Laws.write_effect_phi_balance(op, t, base, n, i, src):
+  Selector.array_op_phi_balance(op, t, base, n, i, src)
+
+def Laws.write_effect_count_balance(op, t, n, i, src):
+  Selector.array_op_count_balance(op, t, n, i, src)

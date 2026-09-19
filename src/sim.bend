@@ -115,7 +115,7 @@ def commit_wakes_mask(
       (world, m)
     case Con{h, t}:
       match h:
-        case Rules.WSet{idx, val}:
+        case Rules.WSet{idx, op, src}:
           commit_wakes_mask(t, world, m)
         case Rules.WWake{+idx}:
           w2 = Ops.wake(world, idx)

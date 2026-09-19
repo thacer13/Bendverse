@@ -87,8 +87,56 @@ def mov(+w: U32) -> U32:
 # **not** extended: they are retired, not evidence (`PLAN.md` §3.4, §4.1).
 # ----------------------------------------------------------------------------
 
+# ------------------------------------------------------------------ write effects
+# A write's *effect* is a value, not a `U32`.
+#
+# This is what makes the engine's write set closed **by construction**: `plan` can
+# only emit an `Op`, so "the write set is exactly the classified effects" is a
+# typing fact rather than an inspection of the code (`G14`). Each constructor has
+# a proven Φ effect — the `PresOp` family preserves Φ
+# (`Selector.array_write_preserves_phi`) and `OCrushIfRock` lowers it by a guarded
+# gap (`Tick.array_guarded_crush_lowers`) — so `array_op_phi` below is total.
+#
+# The split into `PresOp` (material-preserving) and the material-changing crush
+# is what lets the preserving laws be total over their own type: material
+# preservation is exactly the hypothesis `mat_pres` discharges.
+#
+type PresOp is Data:
+  OId{}
+  OSupport{s: U32}
+  OFall0{}
+  OMov{}
+  OAct{}
+  ODeact{}
+
+def apply_pres(+w: U32, +op: PresOp) -> U32:
+  match op:
+    case OId{}:
+      w
+    case OSupport{+s}:
+      Ops.set_support(w, s)
+    case OFall0{}:
+      Ops.set_fall0(w)
+    case OMov{}:
+      mov(w)
+    case OAct{}:
+      Cell.activate(w)
+    case ODeact{}:
+      Cell.deactivate(w)
+
+type Op is Data:
+  OPres{op: PresOp}
+  OCrushIfRock{}
+
+def apply_op(+w: U32, +op: Op) -> U32:
+  match op:
+    case OPres{+p}:
+      apply_pres(w, p)
+    case OCrushIfRock{}:
+      Ops.crush_if_rock(w)
+
 type Write is Data:
-  WSet{idx: U32, val: U32}
+  WSet{idx: U32, op: Op, src: U32}
   WWake{idx: U32}
 
 # V0-3: the four slide directions are a *closed set*, not a `U32` loop index.
@@ -215,7 +263,7 @@ def plan(
               plan(p, (world, gv), 14, i, w, k, b, d, ic, sets, wakes, todo)
             case 4:
               plan(p, (world, gv), 14, i, w, k, b, d, ic,
-                WSet{i, Cell.deactivate(w)} <> sets, wakes, todo)
+                WSet{i, OPres{ODeact{}}, w} <> sets, wakes, todo)
             case 5:
               q = Array.get(U32, world, Grid.below(i))
               plan(p, q, 6, i, w, k, b, d, ic, sets, wakes, todo)
@@ -225,7 +273,7 @@ def plan(
             case 7:
               +nb = Grid.below(i)
               plan(p, (world, gv), 14, i, w, k, b, d, ic,
-                WSet{nb, mov(w)} <> (WSet{i, gv} <> sets),
+                WSet{nb, OPres{OMov{}}, w} <> (WSet{i, OPres{OId{}}, gv} <> sets),
                 WWake{nb} <> (WWake{i} <> wakes), todo)
             case 8:
               +sl = Cell.slides(Cell.material(w))
@@ -263,7 +311,7 @@ def plan(
             case 32:
               +nd = diag4(i, k)
               plan(p, (world, gv), 14, i, w, k, b, d, ic,
-                WSet{nd, Cell.deactivate(w)} <> (WSet{i, d} <> sets),
+                WSet{nd, OPres{ODeact{}}, w} <> (WSet{i, OPres{OId{}}, d} <> sets),
                 WWake{nd} <> (WWake{i} <> wakes), todo)
             case 21:
               +dmg = Bool.and(dmg_of(w, b), Grid.step_inside(i, 0, 4294967295, 0))
@@ -271,11 +319,11 @@ def plan(
             case 22:
               +nb = Grid.below(i)
               plan(p, (world, gv), 14, i, w, k, b, d, ic,
-                WSet{nb, Ops.crush_if_rock(b)} <> (WSet{i, Ops.set_fall0(w)} <> sets),
+                WSet{nb, OCrushIfRock{}, b} <> (WSet{i, OPres{OFall0{}}, w} <> sets),
                 WWake{nb} <> (WWake{i} <> wakes), todo)
             case 23:
               plan(p, (world, gv), 14, i, w, k, b, d, ic,
-                WSet{i, Ops.set_fall0(w)} <> sets, wakes, todo)
+                WSet{i, OPres{OFall0{}}, w} <> sets, wakes, todo)
             case 14:
               match todo:
                 case Nil{}:
@@ -294,8 +342,8 @@ def commit_sets(writes: List<Write>, world: Array<U32>) -> Array<U32>:
       world
     case Con{h, t}:
       match h:
-        case WSet{idx, val}:
-          commit_sets(t, world[idx] <- val)
+        case WSet{idx, op, src}:
+          commit_sets(t, world[idx] <- apply_op(src, op))
         case WWake{idx}:
           commit_sets(t, world)
 
