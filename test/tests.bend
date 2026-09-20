@@ -2171,6 +2171,94 @@ def t109_bad() -> U32:
   +b2 = inc_if_false(Dirtyn.dwin_get(64n, Maskword.mask_word(hi_bit0), 32n), b1)
   inc_if_false(Bool.not(Dirtyn.dwin_get(64n, Maskword.mask_word(hi_bit0), 0n)), b2)
 
+# T110-T117 (S1 / G-scale-2 item 3, `src/wordnat.bend`): the U32 <-> Nat index
+# value theory. T110 `to_nat(from_nat k) = k`; T111 `is_lt(y,32) = to_nat y < 32`;
+# T112 `to_nat(and(y,31))` low/high split; T113 the bit-5 decomposition of
+# `to_nat y`; T114/T115 the headline `mask_word_get` sampled over all 64 rows for
+# two masks (sparse + edge bits); T116 `from_nat(to_nat a) = a`; T117 the 64-bound
+# and the `Maskword` mask bounds.
+def t110_go(fuel: Nat, +k: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +l = U32.to_nat(U32.from_nat(k))
+      t110_go(p, Nat.add(k, 1n), inc_if_false(Nat.is_eq(l, k), bad))
+
+def t110_bad() -> U32:
+  t110_go(64n, 0n, 0)
+
+def t111_go(fuel: Nat, +y: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +l = U32.is_lt(y, 32)
+      +r = Nat.is_lt(U32.to_nat(y), 32n)
+      t111_go(p, U32.add(y, 1), inc_if_false(Bool.not(Bool.xor(l, r)), bad))
+
+def t111_bad() -> U32:
+  t111_go(64n, 0, 0)
+
+def t112_go(fuel: Nat, +y: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +l = U32.to_nat(U32.and(y, 31))
+      +r = Bool.pick(Nat, U32.is_lt(y, 32), U32.to_nat(y), Nat.sub(U32.to_nat(y), 32n))
+      t112_go(p, U32.add(y, 1), inc_if_false(Nat.is_eq(l, r), bad))
+
+def t112_bad() -> U32:
+  t112_go(64n, 0, 0)
+
+def t113_go(fuel: Nat, +y: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +l = U32.to_nat(y)
+      +r = Nat.add(U32.to_nat(U32.and(y, 31)), Bool.pick(Nat, U32.is_lt(y, 32), 0n, 32n))
+      t113_go(p, U32.add(y, 1), inc_if_false(Nat.is_eq(l, r), bad))
+
+def t113_bad() -> U32:
+  t113_go(64n, 0, 0)
+
+def t114_go(fuel: Nat, +y: U32, +m: Dirty.Mask, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +l = Dirty.is_dirty_y(m, y)
+      +r = Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y))
+      t114_go(p, U32.add(y, 1), m, inc_if_false(Bool.not(Bool.xor(l, r)), bad))
+
+def t114_bad() -> U32:
+  +m = Dirty.or_y(Dirty.or_y(Dirty.or_y(Dirty.zermask(), 3), 20), 45)
+  t114_go(64n, 0, m, 0)
+
+def t115_bad() -> U32:
+  +m = Dirty.or_y(Dirty.or_y(Dirty.or_y(Dirty.or_y(Dirty.zermask(), 0), 31), 32), 63)
+  t114_go(64n, 0, m, 0)
+
+def t116_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +a = U32.mul(i, 2654435761)
+      +l = U32.from_nat(U32.to_nat(a))
+      t116_go(p, U32.add(i, 1), inc_if_false(U32.is_eq(l, a), bad))
+
+def t116_bad() -> U32:
+  t116_go(64n, 0, 0)
+
+def t117_go(fuel: Nat, +y: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +b0 = inc_if_false(Bool.not(Bool.xor(U32.is_lt(y, 64), Nat.is_lt(U32.to_nat(y), 64n))), bad)
+      +b1 = inc_if_false(Nat.is_lt(U32.to_nat(U32.and(y, 31)), 32n), b0)
+      +b2 = inc_if_false(Nat.is_lt(U32.to_nat(U32.and(y, 63)), 64n), b1)
+      t117_go(p, U32.add(y, 1), b2)
+
+def t117_bad() -> U32:
+  t117_go(64n, 0, 0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2278,3 +2366,11 @@ def main() -> IO(Unit):
     report("T107 moved-window shell is window-local (G-scale-8)", t107_bad())
     report("T108 U32 bit test == word dwin_get (G-scale-2 core)", t108_bad())
     report("T109 mask_word places lo/hi halves (G-scale-2 core)", t109_bad())
+    report("T110 to_nat(from_nat k) = k (G-scale-2 index bridge)", t110_bad())
+    report("T111 is_lt(y,32) = to_nat y < 32 (G-scale-2 index bridge)", t111_bad())
+    report("T112 to_nat(and(y,31)) low/high split (G-scale-2)", t112_bad())
+    report("T113 bit-5 decomposition of to_nat y (G-scale-2)", t113_bad())
+    report("T114 mask_word_get over all 64 rows, sparse mask (G-scale-2)", t114_bad())
+    report("T115 mask_word_get over all 64 rows, edge mask (G-scale-2)", t115_bad())
+    report("T116 from_nat(to_nat a) = a (G-scale-2 index bridge)", t116_bad())
+    report("T117 64-bound + and(31)/and(63) ranges (G-scale-2)", t117_bad())
