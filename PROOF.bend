@@ -311,3 +311,11 @@ def Laws.g5_read_get_bare(t, i, h):
     (Refine.pack(t), Tick.tget(t, G5.g5_twidth(t), U32.and(i, U32.sub(G5.g5_twidth(t), 1)))),
     (Refine.pack(t), Tick.tget(t, G5.g5_twidth(t), i)),
     em, epair)
+def Laws.v3c_ne_idx_sep(xs, ys, n, i, j, hzi, hzj):
+  Commit.v3c_ne_idx_sep(xs, ys, n, i, j, hzi, hzj)
+
+def Laws.v3c_ne_idx_same_l(xs, ys, n, i, j, hzi, hzj):
+  Commit.v3c_ne_idx_same_l(xs, ys, n, i, j, hzi, hzj)
+
+def Laws.v3c_ne_idx_same_r(xs, ys, n, i, j, hzi, hzj):
+  Commit.v3c_ne_idx_same_r(xs, ys, n, i, j, hzi, hzj)

@@ -717,6 +717,48 @@ def g5_full(d: Nat, +base: U32) -> Refine.PT:
 def g5_bare_bad() -> U32:
   +t = g5_full(3n, 0)
   g5_bare_go(8n, 0, t, G5.g5_twidth(t), 0)
+# T34 (V3c-2 completeness witness): on the canonical full 8-leaf tree
+# (`Commit.v3c_full(3)`, size 8), `ne_idx` is *exactly* `U32.is_eq(i,j) == False`
+# for every in-range pair — the completeness direction that complements T33's
+# soundness half. T35 repeats it on the 16-leaf tree to exercise the recursion
+# one level deeper.
+def t34_inner(fuel: Nat, +i: U32, +j: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      b0 = inc_if_false(bool_eq(Commit.ne_idx(Commit.v3c_full(3n), 8, i, j), Bool.not(U32.is_eq(i, j))), bad)
+      t34_inner(p, i, U32.add(j, 1), b0)
+
+def t34_outer(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      b0 = t34_inner(8n, i, 0, bad)
+      t34_outer(p, U32.add(i, 1), b0)
+
+def t34_bad() -> U32:
+  t34_outer(8n, 0, 0)
+
+def t35_inner(fuel: Nat, +i: U32, +j: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      b0 = inc_if_false(bool_eq(Commit.ne_idx(Commit.v3c_full(4n), 16, i, j), Bool.not(U32.is_eq(i, j))), bad)
+      t35_inner(p, i, U32.add(j, 1), b0)
+
+def t35_outer(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      b0 = t35_inner(16n, i, 0, bad)
+      t35_outer(p, U32.add(i, 1), b0)
+
+def t35_bad() -> U32:
+  t35_outer(16n, 0, 0)
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -751,3 +793,5 @@ def main() -> IO(Unit):
     report("T37 g5_twidth = 2^depth", g5_pow_bad())
     report("T38 g5 bare-index mask identity", g5_mask_bad())
     report("T39 g5 bare-index read", g5_bare_bad())
+    report("T34 ne_idx exact on 8-leaf full tree", t34_bad())
+    report("T35 ne_idx exact on 16-leaf full tree", t35_bad())

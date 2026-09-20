@@ -1,6 +1,7 @@
 import Base
 import ./refine.bend as R
 import ./word.bend as WR
+import ./bits.bend as Bits
 
 # ------------------------------------------------------------------ V3c-1
 # Schedule invariance, the algebraic core: point writes at *distinct* indices
@@ -564,3 +565,145 @@ def v3c_ne_idx_sound(+t: R.PT, +n: U32, +i: U32, +j: U32,
     Equal.sym(Bool, ne_idx(t, n, i, i), ne_idx(t, n, i, j),
       Equal.cong(U32, Bool, x => ne_idx(t, n, i, x), i, j, eij)),
     v3c_ne_idx_refl(t, n, i))
+
+# ---------------------------------------------------- V3c-2 (completeness)
+# The converse of `v3c_ne_idx_sound`: for a full `2^k`-leaf tree and in-range
+# indices, distinctness implies `ne_idx == True`, so `ne_idx` is *exactly*
+# `U32.is_eq(i, j) == False`. This section lands the structural half — the
+# canonical tree/size pairs, the reflection and arithmetic groundwork, and the
+# three cases of `ne_idx`'s defining recursion (top split, both-left,
+# both-right). The remaining residual is the arithmetic that the child
+# hypothesis stays in range (subtraction clearing the top bit) and that the
+# canonical size halves under `U32.shr`; see `PLAN.md` §5.3 (`G3`).
+#
+# `v3c_two(k)` is the leaf count `2^k` and `v3c_full(k)` the canonical full tree
+# of that size. `v3c_is_eq_refl` reflects the equal case (`Word.cmp` on a word
+# with itself is `EQ`); `v3c_shr_shl` is the shift-roundtrip (a right shift undoes
+# a left shift when the top bit is clear, via the shared `Bits.shr_shl_one`);
+# `v3c_sub_zero` is the first additive identity toward the `add ∘ sub` roundtrip
+# that the both-right case needs.
+
+def v3c_two(+k: Nat) -> U32:
+  U32.shln(1, k)
+
+def v3c_full(k: Nat) -> R.PT:
+  match k:
+    case 0n:
+      R.PL{0}
+    case 1n+p:
+      +q = p
+      R.PN{v3c_full(q), v3c_full(q)}
+
+def v3c_w_cmp_refl(n: Nat, w: Word(n)) -> {Word.cmp(n, w, w) == EQ{} : Cmp}:
+  match n:
+    case 0n:
+      match w:
+        case WNil{}: {==}
+    case 1n+p:
+      match w:
+        case WCon{wh, wt}:
+          match wh:
+            case False{}:
+              %Equal.sym(Cmp, Word.cmp(p, wt, wt), EQ{}, v3c_w_cmp_refl(p, wt)) : {Word.cmp.fin(False{}, False{}, _) == EQ{} : Cmp}
+              {==}
+            case True{}:
+              %Equal.sym(Cmp, Word.cmp(p, wt, wt), EQ{}, v3c_w_cmp_refl(p, wt)) : {Word.cmp.fin(True{}, True{}, _) == EQ{} : Cmp}
+              {==}
+
+def v3c_is_eq_refl(+a: U32) -> {U32.is_eq(a, a) == True{} : Bool}:
+  match a:
+    case U32{w}:
+      Equal.cong(Cmp, Bool, c => Cmp.is_eq(c), Word.cmp(32n, w, w), EQ{}, v3c_w_cmp_refl(32n, w))
+
+def v3c_shr_shl(+w: Word(32n), +h: {Word.and(32n, w, Bits.mask(32n, 31n)) == w : Word(32n)})
+  -> {U32.shr(U32.shl(U32{w})) == U32{w} : U32}:
+  Equal.cong(Word(32n), U32, x => U32{x},
+    Word.shr(32n, Word.shl(32n, w)),
+    w,
+    Equal.trans(Word(32n),
+      Word.shr(32n, Word.shl(32n, w)),
+      Word.and(32n, w, Bits.mask(32n, 31n)),
+      w,
+      Bits.shr_shl_one(31n, w),
+      h))
+
+def v3c_sub_zero(n: Nat, a: Word(n)) -> {Word.sub(n, a, Word.zero(n)) == a : Word(n)}:
+  match n:
+    case 0n:
+      match a:
+        case WNil{}: {==}
+    case 1n+p:
+      match a:
+        case WCon{ah, at}:
+          match ah:
+            case False{}:
+              Equal.cong(Word(p), Word(1n+p), t => WCon{False{}, t},
+                Word.sub(p, at, Word.zero(p)), at, v3c_sub_zero(p, at))
+            case True{}:
+              Equal.cong(Word(p), Word(1n+p), t => WCon{True{}, t},
+                Word.sub(p, at, Word.zero(p)), at, v3c_sub_zero(p, at))
+
+# ---------------- the three cases of `ne_idx`'s node recursion ----------------
+# At a `R.PN` node with `h = U32.shr(n)` and decisions `zi = is_lt(i, h)`,
+# `zj = is_lt(j, h)`, `ne_idx` is the definitional `Bool.pick` of the decision
+# table. The pick-helpers turn the hypotheses `zi`/`zj` into the reduced form by
+# congruence (no case analysis), and the wrappers expose the three outcomes.
+
+def v3c_pick_lr(+nzi: Bool, +nzj: Bool, +zi: Bool, +zj: Bool,
+  +hzi: {zi == True{} : Bool}, +hzj: {zj == False{} : Bool})
+  -> {Bool.pick(Bool, zi, Bool.pick(Bool, zj, nzi, True{}), Bool.pick(Bool, zj, True{}, nzj)) == True{} : Bool}:
+  +A = Bool.pick(Bool, zj, nzi, True{})
+  +B = Bool.pick(Bool, zj, True{}, nzj)
+  +e1 = Equal.cong(Bool, Bool, b => Bool.pick(Bool, b, A, B), zi, True{}, hzi)
+  +eA = Equal.cong(Bool, Bool, b => Bool.pick(Bool, b, nzi, True{}), zj, False{}, hzj)
+  Equal.trans(Bool, Bool.pick(Bool, zi, A, B), A, True{}, e1, eA)
+
+def v3c_pick_ll(+nzi: Bool, +nzj: Bool, +zi: Bool, +zj: Bool,
+  +hzi: {zi == True{} : Bool}, +hzj: {zj == True{} : Bool})
+  -> {Bool.pick(Bool, zi, Bool.pick(Bool, zj, nzi, True{}), Bool.pick(Bool, zj, True{}, nzj)) == nzi : Bool}:
+  +A = Bool.pick(Bool, zj, nzi, True{})
+  +B = Bool.pick(Bool, zj, True{}, nzj)
+  +e1 = Equal.cong(Bool, Bool, b => Bool.pick(Bool, b, A, B), zi, True{}, hzi)
+  +eA = Equal.cong(Bool, Bool, b => Bool.pick(Bool, b, nzi, True{}), zj, True{}, hzj)
+  Equal.trans(Bool, Bool.pick(Bool, zi, A, B), A, nzi, e1, eA)
+
+def v3c_pick_rr(+nzi: Bool, +nzj: Bool, +zi: Bool, +zj: Bool,
+  +hzi: {zi == False{} : Bool}, +hzj: {zj == False{} : Bool})
+  -> {Bool.pick(Bool, zi, Bool.pick(Bool, zj, nzi, True{}), Bool.pick(Bool, zj, True{}, nzj)) == nzj : Bool}:
+  +A = Bool.pick(Bool, zj, nzi, True{})
+  +B = Bool.pick(Bool, zj, True{}, nzj)
+  +e1 = Equal.cong(Bool, Bool, b => Bool.pick(Bool, b, A, B), zi, False{}, hzi)
+  +eB = Equal.cong(Bool, Bool, b => Bool.pick(Bool, b, True{}, nzj), zj, False{}, hzj)
+  Equal.trans(Bool, Bool.pick(Bool, zi, A, B), B, nzj, e1, eB)
+
+# Top split: the two indices go to opposite children, so `ne_idx` is `True`
+# regardless of the children. Together with `v3c_ne_idx_same_l`/`_r` this is the
+# full structural content of completeness.
+def v3c_ne_idx_sep(+xs: R.PT, +ys: R.PT, +n: U32, +i: U32, +j: U32,
+  +hzi: {U32.is_lt(i, U32.shr(n)) == True{} : Bool},
+  +hzj: {U32.is_lt(j, U32.shr(n)) == False{} : Bool})
+  -> {ne_idx(R.PN{xs, ys}, n, i, j) == True{} : Bool}:
+  +h = U32.shr(n)
+  +nzi = ne_idx(xs, h, i, j)
+  +nzj = ne_idx(ys, h, U32.sub(i, h), U32.sub(j, h))
+  v3c_pick_lr(nzi, nzj, U32.is_lt(i, h), U32.is_lt(j, h), hzi, hzj)
+
+# Both-left: both indices stay in the left child, so the node is the child.
+def v3c_ne_idx_same_l(+xs: R.PT, +ys: R.PT, +n: U32, +i: U32, +j: U32,
+  +hzi: {U32.is_lt(i, U32.shr(n)) == True{} : Bool},
+  +hzj: {U32.is_lt(j, U32.shr(n)) == True{} : Bool})
+  -> {ne_idx(R.PN{xs, ys}, n, i, j) == ne_idx(xs, U32.shr(n), i, j) : Bool}:
+  +h = U32.shr(n)
+  +nzi = ne_idx(xs, h, i, j)
+  +nzj = ne_idx(ys, h, U32.sub(i, h), U32.sub(j, h))
+  v3c_pick_ll(nzi, nzj, U32.is_lt(i, h), U32.is_lt(j, h), hzi, hzj)
+
+# Both-right: both indices shift into the right child.
+def v3c_ne_idx_same_r(+xs: R.PT, +ys: R.PT, +n: U32, +i: U32, +j: U32,
+  +hzi: {U32.is_lt(i, U32.shr(n)) == False{} : Bool},
+  +hzj: {U32.is_lt(j, U32.shr(n)) == False{} : Bool})
+  -> {ne_idx(R.PN{xs, ys}, n, i, j) == ne_idx(ys, U32.shr(n), U32.sub(i, U32.shr(n)), U32.sub(j, U32.shr(n))) : Bool}:
+  +h = U32.shr(n)
+  +nzi = ne_idx(xs, h, i, j)
+  +nzj = ne_idx(ys, h, U32.sub(i, h), U32.sub(j, h))
+  v3c_pick_rr(nzi, nzj, U32.is_lt(i, h), U32.is_lt(j, h), hzi, hzj)

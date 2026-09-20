@@ -667,3 +667,38 @@ law g5_read_get_bare:
   for +i: U32
   for +h: {U32.is_lt(i, G5.g5_twidth(t)) == True{} : Bool}
   {Array.get(U32, Refine.pack(t), i) == (Refine.pack(t), Tick.tget(t, G5.g5_twidth(t), i)) : Array<U32> & U32}
+# V3c-2 (completeness, structural fragment) — the three cases of `Commit.ne_idx`'s
+# node recursion. `v3c_ne_idx_sep` is the top split (the two indices fall into
+# opposite children, so `ne_idx` is `True`); `_same_l`/`_same_r` are the
+# same-child reductions. Together they reduce full completeness to the arithmetic
+# that distinct in-range indices reach a split at some level; see `PLAN.md` §5.3
+# (`G3`).
+law v3c_ne_idx_sep:
+  for +xs: Refine.PT
+  for +ys: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +j: U32
+  for +hzi: {U32.is_lt(i, U32.shr(n)) == True{} : Bool}
+  for +hzj: {U32.is_lt(j, U32.shr(n)) == False{} : Bool}
+  {Commit.ne_idx(Refine.PN{xs, ys}, n, i, j) == True{} : Bool}
+
+law v3c_ne_idx_same_l:
+  for +xs: Refine.PT
+  for +ys: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +j: U32
+  for +hzi: {U32.is_lt(i, U32.shr(n)) == True{} : Bool}
+  for +hzj: {U32.is_lt(j, U32.shr(n)) == True{} : Bool}
+  {Commit.ne_idx(Refine.PN{xs, ys}, n, i, j) == Commit.ne_idx(xs, U32.shr(n), i, j) : Bool}
+
+law v3c_ne_idx_same_r:
+  for +xs: Refine.PT
+  for +ys: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +j: U32
+  for +hzi: {U32.is_lt(i, U32.shr(n)) == False{} : Bool}
+  for +hzj: {U32.is_lt(j, U32.shr(n)) == False{} : Bool}
+  {Commit.ne_idx(Refine.PN{xs, ys}, n, i, j) == Commit.ne_idx(ys, U32.shr(n), U32.sub(i, U32.shr(n)), U32.sub(j, U32.shr(n))) : Bool}
