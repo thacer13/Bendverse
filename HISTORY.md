@@ -3445,3 +3445,76 @@ follows from the three landed case laws. Also outstanding: wiring the engine's
 **Verification**
 - `bend PROOF.bend` -> `All terms check.` (branch and merged master).
 - `bend test/tests.bend` -> 33/33 PASS; `bend test/simtests.bend` native -> 21/21 PASS.
+
+### A.88 — `G15` closed: wake is bounded by the grid
+
+**Status:** engine + verification. `src/ops.bend`, `src/tick.bend`, `src/dirty.bend`
+(comment), one law, T43–T45 + sim T44–T46. Gate green, fast 40/40 (merged), sim
+24/24. `PLAN.md` §4.1 (C2)/§5.1/§5.3 updated.
+
+**Why.** `Ops.wake` marked the wrapped neighbours of a boundary cell (the opposite
+face) when the shell is painted away. No material moved (`C2` held), but activity
+leaked across the box — rule 9's reach did not respect the closed grid.
+
+**What.** `src/ops.bend`: `wake_x` computes `ok = Grid.step_inside(i, ox, oy, oz)`
+and writes through `mark_if ok`, so a rejected step returns the world untouched —
+V0-2's rule-target guard applied to the wake reach. `src/tick.bend`: the `PT` wake
+mirror gains `wake_write_m(ok, t, n, j)` (identity on `False`, `Cell.activate` swap
+on `True`) and `wake_write_m_preserves`; `wake_x_m` carries the same guard and
+`wake_x_m_preserves` composes the helper. Keeping the guard a *parameter* is what
+lets the proof go through with no `Grid.step_inside` reflection. `src/dirty.bend`:
+comment only — the dirty-row mask still marks `y-1,y,y+1` mod 64, which now
+*over*-approximates the reach, so "every active cell lies in a dirty row" is intact.
+Law `g15_wake_step_inert`: a guard-rejected step is the identity. `wake_preserves_pot`
+is a point-write law independent of reach, so it is unchanged.
+
+**Witnesses.** Fast T43 (x=0 face wrap inert), T44 (y=0/z=0 corner), T45 (interior
+control); sim T44 (an x-face move does not activate the x=63 face), T45 (vertical
+analogue), T46 (in-box control). The worker verified the fast tests *fail* against
+the pre-fix behaviour.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (branch and merged master).
+- `bend test/tests.bend` -> 40/40 PASS; `bend test/simtests.bend` native -> 24/24 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
+
+### A.89 — `V3c-2` complete: `ne_idx` is exactly `¬is_eq` on full trees
+
+**Status:** verification only; no engine or law-meaning change. `src/commit.bend`
++608, two laws, T36/T40–T42. Gate green, fast 40/40, sim 24/24. `PLAN.md`
+§4.1 (R10)/§5.1/§5.2/§5.3 updated.
+
+**Why.** `V3c-2`'s soundness half (A.84) and structural half (A.87) were landed;
+completeness — for a full `2^k`-leaf tree and in-range `i, j`,
+`ne_idx(t, n, i, j) == (U32.is_eq(i, j) == False)` — was the remaining `G3` residual,
+"purely arithmetic".
+
+**What.** `src/commit.bend` gains the three arithmetic bricks and the depth
+induction. (i) `is_lt` base reflection (`v3c_lt_one`/`v3c_lt_one_u32`): `Word.cmp`'s
+`LT` reflects to `WCon{False,_} == Word.zero` (a sibling of `w_cmp_eq`), so
+`is_lt(i, 1) == True` forces `i == 0`. (ii) `sub` range preservation
+(`v3c_sub_pow_lt`/`v3c_sub_two_lt`): `is_lt(i, 2^(k+1))` ∧ ¬`is_lt(i, 2^k)` ⇒
+`is_lt(sub(i, 2^k), 2^k)`, by structural recursion on the word width + exponent (the
+head bit survives the even subtraction). (iii) Canonical size halves
+(`v3c_two_shr_ne`/`v3c_two_shr_of_lt`): `U32.shr(v3c_two(k+1)) == v3c_two(k)` when
+`v3c_two(k+1) != 0`; the `k = 31` boundary is vacuous and discharged by the size
+hypothesis. Laws: `v3c_ne_idx_complete` (the converse of `v3c_ne_idx_sound`) and
+`v3c_ne_idx_exact` (`ne_idx(full k, two k, i, j) == Bool.not(U32.is_eq(i, j))`), via a
+depth induction over the structural case laws (with `v3c_ne_idx_sep_fl` for the
+mirror orientation). T36 (32-leaf exactness), T40 (brick ii), T41 (brick iii), T42
+(brick i).
+
+**Integration note.** The append-only conflict in `test/tests.bend` was resolved by
+*reconstructing* the file (master's version + the worker's added block) after a naive
+keep-both fused two `match fuel:` bodies into one function — caught immediately by the
+fast suite. Lesson for the worktree protocol: keep-both is safe for whole appended
+*blocks* with distinct bodies, but not when two appended defs share body lines; a
+3-way apply is not automatically safer.
+
+**Residual (recorded in §5.3, `G3`).** The only remaining `V3c`/`G3` thread is wiring
+the engine's `Rules.Write` list into the `v3c_fold` (the broader `G5` threading); `G3`
+still gates only `M7d`, not `C3`.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (branch and merged master).
+- `bend test/tests.bend` -> 40/40 PASS; `bend test/simtests.bend` native -> 24/24 PASS.
