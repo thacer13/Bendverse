@@ -1381,6 +1381,75 @@ def t65_bad() -> U32:
   b1 = bridge2_cmp(got, rec_exp, b0)
   inc_if_false(U32.is_eq(Cell.active(Cell.deactivate(12345)), 0), b1)
 
+# T66-T70 (P3/G-scale-3): the five proven `gscale` laws, witnessed over a dense
+# range. T66-T68 check the bounded axis roundtrips (`cw_global_x/y/z` of an
+# in-range coordinate is the coordinate) exactly as stated; T69/T70 check the
+# *unconditional* masked key/local reconstruction that `gscale_kmodel_rt` /
+# `gscale_lmodel_rt` prove (`cw_key(kx,ky,kz) = k & (2^30-1)`, likewise local),
+# which is stronger than the in-range T57/T58 witnesses.
+def gscale_x_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +x = U32.and(U32.mul(i, 7919), 16383)
+      +y = U32.and(U32.add(U32.mul(i, 13), 1), 16383)
+      +z = U32.and(U32.add(U32.mul(i, 29), 2), 16383)
+      +k = Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z))
+      +l = Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))
+      ok = U32.is_eq(Cw.cw_global_x(k, l), x)
+      gscale_x_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t66_bad() -> U32:
+  gscale_x_go(U32.to_nat(4096), 0, 0)
+
+def gscale_y_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +y = U32.and(U32.add(U32.mul(i, 7919), 3), 16383)
+      +k = Cw.cw_key(0, Cw.cw_chunk_of(y), 0)
+      +l = Cw.cw_local(0, Cw.cw_local_of(y), 0)
+      ok = U32.is_eq(Cw.cw_global_y(k, l), y)
+      gscale_y_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t67_bad() -> U32:
+  gscale_y_go(U32.to_nat(4096), 0, 0)
+
+def gscale_z_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +z = U32.and(U32.add(U32.mul(i, 7919), 5), 16383)
+      +k = Cw.cw_key(0, 0, Cw.cw_chunk_of(z))
+      +l = Cw.cw_local(0, 0, Cw.cw_local_of(z))
+      ok = U32.is_eq(Cw.cw_global_z(k, l), z)
+      gscale_z_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t68_bad() -> U32:
+  gscale_z_go(U32.to_nat(4096), 0, 0)
+
+def gscale_key_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +k = U32.and(U32.mul(i, 2654435761), 4294967295)
+      ok = U32.is_eq(Cw.cw_key(Cw.cw_key_x(k), Cw.cw_key_y(k), Cw.cw_key_z(k)), U32.and(k, 1073741823))
+      gscale_key_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t69_bad() -> U32:
+  gscale_key_go(U32.to_nat(4096), 0, 0)
+
+def gscale_local_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +l = U32.and(U32.mul(i, 2654435761), 4294967295)
+      ok = U32.is_eq(Cw.cw_local(Cw.cw_local_x(l), Cw.cw_local_y(l), Cw.cw_local_z(l)), U32.and(l, 4095))
+      gscale_local_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t70_bad() -> U32:
+  gscale_local_go(U32.to_nat(4096), 0, 0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1444,3 +1513,8 @@ def main() -> IO(Unit):
     report("T63 serve dense first snapshot == export body", t63_bad())
     report("T64 serve sparse snapshot + assemble recovery", t64_bad())
     report("T65 serve delta B2 (visible fields, global idx)", t65_bad())
+    report("T66 gscale cw x roundtrip (in range)", t66_bad())
+    report("T67 gscale cw y roundtrip (in range)", t67_bad())
+    report("T68 gscale cw z roundtrip (in range)", t68_bad())
+    report("T69 gscale cw key masked roundtrip", t69_bad())
+    report("T70 gscale cw local masked roundtrip", t70_bad())
