@@ -160,8 +160,8 @@ to `Grid`, so every proof/test stands). What remains is the **rule migration**:
 moving the live tick pipeline off the fixed `Grid` torus onto a window. §7 stays
 binding — it is a coordinate + residency change, not a semantics change.
 
-**State (verify with `bend_status` / `bend_audit` first).** Gate green, 125 laws,
-fast 120/120, sim 25/25, gaps 6 open / 13 closed. Relevant landed API:
+**State (verify with `bend_status` / `bend_audit` first).** Gate green, 126 laws,
+fast 125/125, sim 30/30, gaps 6 open / 13 closed. Relevant landed API:
 `src/window.bend` (`Window`, `win_index`, `win_lx/ly/lz`, `win_gx/gy/gz`,
 `shift`, `entering`/`leaving`), `src/store.bend` (`assemble_w`, `window_store`),
 `src/winshell.bend` (`win_border`/`gen_at`), `src/maskword.bend` + `src/wordnat.bend`
@@ -236,12 +236,17 @@ Parameterise the size assumptions: `active_list`/`dirty_todo` scan bounds,
 `Worldgen.build*` (already coordinate-indexed), and the `[0 : U32^18n]` array
 literals in `Store`. *Evidence:* gate + a 32³ or 128³ window test.
 
-### W5 — live motion driver (`G-scale-8` wiring; closes `G-scale-5`)
-The `Sim`-level loop that moves the focus window: on crossing a chunk boundary,
-`Store.window_store w2 s` (A.108) rebuilds residency, `Store.assemble_w w2`
-(A.103) produces the array, tick, repeat; the renderer (`runners/serve.bend`)
-consumes deltas with global coordinates. `G-scale-5` (phase-fold cost) closes
-here **by measurement** on a real window, not a proof.
+### W5 — live motion driver (`G-scale-8` wiring; closes `G-scale-5`) — **driver landed (A.112)**
+`src/sim.bend` now carries the pure `w5_` driver: `w5_move` (`Window.shift` +
+`Store.window_store`), `w5_checkpoint` (array→store inverse of `Store.assemble_w`,
+gathering resident chunks in `Chunk.local` order via `Window.win_index`),
+`w5_step` (move → assemble → `Sim.ticks_w` → checkpoint, preserving ticked
+overlap state across a move), and `w5_trace_step` (same + accumulated
+`List<Sim.Delta>` with global coordinates). Fast T130–T134 (tick-free) and
+native T135–T139 (moved-window tick vs canonical, global deltas, state across a
+move). **Residual:** wire the driver into `runners/serve.bend` (the renderer's
+live link), and `G-scale-5` closes only when the phase-fold cost is *measured*
+on a real window — not yet done.
 
 ### W6 — retirement (`step 6`, `G-scale-6`)
 Once the live path no longer mentions `Grid.index`/`Grid.ix` (W1–W5), those laws

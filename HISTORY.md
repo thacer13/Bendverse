@@ -4441,3 +4441,90 @@ retirement (W6, `G-scale-6`).
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 120/120 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
   6 ok / 0 bad.
+
+### A.112 — S1 slice W5: the live motion driver (parallel track `w5`)
+
+**Status:** integrated on `master` (worker branch `w5`, commit `cfdb8d0`; merge
+`1e2f189`). **+0 laws** (the track's evidence is tests, not proof). Gate green,
+fast **125/125**, sim **30/30**, checker canaries **6 ok / 0 bad**.
+
+**What landed (`src/sim.bend`, appended; no new module).** The pure, IO-free
+motion driver over the W1/W2 window — the renderer's engine gate:
+
+- `w5_move w dcx dcy dcz s` → `(w2, s2)`: `w2 = Window.shift w …`,
+  `s2 = Store.window_store w2 s` (keep overlap / load entering / drop leaving).
+- `w5_checkpoint w world` → `(world, store)`: the array-to-store inverse of
+  `Store.assemble_w`. Gathers each resident chunk in `Chunk.local` order
+  (descending walk + cons) addressed by `Window.win_index` (torus-free), keyed by
+  the global chunk key, over exactly `Window.resident_keys w`. It is the pure
+  equivalent of `runners/serve.bend`'s `bridge2_world_store` (the runner imports
+  `sim`, so the direction cannot be reversed).
+- `w5_step w dcx dcy dcz fuel s` → `(w2, s2)`: move → `Store.assemble_w` →
+  `Sim.ticks_w w2 fuel` → checkpoint, so a later move keeps the ticked state in
+  the overlap.
+- `w5_trace_step …` → `(w2, s2, List<Sim.Delta>)`: same, plus the accumulated
+  deltas. `w5_ticks_trace` folds one `tick_trace_w` per tick (fresh pairs fed as
+  the recursive scrutinee, since Bend cannot match a computed value). Deltas
+  carry global coordinates via W1's `commit_trace`/`WGrid.wgrid_ix/iy/iz`.
+
+No `Rules`/`Support`/`Ops`/`WGrid` change, no new module, no new law. Fast
+T130–T134 (structural, tick-free: move+assemble reconstructs `gen` on the moved
+window, leaving/entering keys, move composition, checkpoint round-trip and key
+set). Native T135–T139 (moved-window tick vs the directly assembled reference,
+windowed vs canonical `ticks`, deltas are the canonical deltas shifted by the
+window origin, the trace variant's world agrees, and the checkpoint preserves
+ticked overlap state across a move) — executed by the supervisor at integration
+(sim 25 → 30).
+
+**Parallel-track protocol.** Dispatched by `tools/parallel.sh` as a Herdr-pane
+worker alongside `gsc1` (A.113); the two branches were file-disjoint
+(`sim.bend`+tests vs `bits.bend`+`wmarg.bend`+`LAWS`+`PROOF`), so both merges
+were clean. Worker report: `../Bendverse-w5.report.md`.
+
+**Honest residual.** (i) The `runners/serve.bend` sidecar is **not** wired to
+the driver yet — it still serves the fixed box, so the renderer's *live link*
+needs that final small step. (ii) The driver moves whole chunks and does **not**
+assert the `Decision B` chunk margin (the `G-scale-1` residual). (iii)
+`G-scale-5` (phase-fold cost) closes only by *measurement* on a real window, not
+run here. (iv) `w5_checkpoint` correctness is test-witnessed; the natural law
+(`Store.assemble_w(w, fst(w5_checkpoint w world)) == world`) would need a
+`PROOF.bend` import of the driver — filed as a candidate, not a law.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 125/125 PASS;
+  `bend test/simtests.bend` native -> 30/30 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+
+### A.113 — G-scale-1 converse bridge closed (parallel track `gsc1`)
+
+**Status:** integrated on `master` (worker branch `gsc1`, commit `93b994d`; merge
+`d91a8d1`). **+1 law** (125 → 126). Gate green, fast **125/125**, sim **30/30**,
+checker canaries **6 ok / 0 bad**.
+
+**What landed.** W2 (A.111) proved the in-frame ⇒ guard direction
+(`wgrid_axis_guard`) but left the converse (`guard ⇒ resident`) as an exhaustive
+witness (T126). This track closes it in the form the engine uses — a passing
+per-axis guard means the coordinate did **not** fold:
+
+- `src/bits.bend`: `gsc1_b_or_and_not` — the Bool bit identity
+  `or(and(b,m), and(b, not m)) == b`; `gsc1_word_or_and_not` — its `Word` lift,
+  the pointwise decomposition `y == (y & m) or (y & ~m)`, proved for an
+  **arbitrary** mask by induction on the width (generalising kept the induction
+  clean and reusable).
+- `src/wmarg.bend`: `gsc1_word_no_fold` reflects the `U32.is_eq(_, 0)` guard with
+  the existing `Word.w_cmp_eq` to `y & ~mask6 == 0`, then the decomposition with
+  `Bits.w_or_zero` returns `y & mask6 == y`; `gsc1_axis_no_fold` is the `U32`
+  lift.
+
+**Law.** `gsc1_axis_no_fold`: for `local, d`, `h : {wgrid_axis_ok(local,d) ==
+True}`, `U32.and(U32.add(local,d), 63) == U32.add(local,d)`. With
+`wgrid_axis_guard`, the guard is now a proven residency test in **both**
+directions — `G-scale-1`'s proof residual is discharged (the remaining
+`G-scale-1` content is the driver chunk margin and the serve wiring, A.112).
+
+**Parallel-track protocol.** Worker report: `../Bendverse-gsc1.report.md`.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 125/125 PASS;
+  `bend test/simtests.bend` native -> 30/30 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
