@@ -3739,3 +3739,38 @@ and stays with the supervisor. `G-scale-1`..`G-scale-6` remain open except
   0 bad.
 - `bend runners/serve.bend --check-only` -> `All terms check.`; native run emits
   and re-parses the six-frame stream.
+
+### A.95 — S1 step 2: the window model and the torus-free index map
+
+**Status:** additive step on `master`; **no law-count change** (100 laws). Gate
+green, fast **67/67**, canary unchanged. Live path (`Grid`/`Sim`/`Dirty`/`Store`)
+untouched.
+
+**Why.** `S1` (`SCALE.md`) migrates the fixed 64³ torus to a moving chunk window.
+Step 2 is the model and the map, landed additively so the 64³ box stays the only
+instance and every existing test/world is unchanged.
+
+**`src/window.bend`.** A `Window` is a base chunk `(bx, by, bz)`; the canonical
+instance is the 64³ box at origin `(0,0,0)`. The window-local index is the
+`Grid.index` layout over window-local coordinates: `lx + lz*64 + ly*4096` with
+`lx = x - (bx<<4)` (the `cw` split/rejoin at a chunk-aligned origin — the proven
+`gscale_global_rt` — but consuming each coordinate once, since Bend is affine and
+`cw_chunk_of(x)`/`cw_local_of(x)` cannot both take `x`). Crucially there is **no
+`&63`** anywhere, so a global coordinate above the box keeps its chunk index
+instead of folding to the opposite face. Inverses `win_ix/iy/iz` and
+`win_gx/gy/gz`; `win_key` gives the base chunk as a `cw` key. `window.bend` is
+added to the `PROOF.bend` coverage root (so it is checked) but has no laws yet.
+
+**Witnesses.** T81: `win_index(canonical, x, y, z) == Grid.index(x, y, z)` over
+the box, and `win_gx/gy/gz` invert it. T82: a window at chunk `(1,1,1)` maps
+global `x = 79` to window-local `63` and `x = 80` to `64` (not folded), while
+`Grid.ix(Grid.index(80,0,0)) == 16` — the torus contrast.
+
+**Filed gap.** The relabelling *law* (`win_canonical_index`) is not proven — it
+needs a `U32.sub(x,0) == x` / mask-drop development — so it is `G-scale-7`
+(test-witnessed by T81), following the same test-witness→gap→prove pattern as
+`G-scale-3`. `S1` steps 3–6 remain.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 67/67 PASS
+  (was 65).

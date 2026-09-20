@@ -648,6 +648,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V0` | semantics rewrite complete: phase purity (`V0-1`), closure (`V0-2`), direction/colour batching (`V0-3`), cost via the carried dirty-row work set (`V0-4b`), and the neighbourhood support seed (`V0-5`) — every `C1`/`C2`/`C3` and `R1`–`R11` row in §4.1 now conforms | A.63–A.81 |
 | `bridge2` (transport) | `runners/serve.bend` real sidecar: length-framed `[len][kind][payload]` (HELLO/SNAPSHOT/DELTA/PING/BYE out, CREDIT/REQUEST/STOP in), the sparse snapshot (`Store.evict` regenerability + `assemble`), and the **B2 decision** (DELTA = render-visible fields, `(idx, Cell.deactivate word)`, global `Grid.index`, no `WWake`); T61–T65. IO only, `src/` untouched. Residual: credit/coalescing (`G-bridge-1`) | A.94 |
 | `gscale` (G-scale-3) | `src/gscale.bend` proves the `cw` split/rejoin in `Bits`/`Word`: `(w>>4)<<4 + (w&15) == w & 16383` (`gscale_global_rt`) plus the key/local model roundtrips, five laws `gscale_cw_{x,y,z,key,local}_rt`; T66–T70. Closes `G-scale-3`; mentions no `Grid.index`, so not in the torus retirement set | A.94 |
+| `window` (S1 step 2) | `src/window.bend`: the `Window` model (base chunk + cell origin) and the torus-free window-local index map (`win_lx/ly/lz`, `win_index`, inverses `win_gx/gy/gz`, `win_key`), with the canonical window pinned to the 64³ box. Additive — the live path still uses `Grid`, and no `&63` appears in the map, so a global coordinate above the box keeps its chunk index. T81 (canonical `win_index == Grid.index`) / T82 (global 80 not folded). The relabelling *law* is filed as `G-scale-7` | A.95 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -694,10 +695,12 @@ index).
   is not transmitted. Encoded in `serve.bend`, witnessed by T65. `idx` stays the
   global `Grid.index`; the framing is coordinate-agnostic, so `S1` changes only
   the payload interpretation.
-- [ ] **S1** Chunk-window migration · **next** · deps: `scale` P3 · serves: scale
-  — `SCALE.md` steps 2–6: window-relative addressing, explicit resident set,
-  window motion, window-sized dirty set, torus-law retirement. Each step
-  gate-green; gap candidates `G-scale-1`..`G-scale-6` (`G-scale-3` now closed).
+- [ ] **S1** Chunk-window migration · **in progress** · deps: `scale` P3 · serves: scale
+  — `SCALE.md` steps 2–6. **Step 2 landed (A.95):** `src/window.bend` (the
+  `Window` model + torus-free index map, canonical = the 64³ box; T81/T82).
+  Remaining: step 3 explicit resident set, step 4 window motion, step 5
+  window-sized dirty set, step 6 torus-law retirement. Each step gate-green; gap
+  candidates `G-scale-1`..`G-scale-7` (`G-scale-3` closed).
 
 #### Optional track — droppable, does not gate the frontier
 
@@ -928,6 +931,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G-scale-4` | unproven | the resident set is implicit in `assemble_go`'s loop bounds | open | S1 | a window needs an explicit set plus a load/evict policy; closes by a set model and `assemble`/`evict` roundtrip laws |
 | `G-scale-5` | performance | the phase fold's cost scales with the active set, not the window | open | S1 | gates the scale target; closes by measurement on a real window, not a proof |
 | `G-scale-6` | retirement | every law mentioning `Grid.index`/`Grid.ix` is a torus law; migrating the live path orphans them | open | S1 | follow the `AGENTS.md` retirement protocol (keep, mark retired, update §4.1); never delete or silently weaken |
+| `G-scale-7` | unproven | the canonical window map is a relabelling of `Grid.index` (`win_index(canonical,x,y,z) == Grid.index(x,y,z)`) is test-witnessed (T81), not proven | open | S1 step 3 | a `U32.sub(x,0) == x` / mask-drop development over `Bits`/`Word` (reusing `G5.g5_and_mask_id` and the `gscale` field lemmas); closes by a law `win_canonical_index` |
 | `G-bridge-1` | unproven | the sidecar's credit window and delta coalescing are specified (`SERVE.md` §5–§6) but not realised — the writer is synchronous/single-threaded and control input is read at most once | open | B1 residual | a forked reader (`IO.fork`/`Chan`) draining stdin into a bounded queue with credit decrement and snapshot-on-stall, or the in-process C FFI option; closes by a transport test over a real pipe (not a law) |
 
 ### 5.4 Deferred — publishing a proven slice to BendHub

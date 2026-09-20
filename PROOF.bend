@@ -4,6 +4,7 @@ import ./src/bits.bend as Bits
 import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
 import ./src/cw.bend as Cw
+import ./src/window.bend as Window
 import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity

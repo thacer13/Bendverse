@@ -18,6 +18,7 @@ import ../src/tick.bend as Tick
 import ../src/g5.bend as G5
 import ../src/sim.bend as Sim
 import ../src/cw.bend as Cw
+import ../src/window.bend as Window
 import ../scenarios/fixtures.bend as Fixtures
 import ../view/voxel.bend as Vox
 import ../runners/view3d.bend as View3d
@@ -1450,6 +1451,38 @@ def gscale_local_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
 def t70_bad() -> U32:
   gscale_local_go(U32.to_nat(4096), 0, 0)
 
+# T81-T82 (S1 step 2, `src/window.bend`): the window model. T81 witnesses that
+# `win_index` on the canonical 64^3 window is exactly `Grid.index` (the relabel)
+# and that `win_gx/gy/gz` invert it; T82 witnesses the torus-free property: a
+# window based at chunk 1 maps a global coordinate above 63 to a window-local
+# coordinate instead of folding to the opposite face (contrast `Grid.ix`).
+def win_canon_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +x = U32.and(U32.mul(i, 7), 63)
+      +y = U32.and(U32.mul(i, 13), 63)
+      +z = U32.and(U32.mul(i, 29), 63)
+      +w = Window.canonical()
+      +idx = Window.win_index(w, x, y, z)
+      b0 = inc_if_false(U32.is_eq(idx, Grid.index(x, y, z)), bad)
+      okx = U32.is_eq(Window.win_gx(w, idx), x)
+      oky = U32.is_eq(Window.win_gy(w, idx), y)
+      okz = U32.is_eq(Window.win_gz(w, idx), z)
+      win_canon_go(p, U32.add(i, 1), inc_if_false(Bool.and(okx, Bool.and(oky, okz)), b0))
+
+def t81_bad() -> U32:
+  win_canon_go(U32.to_nat(4096), 0, 0)
+
+def t82_bad() -> U32:
+  +w = Window.at(1, 1, 1)
+  b0 = inc_if_false(U32.is_eq(Window.win_lx(w, 79), 63), 0)
+  b1 = inc_if_false(U32.is_eq(Window.win_lx(w, 80), 64), b0)
+  +i = Window.win_index(w, 79, 79, 79)
+  b2 = inc_if_false(U32.is_eq(Window.win_ix(i), 63), b1)
+  b3 = inc_if_false(U32.is_eq(Grid.ix(Grid.index(80, 0, 0)), 16), b2)
+  b3
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1518,3 +1551,5 @@ def main() -> IO(Unit):
     report("T68 gscale cw z roundtrip (in range)", t68_bad())
     report("T69 gscale cw key masked roundtrip", t69_bad())
     report("T70 gscale cw local masked roundtrip", t70_bad())
+    report("T81 window canonical index == Grid.index", t81_bad())
+    report("T82 window no torus mask (global 80 not folded)", t82_bad())
