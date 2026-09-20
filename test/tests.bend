@@ -16,6 +16,8 @@ import ../src/commit.bend as Commit
 import ../src/v3cw.bend as V3cw
 import ../src/tick.bend as Tick
 import ../src/g5.bend as G5
+import ../src/sim.bend as Sim
+import ../scenarios/fixtures.bend as Fixtures
 import ../view/voxel.bend as Vox
 import ../runners/view3d.bend as View3d
 
@@ -1120,6 +1122,52 @@ def t51_bad() -> U32:
   b8 = inc_if_false(U32.is_eq(U32.from_nat(s512), 2), b7)
   b9 = inc_if_false(U32.is_eq(Vox.vis_dim(512, s512), 128), b8)
   b9
+# T56 (P1 trace surface): `Sim.tick_trace` is the tick plus a delta list. The
+# delta carries a changed cell's *global* coordinate and its NEW word (the
+# `Rules.apply_op` effect), so a consumer (Bendview) never re-implements the op.
+# The witness checks two things in one pass:
+#   (a) the traced world is exactly the non-trace one-tick world `Sim.ticks(1, ..)`
+#       (the `tick` path and the carried-mask `ticks` path agree);
+#   (b) replaying the deltas onto the PRE-tick world reproduces the tick world up
+#       to the activity bit. `WWake` only sets bit 11 (activity) at tick end, and
+#       that bit is engine-internal, so a renderer's mirror matches exactly on
+#       the render-visible fields (material/cohesion/support/fall).
+def replay_deltas_go(ds: List<Sim.Delta>, world: Array<U32>) -> Array<U32>:
+  match ds:
+    case Nil{}:
+      world
+    case Con{h, t}:
+      match h:
+        case Sim.Delta{x, y, z, val}:
+          +idx = Grid.index(x, y, z)
+          replay_deltas_go(t, world[idx] <- val)
+
+def t56_cmp(lrep: List<U32>, lpost: List<U32>, lticks: List<U32>, +bad: U32) -> U32:
+  match lrep:
+    case Nil{}:
+      bad
+    case Con{hr, tr}:
+      match lpost:
+        case Nil{}:
+          bad
+        case Con{+hp, tp}:
+          match lticks:
+            case Nil{}:
+              bad
+            case Con{ht, tt}:
+              b1 = inc_if_false(U32.is_eq(hp, ht), bad)
+              b2 = inc_if_false(U32.is_eq(Cell.deactivate(hr), Cell.deactivate(hp)), b1)
+              t56_cmp(tr, tp, tt, b2)
+
+def t56_check(r: Array<U32> & List<Sim.Delta>) -> U32:
+  match r:
+    case (post, ds):
+      rep = replay_deltas_go(ds, Fixtures.spawn(Sim.build()))
+      t56_cmp(Grid.to_list(rep), Grid.to_list(post),
+        Grid.to_list(Sim.ticks(1n, Fixtures.spawn(Sim.build()))), 0)
+
+def t56_bad() -> U32:
+  t56_check(Sim.tick_trace(Fixtures.spawn(Sim.build())))
 
 
 # T52-T55 (track `bridge`, P0b): the golden engine-contract fixture Bendview
@@ -1204,3 +1252,4 @@ def main() -> IO(Unit):
     report("T53 golden grid index", t53_bad())
     report("T54 golden chunk key", t54_bad())
     report("T55 golden worldgen vector", t55_bad())
+    report("T56 tick_trace deltas replay + path agreement", t56_bad())

@@ -12,6 +12,7 @@ import ./src/order.bend as Order
 import ./src/refine.bend as Refine
 import ./src/ops.bend as Ops
 import ./src/rules.bend as Rules
+import ./src/sim.bend as Sim
 import ./src/dirty.bend as Dirty
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
