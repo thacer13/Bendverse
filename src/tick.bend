@@ -274,6 +274,9 @@ def array_guarded_crush_lowers_auto(+t: R.PT, +base: U32, +n: U32, +i: U32)
 # field and therefore `pot_at`. The array-level write law mirrors
 # `array_support_write`; the `wake_*_m` mirrors and their preservation lemmas
 # compose it along the three nested neighbor loops, for the `Support.sup` mirror.
+# C2/G15: each step is guarded by `Grid.step_inside`, so a wrapped step writes
+# nothing (`wake_write_m` on `False` is the identity); the guard stays a
+# parameter, so the preservation lemma is total in it.
 
 def chg_activate_if(
   +xs: R.PT, +ys: R.PT, +base: U32, +h: U32, +i: U32, +z: Bool,
@@ -381,13 +384,46 @@ def to_pots_swap_pack(+t: R.PT, +base: U32, +n: U32, +j: U32, +v: U32)
           R.swap_ref(t, n, j, v))),
       R.pack_unpack(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)))))
 
+# C2/G15: the mirror of the guarded wake write. `ok` is the `Grid.step_inside`
+# guard from `Ops.wake`; a rejected step writes nothing, so the mirror is the
+# identity on `False` and the activation write on `True`. Keeping the guard a
+# parameter is what lets the preservation proof go through: `wake_write_m_preserves`
+# is total in `ok`, so no `Grid.step_inside` arithmetic has to be reflected.
+def wake_write_m(+ok: Bool, +t: R.PT, +n: U32, +j: U32) -> R.PT:
+  match ok:
+    case True{}:
+      R.swap_m(t, n, j, Cell.activate(tget(t, n, j)))
+    case False{}:
+      t
+
+def wake_write_m_preserves(+ok: Bool, +t: R.PT, +n: U32, +j: U32, +base: U32)
+  -> {S.suml(S.to_pots(R.pack(wake_write_m(ok, t, n, j)), base, n)) == S.suml(S.to_pots(R.pack(t), base, n)) : Nat}:
+  match ok:
+    case True{}:
+      +v = Cell.activate(tget(t, n, j))
+      +t2 = R.swap_m(t, n, j, v)
+      +e0 = to_pots_swap_pack(t, base, n, j, v)
+      +e1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
+        S.to_pots(R.pack(t2), base, n),
+        S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)), base, n), e0)
+      Equal.trans(Nat, S.suml(S.to_pots(R.pack(t2), base, n)),
+        S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, j, Cell.activate(tget(t, n, j)))), base, n)),
+        S.suml(S.to_pots(R.pack(t), base, n)),
+        e1, array_activate_write(t, base, n, j))
+    case False{}:
+      {==}
+
 def wake_x_m(fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, +t: R.PT, +n: U32) -> R.PT:
   match fuel:
     case 0n:
       t
     case 1n+p:
-      +j = Grid.neighbor(i, U32.sub(dx, 1), U32.sub(dy, 1), U32.sub(dz, 1))
-      t2 = R.swap_m(t, n, j, Cell.activate(tget(t, n, j)))
+      +ox = U32.sub(dx, 1)
+      +oy = U32.sub(dy, 1)
+      +oz = U32.sub(dz, 1)
+      +j = Grid.neighbor(i, ox, oy, oz)
+      +ok = Grid.step_inside(i, ox, oy, oz)
+      t2 = wake_write_m(ok, t, n, j)
       wake_x_m(p, U32.add(dx, 1), dy, dz, i, t2, n)
 
 def wake_x_m_preserves(fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, +t: R.PT, +n: U32, +base: U32)
@@ -396,17 +432,13 @@ def wake_x_m_preserves(fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, +t: R.P
     case 0n:
       {==}
     case 1n+p:
-      +j = Grid.neighbor(i, U32.sub(dx, 1), U32.sub(dy, 1), U32.sub(dz, 1))
-      +v = Cell.activate(tget(t, n, j))
-      +t2 = R.swap_m(t, n, j, v)
-      +e0 = to_pots_swap_pack(t, base, n, j, v)
-      +e1 = Equal.cong(List<&2, Nat>, Nat, l => S.suml(l),
-        S.to_pots(R.pack(t2), base, n),
-        S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, j, v)), base, n), e0)
-      +e2 = Equal.trans(Nat, S.suml(S.to_pots(R.pack(t2), base, n)),
-        S.suml(S.to_pots(R.afst(Array.swap.go(U32, R.pack(t), n, j, Cell.activate(tget(t, n, j)))), base, n)),
-        S.suml(S.to_pots(R.pack(t), base, n)),
-        e1, array_activate_write(t, base, n, j))
+      +ox = U32.sub(dx, 1)
+      +oy = U32.sub(dy, 1)
+      +oz = U32.sub(dz, 1)
+      +j = Grid.neighbor(i, ox, oy, oz)
+      +ok = Grid.step_inside(i, ox, oy, oz)
+      +t2 = wake_write_m(ok, t, n, j)
+      +e2 = wake_write_m_preserves(ok, t, n, j, base)
       +ih = wake_x_m_preserves(p, U32.add(dx, 1), dy, dz, i, t2, n, base)
       Equal.trans(Nat,
         S.suml(S.to_pots(R.pack(wake_x_m(p, U32.add(dx, 1), dy, dz, i, t2, n)), base, n)),

@@ -702,3 +702,18 @@ law v3c_ne_idx_same_r:
   for +hzi: {U32.is_lt(i, U32.shr(n)) == False{} : Bool}
   for +hzj: {U32.is_lt(j, U32.shr(n)) == False{} : Bool}
   {Commit.ne_idx(Refine.PN{xs, ys}, n, i, j) == Commit.ne_idx(ys, U32.shr(n), U32.sub(i, U32.shr(n)), U32.sub(j, U32.shr(n))) : Bool}
+
+# C2/G15: the wake step is bounded by `Grid.step_inside`, so a step the guard
+# rejects (a wrapped step off the box) writes nothing. `Ops.wake` computes
+# `ok = Grid.step_inside(i, ox, oy, oz)` and applies `mark_if ok`; its `PT`
+# mirror `Tick.wake_write_m` is the identity on `False`. This is the wake
+# counterpart of V0-2's rule-target guard: activity no longer leaks across the box.
+law g15_wake_step_inert:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +dx: U32
+  for +dy: U32
+  for +dz: U32
+  for +h: {Grid.step_inside(i, dx, dy, dz) == False{} : Bool}
+  {Tick.wake_write_m(Grid.step_inside(i, dx, dy, dz), t, n, Grid.neighbor(i, dx, dy, dz)) == t : Refine.PT}

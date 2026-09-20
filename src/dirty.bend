@@ -51,8 +51,10 @@ def or_y(+m: Mask, +y: U32) -> Mask:
 def mark_if(+m: Mask, +y: U32, b: Bool) -> Mask:
   Bool.pick(Mask, b, or_y(m, y), m)
 
-# The three rows a wake at `i` can reach: `y-1`, `y`, `y+1`, modulo 64 (the
-# boundary wrap is what `Grid.neighbor` does, so the mask matches `Ops.wake`).
+# The three rows a wake at `i` can reach: `y-1`, `y`, `y+1`, modulo 64. `Ops.wake`
+# is bounded by `Grid.step_inside` (C2/G15), so at the boundary the wrapped row is
+# marked but no cell in it is written: the mask over-approximates the wake reach,
+# which keeps the invariant (every active cell still lies in a dirty row) intact.
 def mark_wake(m: Mask, +i: U32) -> Mask:
   +y = Grid.iy(i)
   +up = U32.and(U32.add(y, 1), 63)

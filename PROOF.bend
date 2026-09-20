@@ -319,3 +319,8 @@ def Laws.v3c_ne_idx_same_l(xs, ys, n, i, j, hzi, hzj):
 
 def Laws.v3c_ne_idx_same_r(xs, ys, n, i, j, hzi, hzj):
   Commit.v3c_ne_idx_same_r(xs, ys, n, i, j, hzi, hzj)
+
+def Laws.g15_wake_step_inert(t, n, i, dx, dy, dz, h):
+  Equal.cong(Bool, Refine.PT,
+    b => Tick.wake_write_m(b, t, n, Grid.neighbor(i, dx, dy, dz)),
+    Grid.step_inside(i, dx, dy, dz), False{}, h)

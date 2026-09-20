@@ -512,6 +512,45 @@ def t40_isolated_rock() -> U32:
 def t40() -> U32:
   U32.add(t40_rock_on_bedrock(), U32.add(t40_rock_on_wall(), t40_isolated_rock()))
 
+# T44/T45/T46 (C2/G15): a boundary move's wake no longer leaks across the box.
+# `Ops.wake` is bounded by `Grid.step_inside`, so a wrapped step is inert. T44: a
+# grain at x=0 drops and its wake must not activate the opposite x=63 face. T45:
+# the vertical analogue — a grain drops into y=0 and the wake must not reach the
+# y=63 ceiling. T46 is the control: the in-box neighbour (1,39,4) *is* activated,
+# so the guard does not over-reject.
+def t44_world() -> Array<U32>:
+  w0 = Sim.build()
+  w1 = Array.set(U32, w0, Grid.index(0, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(0, 39, 4), 0)
+  w3 = Array.set(U32, w2, Grid.index(63, 39, 4), Cell.encode(Cell.sand(), 0, 0, 0, 0))
+  Array.set(U32, w3, Grid.index(63, 38, 4), 0)
+
+def t44() -> U32:
+  w = Sim.ticks(U32.to_nat(1), t44_world())
+  is_bad(U32.is_eq(Cell.active(Grid.value_at(w, Grid.index(63, 39, 4))), 0))
+
+def t45_world() -> Array<U32>:
+  w0 = Sim.build()
+  w1 = Array.set(U32, w0, Grid.index(4, 1, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(4, 0, 4), 0)
+  w3 = Array.set(U32, w2, Grid.index(4, 63, 4), Cell.encode(Cell.sand(), 0, 0, 0, 0))
+  Array.set(U32, w3, Grid.index(4, 62, 4), 0)
+
+def t45() -> U32:
+  w = Sim.ticks(U32.to_nat(1), t45_world())
+  is_bad(U32.is_eq(Cell.active(Grid.value_at(w, Grid.index(4, 63, 4))), 0))
+
+def t46_world() -> Array<U32>:
+  w0 = Sim.build()
+  w1 = Array.set(U32, w0, Grid.index(0, 40, 4), Cell.encode(Cell.sand(), 0, 1, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(0, 39, 4), 0)
+  w3 = Array.set(U32, w2, Grid.index(1, 39, 4), Cell.encode(Cell.sand(), 0, 0, 0, 0))
+  Array.set(U32, w3, Grid.index(1, 38, 4), 0)
+
+def t46() -> U32:
+  w = Sim.ticks(U32.to_nat(1), t46_world())
+  is_bad(U32.is_ne(Cell.active(Grid.value_at(w, Grid.index(1, 39, 4))), 0))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -535,3 +574,6 @@ def main() -> IO(Unit):
     report("T38 Phi never increases over 60 engine ticks", t38())
     report("T39 runtime Phi oracle agrees with the model", t39())
     report("T40 support seed is a neighbourhood test (V0-5)", t40())
+    report("T44 wake does not leak across the x face (G15)", t44())
+    report("T45 wake does not leak across the y face (G15)", t45())
+    report("T46 in-box wake still propagates (G15 control)", t46())

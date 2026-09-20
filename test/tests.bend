@@ -760,6 +760,77 @@ def t35_outer(fuel: Nat, +i: U32, bad: U32) -> U32:
 def t35_bad() -> U32:
   t35_outer(16n, 0, 0)
 
+# T43/T44/T45 (C2/G15): `Ops.wake` is bounded by `Grid.step_inside`, so a wrapped
+# step is inert. T43 wakes a cell on the x=0 face: the opposite x=63 face must not
+# be activated, while the in-box neighbour (1,40,4) must be. T44 repeats it at the
+# y=0/z=0 corner (a wrapped (63,63,4)). T45 is the control: an interior wake still
+# marks both x neighbours, so the guard does not over-reject.
+def t43_empty(depth: Nat) -> Array<U32>:
+  match depth:
+    case 0n:
+      ALeaf{0}
+    case 1n+ +p:
+      ANode{t43_empty(p), t43_empty(p)}
+
+# Scan the flat cell list once, checking the active bit at each target index.
+# `t*`/`w*` are (index, expected-active) pairs; an index that is not one of the
+# targets passes vacuously.
+def wake_scan(
+  fuel: Nat, cells: List<U32>, +k: U32,
+  +t1: U32, +t2: U32, +t3: U32, +t4: U32,
+  +w1: Bool, +w2: Bool, +w3: Bool, +w4: Bool, bad: U32
+) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          +act = U32.is_ne(Cell.active(h), 0)
+          +c1 = Bool.or(Bool.not(U32.is_eq(k, t1)), bool_eq(act, w1))
+          +c2 = Bool.or(Bool.not(U32.is_eq(k, t2)), bool_eq(act, w2))
+          +c3 = Bool.or(Bool.not(U32.is_eq(k, t3)), bool_eq(act, w3))
+          +c4 = Bool.or(Bool.not(U32.is_eq(k, t4)), bool_eq(act, w4))
+          +b0 = inc_if_false(c1, bad)
+          +b1 = inc_if_false(c2, b0)
+          +b2 = inc_if_false(c3, b1)
+          +b3 = inc_if_false(c4, b2)
+          wake_scan(p, t, U32.add(k, 1), t1, t2, t3, t4, w1, w2, w3, w4, b3)
+
+def t43_bad() -> U32:
+  w0 = t43_empty(18n)
+  w1 = Array.set(U32, w0, Grid.index(0, 40, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(63, 40, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w3 = Ops.wake(w2, Grid.index(0, 40, 4))
+  +ia = Grid.index(63, 40, 4)
+  +ib = Grid.index(1, 40, 4)
+  wake_scan(U32.to_nat(Grid.volume()), Grid.to_list(w3), 0,
+    ia, ib, ia, ib, False{}, True{}, False{}, True{}, 0)
+
+def t44_bad() -> U32:
+  w0 = t43_empty(18n)
+  w1 = Array.set(U32, w0, Grid.index(0, 0, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(63, 63, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w3 = Array.set(U32, w2, Grid.index(1, 1, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w4 = Ops.wake(w3, Grid.index(0, 0, 4))
+  +ia = Grid.index(63, 63, 4)
+  +ib = Grid.index(1, 1, 4)
+  wake_scan(U32.to_nat(Grid.volume()), Grid.to_list(w4), 0,
+    ia, ib, ia, ib, False{}, True{}, False{}, True{}, 0)
+
+def t45_bad() -> U32:
+  w0 = t43_empty(18n)
+  w1 = Array.set(U32, w0, Grid.index(29, 40, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w2 = Array.set(U32, w1, Grid.index(31, 40, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w3 = Array.set(U32, w2, Grid.index(63, 40, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w4 = Array.set(U32, w3, Grid.index(0, 40, 4), Cell.encode(Cell.empty(), 0, 0, 0, 0))
+  w5 = Ops.wake(w4, Grid.index(30, 40, 4))
+  wake_scan(U32.to_nat(Grid.volume()), Grid.to_list(w5), 0,
+    Grid.index(29, 40, 4), Grid.index(31, 40, 4), Grid.index(63, 40, 4), Grid.index(0, 40, 4),
+    True{}, True{}, False{}, False{}, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -795,3 +866,6 @@ def main() -> IO(Unit):
     report("T39 g5 bare-index read", g5_bare_bad())
     report("T34 ne_idx exact on 8-leaf full tree", t34_bad())
     report("T35 ne_idx exact on 16-leaf full tree", t35_bad())
+    report("T43 wake wrap inert at x=0 face (G15)", t43_bad())
+    report("T44 wake wrap inert at corner (G15)", t44_bad())
+    report("T45 interior wake still marks both sides (G15)", t45_bad())

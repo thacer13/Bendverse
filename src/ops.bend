@@ -13,6 +13,18 @@ def mark(world: Array<U32>, +i: U32) -> Array<U32>:
   p = Array.get(U32, world, i)
   mark_got(p, i)
 
+# C2/G15: `wake` must respect the closed grid, exactly as every rule target does
+# (`Rules.plan` guards each target with `Grid.step_inside`, V0-2). Without the
+# guard a step off the box wraps to the opposite face and activates a cell there,
+# leaking activity across the box. `mark_if` makes the write conditional: a
+# rejected step leaves the world untouched (a wrapped step is inert).
+def mark_if(+ok: Bool, world: Array<U32>, i: U32) -> Array<U32>:
+  match ok:
+    case True{}:
+      mark(world, i)
+    case False{}:
+      world
+
 def wake_x(
   fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
 ) -> Array<U32>:
@@ -20,8 +32,12 @@ def wake_x(
     case 0n:
       world
     case 1n+p:
-      j = Grid.neighbor(i, U32.sub(dx, 1), U32.sub(dy, 1), U32.sub(dz, 1))
-      world2 = mark(world, j)
+      +ox = U32.sub(dx, 1)
+      +oy = U32.sub(dy, 1)
+      +oz = U32.sub(dz, 1)
+      j = Grid.neighbor(i, ox, oy, oz)
+      ok = Grid.step_inside(i, ox, oy, oz)
+      world2 = mark_if(ok, world, j)
       wake_x(p, U32.add(dx, 1), dy, dz, i, world2)
 
 def wake_y(
