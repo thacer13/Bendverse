@@ -6,15 +6,21 @@ import ../src/cell.bend as Cell
 # `Array<U32>` world. Presentation only: it lives outside `src/` and touches the
 # engine only through `Grid`/`Cell` reads, so the zero-IO engine stays untouched.
 #
-# Bend's `match` only scrutinizes a parameter or a field, so the DDA is written
-# as the same `sel`-driven state machine as `src/ops.bend`'s `sup`: each frame
-# threads the `(world, word)` read pair as a parameter and hands a computed
-# selector to the next frame.
+# The window backend (`Window.frame`) draws an `Image` — a 2^d x 2^d square
+# quadtree — into a w x h window by taking the top bits of each coordinate:
+# window pixel (x, y) shows image cell `(x >> s, y >> s)` where `s = k - d` and
+# `2^k` is the smallest power of two >= max(w, h). So a windowed view is
+# aspect-correct and integer-scaled exactly when the top-left
+# `ceil(w / 2^s) x ceil(h / 2^s)` sub-image is the content; `view_image` builds
+# that view and `render_q` skips the rays outside it. `image` keeps the old
+# square (backward-compatible) form used by the T49 witness.
+#
+# Bend's `match` only scrutinizes a parameter or a field, so the DDA is a
+# self-recursive state machine. Each cell costs two tail calls: one to classify
+# the cell it was handed (bounds + material) and one to advance. The `gp` pair
+# carries `(world, word)`, and the word for the next cell is fetched during the
+# step, so a cell is fetched exactly once.
 
-def res() -> U32:
-  128
-
-# Grid is 64^3, so a ray crosses at most 3*64 = 192 cells. 256 is slack.
 def dda_steps() -> Nat:
   256n
 
@@ -94,10 +100,9 @@ def inside_box(+ix: U32, +iy: U32, +iz: U32) -> Bool:
     Bool.and(U32.is_lt(ix, Grid.size()), U32.is_lt(iy, Grid.size())),
     U32.is_lt(iz, Grid.size()))
 
-# Selectors: 0 bounds, 1 fetch, 2 solid test, 3 hit, 4 step, 9 miss.
-# `gp` is the (world, word) pair for the cell under consideration; it is only
-# read once the bounds selector has admitted the cell, so an out-of-box index is
-# never dereferenced (the state machine's only "write" is the carry).
+# Selectors: 0 examine, 1 hit, 2 step, 3 miss. `fuel` counts calls (two per
+# cell), so `dda_steps()` is doubled at the entry points. `gp` is the
+# `(world, word)` pair for the cell under consideration.
 def dda(
   fuel: Nat, gp: Array<U32> & U32, +sel: U32,
   +ix: U32, +iy: U32, +iz: U32, ax: Axis, ay: Axis, az: Axis,
@@ -108,22 +113,20 @@ def dda(
       match gp:
         case (world, gv):
           (world, Miss{})
-    case 1n+p:
+    case 1n+ +p:
       match gp:
         case (world, +gv):
           match sel:
             case 0:
               +ok = inside_box(ix, iy, iz)
-              dda(p, (world, gv), Bool.pick(U32, ok, 1, 9), ix, iy, iz, ax, ay, az, t, last)
-            case 1:
-              q = Array.get(U32, world, Grid.index(ix, iy, iz))
-              dda(p, q, 2, ix, iy, iz, ax, ay, az, t, last)
-            case 2:
               +solid = U32.is_ne(Cell.material(gv), 0)
-              dda(p, (world, gv), Bool.pick(U32, solid, 3, 4), ix, iy, iz, ax, ay, az, t, last)
-            case 3:
+              +miss = Bool.not(ok)
+              +hit = Bool.and(ok, solid)
+              +ns = Bool.pick(U32, miss, 3, Bool.pick(U32, hit, 1, 2))
+              dda(p, (world, gv), ns, ix, iy, iz, ax, ay, az, t, last)
+            case 1:
               (world, mk_hit(Cell.material(gv), last, ax, ay, az, t))
-            case 4:
+            case 2:
               match ax:
                 case Axis{+nx, +tx, +dtx}:
                   match ay:
@@ -141,12 +144,14 @@ def dda(
                           +naz = Bool.pick(Axis, zf, Axis{nz, F32.add(tz, dtz), dtz}, az)
                           +nt = Bool.pick(F32, xf, tx, Bool.pick(F32, yf, ty, tz))
                           +nlast = Bool.pick(U32, xf, 0, Bool.pick(U32, yf, 1, 2))
-                          dda(p, (world, gv), 0, nix, niy, niz, nax, nay, naz, nt, nlast)
+                          q = Array.get(U32, world, Grid.index(nix, niy, niz))
+                          dda(p, q, 0, nix, niy, niz, nax, nay, naz, nt, nlast)
             case _:
               (world, Miss{})
 
 # `trace` marches the first non-empty cell for a ray whose origin is inside the
-# box. Direction need not be unit, but `t` is then in units of |d|.
+# box. Direction need not be unit, but `t` is then in units of |d|. The first
+# cell's word is fetched here so `dda`'s two-call loop can start.
 def trace(
   world: Array<U32>, +ox: F32, +oy: F32, +oz: F32,
   +dx: F32, +dy: F32, +dz: F32
@@ -154,7 +159,8 @@ def trace(
   +ix = F32.to_u32(F32.floor(ox))
   +iy = F32.to_u32(F32.floor(oy))
   +iz = F32.to_u32(F32.floor(oz))
-  dda(dda_steps(), (world, 0), 0, ix, iy, iz,
+  q = Array.get(U32, world, Grid.index(ix, iy, iz))
+  dda(Nat.mul(2n, dda_steps()), q, 0, ix, iy, iz,
       axis_init(ox, ix, dx), axis_init(oy, iy, dy), axis_init(oz, iz, dz), 0.0, 3)
 
 # ---------------------------------------------------------------- shading ---
@@ -188,13 +194,13 @@ def ly() -> F32:
 def lz() -> F32:
   0.40
 
-def ch(+f: F32) -> U32:
+def byte_of(+f: F32) -> U32:
   U32.min(F32.to_u32(F32.max(f, 0.0)), 255)
 
 def scale(+c: U32, +f: F32) -> U32:
-  +r = ch(F32.mul(U32.to_f32(U32.shrn(U32.and(c, 16711680), 16n)), f))
-  +g = ch(F32.mul(U32.to_f32(U32.shrn(U32.and(c, 65280), 8n)), f))
-  +b = ch(F32.mul(U32.to_f32(U32.and(c, 255)), f))
+  +r = byte_of(F32.mul(U32.to_f32(U32.shrn(U32.and(c, 16711680), 16n)), f))
+  +g = byte_of(F32.mul(U32.to_f32(U32.shrn(U32.and(c, 65280), 8n)), f))
+  +b = byte_of(F32.mul(U32.to_f32(U32.and(c, 255)), f))
   U32.or(U32.shln(r, 16n), U32.or(U32.shln(g, 8n), b))
 
 # Face-normal lambert with a 0.25 ambient floor, so back faces stay readable.
@@ -214,13 +220,46 @@ def shade_pair(q: Array<U32> & Hit) -> Array<U32> & U32:
     case (w2, h):
       (w2, shade(h))
 
-def cast(world: Array<U32>, cam: Cam, +px: U32, +py: U32) -> Array<U32> & U32:
+# ---------------------------------------------------------------- viewport --
+# Smallest k with 2^k >= n (n >= 1). `fuel` bounds the search (n <= 2^32) and
+# `done` is threaded so the loop can branch on a parameter, not a computed Bool.
+def clog2_go(fuel: Nat, +n: U32, +k: Nat, +p: U32, done: Bool) -> Nat:
+  match fuel:
+    case 0n:
+      k
+    case 1n+f:
+      match done:
+        case True{}:
+          k
+        case False{}:
+          +np = U32.mul(p, 2)
+          clog2_go(f, n, Nat.add(k, 1n), np, Bool.not(U32.is_lt(np, n)))
+
+def clog2(+n: U32) -> Nat:
+  clog2_go(32n, n, 0n, 1, Bool.not(U32.is_lt(1, n)))
+
+# The backend's power-of-two window exponent.
+def window_bits(w: U32, h: U32) -> Nat:
+  clog2(U32.max(w, h))
+
+# s = k - d: how many low bits of each window coordinate the image upscales.
+def scale_bits(w: U32, h: U32, +depth: Nat) -> Nat:
+  Nat.sub(window_bits(w, h), depth)
+
+# ceil(n / 2^s): the number of image cells the window shows on that axis.
+def vis_dim(+n: U32, +s: Nat) -> U32:
+  +d = U32.shln(1, Nat.min(s, 31n))
+  U32.div(U32.add(n, U32.sub(d, 1)), d)
+
+def cast(world: Array<U32>, cam: Cam, +cw: U32, +ch: U32, +px: U32, +py: U32) -> Array<U32> & U32:
   match cam:
     case Cam{ox, oy, oz, fx, fy, fz, rx, ry, rz, ux, uy, uz}:
-      +fw = U32.to_f32(res())
-      +sx = F32.mul(F32.sub(F32.div(F32.mul(F32.add(U32.to_f32(px), 0.5), 2.0), fw), 1.0),
-                    tan_half())
-      +sy = F32.mul(F32.sub(1.0, F32.div(F32.mul(F32.add(U32.to_f32(py), 0.5), 2.0), fw)),
+      +xf = U32.to_f32(cw)
+      +yf = U32.to_f32(ch)
+      +aspect = F32.div(xf, yf)
+      +sx = F32.mul(F32.mul(F32.sub(F32.div(F32.mul(F32.add(U32.to_f32(px), 0.5), 2.0), xf), 1.0),
+                            tan_half()), aspect)
+      +sy = F32.mul(F32.sub(1.0, F32.div(F32.mul(F32.add(U32.to_f32(py), 0.5), 2.0), yf)),
                     tan_half())
       +dx0 = F32.add(F32.add(fx, F32.mul(rx, sx)), F32.mul(ux, sy))
       +dy0 = F32.add(F32.add(fy, F32.mul(ry, sx)), F32.mul(uy, sy))
@@ -231,29 +270,43 @@ def cast(world: Array<U32>, cam: Cam, +px: U32, +py: U32) -> Array<U32> & U32:
                        F32.div(dx0, len), F32.div(dy0, len), F32.div(dz0, len)))
 
 # ------------------------------------------------------------------ image ---
-# Same quadtree recipe as runners/window.bend: depth 0 emits one leaf per pixel
-# in top-left, top-right, bottom-left, bottom-right order; the list is reversed
-# and grouped four at a time so `levels` rebuilds the quadtree bottom-up.
-def render_leaf(q: Array<U32> & U32, acc: List<Image>) -> Array<U32> & List<Image>:
+# Depth 0 emits one leaf per pixel in top-left, top-right, bottom-left,
+# bottom-right order; the list is reversed and grouped four at a time so
+# `levels` rebuilds the quadtree bottom-up.
+def leaf_cast(q: Array<U32> & U32, acc: List<Image>) -> Array<U32> & List<Image>:
   match q:
     case (w2, c):
       (w2, Pix{c} <> acc)
 
+# Outside the viewport (the unused bottom-right of the square): sky, no raycast.
+def render_leaf(
+  vis: Bool, cam: Cam, +cw: U32, +ch: U32, +x0: U32, +y0: U32,
+  gp: Array<U32> & List<Image>
+) -> Array<U32> & List<Image>:
+  match vis:
+    case True{}:
+      match gp:
+        case (world, acc):
+          leaf_cast(cast(world, cam, cw, ch, x0, y0), acc)
+    case False{}:
+      match gp:
+        case (world, acc):
+          (world, Pix{sky()} <> acc)
+
 def render_q(
-  fuel: Nat, +cam: Cam, +size: U32, +x0: U32, +y0: U32,
+  fuel: Nat, +cam: Cam, +cw: U32, +ch: U32, +size: U32, +x0: U32, +y0: U32,
   gp: Array<U32> & List<Image>
 ) -> Array<U32> & List<Image>:
   match fuel:
     case 0n:
-      match gp:
-        case (world, acc):
-          render_leaf(cast(world, cam, x0, y0), acc)
+      render_leaf(Bool.and(U32.is_lt(x0, cw), U32.is_lt(y0, ch)),
+                  cam, cw, ch, x0, y0, gp)
     case 1n+ +p:
       +h = U32.shr(size)
-      render_q(p, cam, h, U32.add(x0, h), U32.add(y0, h),
-        render_q(p, cam, h, x0, U32.add(y0, h),
-          render_q(p, cam, h, U32.add(x0, h), y0,
-            render_q(p, cam, h, x0, y0, gp))))
+      render_q(p, cam, cw, ch, h, U32.add(x0, h), U32.add(y0, h),
+        render_q(p, cam, cw, ch, h, x0, U32.add(y0, h),
+          render_q(p, cam, cw, ch, h, U32.add(x0, h), y0,
+            render_q(p, cam, cw, ch, h, x0, y0, gp))))
 
 def group4(imgs: List<Image>) -> List<Image>:
   match imgs:
@@ -268,7 +321,7 @@ def levels(fuel: Nat, imgs: List<Image>) -> List<Image>:
   match fuel:
     case 0n:
       imgs
-    case 1n+p:
+    case 1n+ +p:
       levels(p, group4(imgs))
 
 def root_img(imgs: List<Image>) -> Image:
@@ -283,5 +336,16 @@ def finish_image(r: Array<U32> & List<Image>, +fuel: Nat) -> Array<U32> & Image:
     case (w2, leafs):
       (w2, root_img(levels(fuel, List.reverse(&1, Image, leafs))))
 
+# Square render: `fuel` is the quadtree depth, the image is 2^fuel x 2^fuel.
 def image(+fuel: Nat, world: Array<U32>, cam: Cam) -> Array<U32> & Image:
-  finish_image(render_q(fuel, cam, U32.shln(1, fuel), 0, 0, (world, Nil{})), fuel)
+  +size = U32.shln(1, fuel)
+  finish_image(render_q(fuel, cam, size, size, size, 0, 0, (world, Nil{})), fuel)
+
+# Windowed render: the aspect-correct, integer-scaled sub-image a w x h window
+# shows of a depth-`depth` quadtree (see the header).
+def view_image(+w: U32, +h: U32, +depth: Nat, world: Array<U32>, cam: Cam) -> Array<U32> & Image:
+  +s = scale_bits(w, h, depth)
+  +cw = vis_dim(w, s)
+  +vh = vis_dim(h, s)
+  +size = U32.shln(1, depth)
+  finish_image(render_q(depth, cam, cw, vh, size, 0, 0, (world, Nil{})), depth)

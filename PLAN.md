@@ -308,12 +308,18 @@ the world by calling it per cell (`build`; `build_at` is the parallel variant).
   handles left/right mouse paint (Sand/Rock) at `(mx, 63 - my, 32)`, `e` to
   erase, space to pause, close to quit. Paints set activity on 26 neighbors.
 - `runners/view3d.bend` (presentation): an `App.run` windowed 3D viewer over the
-  64³ world. `view/voxel.bend` is a pure (no-IO) Amanatides–Woo DDA voxel
-  raycaster + perspective camera; the runner holds world + `speed` + camera + a
-  held-key mask and renders a 128×128 quadtree `Image`. Fly the camera (W/A/S/D,
-  Q/E or ←/→ yaw, ↑/↓ pitch, R/F rise/sink, mouse-drag look), space pauses,
-  `-`/`=` set `speed` (sim ticks per rendered frame, 0 = paused). Not part of
-  the engine.
+  64³ world, at 1920×1080. `view/voxel.bend` is a pure (no-IO) Amanatides–Woo
+  DDA voxel raycaster + perspective camera; the runner holds world + `speed` +
+  render `depth` + camera + a held-key mask and renders a depth-`depth` quadtree
+  `Image`. Fly the camera (W/A/S/D, Q/E or ←/→ yaw, ↑/↓ pitch, R/F rise/sink,
+  mouse-drag look), space pauses, `-`/`=` set `speed` (sim ticks per rendered
+  frame, 0 = paused), `,`/`.` set the render `depth` (5–8). Key codes accept
+  both conventions (X11 lowercase + arrows 63232–63235, Mac/GLFW uppercase +
+  262–265). The window backend maps a depth-`d` image to a w×h window by top
+  bits, so `view_image` renders only the aspect-correct, integer-scaled
+  sub-image the window shows (1920×1080: depth 7 → 120×68 cells at 16×, depth 8
+  → 240×135 at 8×). Not part of the engine; ~50 ms/frame at depth 7, ~14 ms at
+  depth 6, ~200 ms at depth 8 (native, 1920×1080).
 - `test/tests.bend`, `test/simtests.bend`: golden tests, see §3.5.
 - `scenarios/fixtures.bend`: shared setup (`spawn`, `pull`), so `src/sim.bend`
   stays only the tick pipeline.
@@ -625,6 +631,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V3c-2` (complete) | completeness done: `v3c_ne_idx_complete` (the converse of the soundness law) and `v3c_ne_idx_exact` (`ne_idx(full k, two k, i, j) == Bool.not(U32.is_eq(i, j))` for in-range `i, j`) — the three arithmetic bricks (`is_lt` base reflection, `sub` range preservation, canonical size halves) plus the depth induction over the structural case laws; T36/T40–T42 | A.89 |
 | `V3c` (engine wire) | `G3` closed: `src/v3cw.bend` proves the engine's `Rules.commit_sets` on the projected write list equals `Commit.v3c_fold` (`v3cw_commit_fold`; `WSet` via `apply_op`, `WWake` neutral) and lifts the region-split equality to the engine write set (`v3cw_commit_commutes`), keyed by `Commit.v3c_pair_ne` on the projection. T46–T48. Methodological caveat: `v3cw_lin` is the multiplicity-erased copy needed because `commit_sets` is linear | A.90 |
 | `view3d` | interactive 3D viewer (presentation only): `view/voxel.bend` is a pure Amanatides–Woo DDA voxel raycaster + camera; `runners/view3d.bend` is the `App.run` shell (fly camera W/A/S/D + Q/E + arrows + mouse-drag, `speed` = sim ticks per frame, pause). T49 witnesses the DDA; `src/` untouched; ~94 ms/frame native at 128×128 | A.91 |
+| `view3d` (frontend pass) | first-version frontend fixed and scaled: keyboard bug fixed (`bit_of` accepts both backend key conventions; T50), DDA rewritten to two calls/cell with a correct ray range (`dda_steps` = 256 cells; T49 still green), aspect-correct integer-scaled 1920×1080 rendering via the backend's top-bits mapping (`view_image` + `clog2`/`scale_bits`/`vis_dim`; T51), runtime render-depth control (`, `/`.`, 5–8), and both key conventions in the runner. Presentation only, `src/` untouched | A.92 |
 | `V0` | semantics rewrite complete: phase purity (`V0-1`), closure (`V0-2`), direction/colour batching (`V0-3`), cost via the carried dirty-row work set (`V0-4b`), and the neighbourhood support seed (`V0-5`) — every `C1`/`C2`/`C3` and `R1`–`R11` row in §4.1 now conforms | A.63–A.81 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
@@ -644,6 +651,19 @@ index).
 #### Frontier — do next
 
 *(empty — every `V0` sub-step is landed; the optional track below is the only open work.)*
+
+#### Frontend — presentation track (new dimension)
+
+- [ ] **F1** Frontend quality/speed: `view3d` at 1920×1080 is now aspect-correct
+  and integer-scaled, but a per-pixel Bend raycast caps it at ≈19 fps at render
+  depth 7 (120×68 visible cells at 16×) and ≈70 fps at depth 6 (60×34 at 32×);
+  depth 8 (240×135 at 8×) is ≈5 fps. `,`/`.` expose the tradeoff at runtime.
+  What would close the gap: (a) profile and cut the per-cell cost — the dominant
+  term is the `Array.get` tree descent, one per DDA cell, so a per-frame flat
+  world view or a hierarchical empty-space skip is the first thing to try;
+  (b) a coarse occupancy pyramid built once per tick to skip empty regions;
+  (c) the blocked GPU path (`G4`); (d) accept a lower internal resolution with
+  a deliberately crisp upscale. deps: — · serves: —.
 
 #### Optional track — droppable, does not gate the frontier
 
@@ -668,6 +688,7 @@ index).
 | id | state | deps | unblocks |
 |---|---|---|---|
 | `V3c` | landed (A.90) | — | — |
+| `F1` | open (frontend) | — | — |
 | `M7d` | optional | `V3c` (landed A.90) | — |
 | `M7b`/`M7e` | blocked | — | — |
 | `P1` | deferred | — | — |

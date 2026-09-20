@@ -3587,3 +3587,54 @@ no in-repo harness for `App.tick` without a window.
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 44/44 PASS;
   `bend test/simtests.bend` native -> 24/24 PASS.
 - `bend runners/view3d.bend --check-only` -> `All terms check.`; native build ok.
+
+### A.92 — `view3d` frontend pass: keyboard fix, correct ray range, 1920×1080 viewport
+
+**Status:** presentation only; **no engine, law, or test-meaning change** (no `src/`
+edit, no `LAWS.bend` claim). `view/voxel.bend` and `runners/view3d.bend` rewritten,
+T50/T51 added. Gate green, fast 46/46, sim run at integration. `PLAN.md`
+§2.11/§5.1/§5.2 updated.
+
+**Why.** The first `view3d` (A.91) was correct on the DDA witness but its keyboard
+did nothing on X11 and its 128×128 square image was cropped, not scaled, by a
+1920×1080 window. This is the first pass on the presentation dimension: fix the
+input, fix the ray range, and render the aspect-correct sub-image the window
+actually shows.
+
+**Keyboard bug.** The X11 backend reports a printable key's *character* (lowercase)
+and the arrows as `63232..63235`, while the Mac/GLFW convention reports uppercase
+letters and `262..265`. A.91's `bit_of` only knew the Mac codes, so W/A/S/D/Q/E/R/F
+and the arrows were inert on Linux (space and `-`/`=` happened to match). `bit_of`
+now accepts both conventions; T50 witnesses W/w, the two Left codes and the two Up
+codes, plus depth/speed/pause.
+
+**Ray-range bug.** `dda_steps()` was documented as cells but the four-selector DDA
+consumed one fuel per *phase*, so 256 fuel reached only ~64 cells and rays past that
+returned `Miss` (sky). The DDA is rewritten as a self-recursive two-calls-per-cell
+machine (classify, then advance; the next cell's word is fetched during the step), so
+`dda_steps()` = 256 really is 256 cells and `trace` passes `2 × dda_steps()`. T49
+still witnesses the six axis rays; the old 128² image and the new DDA now agree
+byte-for-byte once the old renderer is given the same 256-cell range.
+
+**1920×1080 viewport.** `Window.frame` maps a depth-`d` square `Image` to a w×h
+window by top bits: pixel `(x, y)` shows cell `(x >> s, y >> s)` with `s = k - d`
+and `2^k` the smallest power of two ≥ `max(w, h)`. So a non-power-of-two window
+*crops* a square image. `view_image` turns that into a feature: it computes
+`clog2`, `scale_bits`, `vis_dim`, renders only the top-left `ceil(w/2^s) ×
+ceil(h/2^s)` sub-image with an aspect-correct projection, and fills the rest with
+sky without raycasting. At 1920×1080: depth 7 → 120×68 cells at 16×, depth 8 →
+240×135 at 8×, depth 6 → 60×34 at 32×. `image` keeps the square form for T49.
+T51 pins the arithmetic (`clog2 1920 = 11`, `1920×1080 @ 7 → 120×68`, etc.); the
+first draft had `clog2`'s done flag inverted and T51 caught it.
+
+**Controls.** `,`/`.` set the render depth (5–8) at runtime, so the quality/speed
+tradeoff is live; window is 1920×1080; movement is unchanged.
+
+**Evidence.** Native, 1920×1080, world build excluded: render ≈ 14 ms at depth 6,
+≈ 52 ms at depth 7, ≈ 202 ms at depth 8 (Bend compiles the raycast; JS is far
+slower). `bend runners/view3d.bend -o /tmp/view3d` builds and the window ran for
+5 s on the live display without error.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 46/46 PASS.
+- `bend runners/view3d.bend --check-only` -> `All terms check.`; native build ok.

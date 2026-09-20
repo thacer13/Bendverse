@@ -17,6 +17,7 @@ import ../src/v3cw.bend as V3cw
 import ../src/tick.bend as Tick
 import ../src/g5.bend as G5
 import ../view/voxel.bend as Vox
+import ../runners/view3d.bend as View3d
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -1049,6 +1050,78 @@ def t49_bad() -> U32:
   U32.add(b0, U32.add(b1, U32.add(b2, U32.add(b3, U32.add(b4, b5)))))
 
 
+# T50 (view3d input): both backend key conventions map to the same held bits, and
+# the command keys change depth/speed/pause. The X11 backend reports printable
+# keys lowercased and the arrows as 63232..63235; the Mac/GLFW convention reports
+# uppercase letters and 262..265. `bit_of` accepts both, so the controls work on
+# either backend (the T50 witness is the first-version keyboard fix).
+def t50_keys(sp: View3d.St) -> U32:
+  match sp:
+    case View3d.St{w, run, speed, depth, ox, oy, oz, yaw, pitch, keys, drag, mx, my}:
+      keys
+
+def t50_depth(sp: View3d.St) -> Nat:
+  match sp:
+    case View3d.St{w, run, speed, depth, ox, oy, oz, yaw, pitch, keys, drag, mx, my}:
+      depth
+
+def t50_run(sp: View3d.St) -> Bool:
+  match sp:
+    case View3d.St{w, run, speed, depth, ox, oy, oz, yaw, pitch, keys, drag, mx, my}:
+      run
+
+def t50_speed(sp: View3d.St) -> U32:
+  match sp:
+    case View3d.St{w, run, speed, depth, ox, oy, oz, yaw, pitch, keys, drag, mx, my}:
+      speed
+
+def t50_bad() -> U32:
+  # W (87) and w (119) set bit 0 identically.
+  +kw = View3d.held(t50_keys(View3d.handle_key(87, True{}, View3d.init())), 0n)
+  +kw2 = View3d.held(t50_keys(View3d.handle_key(119, True{}, View3d.init())), 0n)
+  b0 = inc_if_false(Bool.and(kw, kw2), 0)
+  # Left: X11 63234 and Mac 263 both set bit 4.
+  +kl = View3d.held(t50_keys(View3d.handle_key(63234, True{}, View3d.init())), 4n)
+  +kl2 = View3d.held(t50_keys(View3d.handle_key(263, True{}, View3d.init())), 4n)
+  b1 = inc_if_false(Bool.and(kl, kl2), b0)
+  # Up: X11 63232 and Mac 265 both set bit 6.
+  +ku = View3d.held(t50_keys(View3d.handle_key(63232, True{}, View3d.init())), 6n)
+  +ku2 = View3d.held(t50_keys(View3d.handle_key(265, True{}, View3d.init())), 6n)
+  b2 = inc_if_false(Bool.and(ku, ku2), b1)
+  # '.' raises the render depth from 7 to 8; ',' lowers it to 6.
+  +d1 = t50_depth(View3d.handle_key(46, True{}, View3d.init()))
+  b3 = inc_if_false(U32.is_eq(U32.from_nat(d1), 8), b2)
+  +d2 = t50_depth(View3d.handle_key(44, True{}, View3d.init()))
+  b4 = inc_if_false(U32.is_eq(U32.from_nat(d2), 6), b3)
+  # space pauses; '=' speeds up from 1 to 2.
+  b5 = inc_if_false(Bool.not(t50_run(View3d.handle_key(32, True{}, View3d.init()))), b4)
+  b6 = inc_if_false(U32.is_eq(t50_speed(View3d.handle_key(61, True{}, View3d.init())), 2), b5)
+  b6
+
+
+# T51 (view3d viewport): the window backend maps a depth-d Image to a w x h
+# window by top bits, so the visible sub-image is ceil(w/2^s) x ceil(h/2^s) with
+# s = k - d and 2^k >= max(w,h). These are the numbers `view_image` uses.
+def t51_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(U32.from_nat(Vox.clog2(1920)), 11), 0)
+  b1 = inc_if_false(U32.is_eq(U32.from_nat(Vox.clog2(1024)), 10), b0)
+  b2 = inc_if_false(U32.is_eq(U32.from_nat(Vox.clog2(1)), 0), b1)
+  # 1920x1080 at depth 7 -> s = 4 -> 120 x 68 cells (16x upscale)
+  +s7 = Vox.scale_bits(1920, 1080, 7n)
+  b3 = inc_if_false(U32.is_eq(U32.from_nat(s7), 4), b2)
+  b4 = inc_if_false(U32.is_eq(Vox.vis_dim(1920, s7), 120), b3)
+  b5 = inc_if_false(U32.is_eq(Vox.vis_dim(1080, s7), 68), b4)
+  # depth 8 -> s = 3 -> 240 x 135 (8x upscale)
+  +s8 = Vox.scale_bits(1920, 1080, 8n)
+  b6 = inc_if_false(U32.is_eq(Vox.vis_dim(1920, s8), 240), b5)
+  b7 = inc_if_false(U32.is_eq(Vox.vis_dim(1080, s8), 135), b6)
+  # a 512x512 window at depth 7 shows the whole 128x128 image (s = 2)
+  +s512 = Vox.scale_bits(512, 512, 7n)
+  b8 = inc_if_false(U32.is_eq(U32.from_nat(s512), 2), b7)
+  b9 = inc_if_false(U32.is_eq(Vox.vis_dim(512, s512), 128), b8)
+  b9
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -1095,3 +1168,5 @@ def main() -> IO(Unit):
     report("T47 projection applies op + wwake neutral", t47_bad())
     report("T48 engine region split commutes", t48_bad())
     report("T49 view3d DDA shell hits", t49_bad())
+    report("T50 view3d input both key conventions", t50_bad())
+    report("T51 view3d viewport mapping", t51_bad())
