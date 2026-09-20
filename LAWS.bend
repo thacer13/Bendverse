@@ -23,6 +23,7 @@ import ./src/selector.bend as Selector
 import ./src/cw.bend as Cw
 import ./src/winset.bend as Winset
 import ./src/dirtyn.bend as Dirtyn
+import ./src/window.bend as Window
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -956,3 +957,20 @@ law dwin_down_lt:
   for y: Nat
   for h: {Nat.is_lt(0n, w) == True{} : Bool}
   {Nat.is_lt(Dirtyn.dwin_down(w, y), w) == True{} : Bool}
+# ----------------------------------------------------------------------------
+# G-scale-7 -- the canonical window map is a relabelling of `Grid.index`.
+#
+# `Window.win_index` is the torus-free flat index (`x - origin`, no `&63`); on
+# the canonical 64^3 box (origin 0) it must reproduce the fixed-box
+# `Grid.index` exactly. T81 sampled this (A.95); this law proves it, over the
+# `Bits`/`Word` model, for in-box coordinates. It is a genuine box relabelling:
+# `win_index` never folds, so outside the box the two maps disagree (T104).
+# ----------------------------------------------------------------------------
+law win_canonical_index:
+  for x: U32
+  for y: U32
+  for z: U32
+  for hx: {U32.is_lt(x, 64) == True{} : Bool}
+  for hy: {U32.is_lt(y, 64) == True{} : Bool}
+  for hz: {U32.is_lt(z, 64) == True{} : Bool}
+  {Window.win_index(Window.canonical(), x, y, z) == Grid.index(x, y, z) : U32}

@@ -4121,3 +4121,40 @@ remain open in §5.3.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 97/97 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS.
+
+### A.105 — G-scale-7: the canonical window map is a `Grid.index` relabelling
+
+**Status:** additive on `master` (parallel `g7` track, branch commit `c8f17b7`).
+**+1 law** (117 → 118). Gate green, fast **100/100**, sim **25/25**, checker
+canaries **6 ok / 0 bad**. No live-path change.
+
+**What landed.** `SCALE.md` step 2 pinned the canonical window to the 64³ box and
+T81 sampled `win_index(canonical, x, y, z) == Grid.index(x, y, z)`; `G-scale-7`
+asked for the law. New `src/g7.bend` proves it for **in-box** coordinates:
+`g7_sub_zero` (`U32.sub x 0 == x`, lifted from `Commit.v3c_sub_zero`) drops the
+canonical window origin subtraction, and `g7_mask6` (`U32.and x 63 == x` for
+`x < 64`, via `G5.g5_and_mask_id` at width `2^6`) drops `Grid.index`'s three
+torus `&63` folds. Both sides then rewrite to the same nested-`or` term, so the
+relabelling is a pure congruence. Law `win_canonical_index` in `LAWS.bend`,
+delegated from `PROOF.bend` as `Laws.win_canonical_index`.
+
+**Statement note (the registry's phrasing was too strong).** The gap registry
+wrote the law as `win_index(canonical,x,y,z) == Grid.index(x,y,z)` for *all*
+`x,y,z`. Taken literally that is **false**: `win_index` is mask-free while
+`Grid.index` folds every axis (`x = 64` gives `win_index = 64` but
+`Grid.index = 0`). The law therefore carries `U32.is_lt(x,64)` / `y` / `z`
+hypotheses, matching T81's tested range — this is a box relabelling, exactly what
+the gap's "canonical" wording intends. T104 witnesses the necessity (the two maps
+disagree out of box). The `gscale` field lemmas were not on the proof path (this
+claim is about the 6-bit grid packing, not `cw`'s 10/4-bit decomposition); noted
+in the `src/g7.bend` header.
+
+**Witnesses.** T102 `win_index == Grid.index` at box corners and edges (0/63 axes,
+mixed), T103 the two bit facts (`sub 0` over 256 samples, `and 63` over
+`[0,64)`), T104 the range hypothesis is necessary.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 100/100 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+- Worker report: `../Bendverse-g7.report.md` (branch `g7`, commit `c8f17b7`).
