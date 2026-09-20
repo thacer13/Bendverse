@@ -4,6 +4,7 @@ import ./g5.bend as G5
 import ./g7.bend as G7
 import ./window.bend as Window
 import ./wgrid.bend as WGrid
+import ./word.bend as WRefl
 
 # ============================================================================
 # wmarg (S1 endgame, slice W2) -- the window-margin / residency verification.
@@ -152,3 +153,41 @@ def wgrid_canonical_resident(+x: U32, +y: U32, +z: U32)
       Bool.and(ix, Bool.and(iy, rz)),
       Bool.and(ix, Bool.and(iy, iz)),
       eB, eC))
+
+# ---------------------------------------------------- G-scale-1 residual (gsc1)
+# The converse of `wgrid_axis_guard`: `wgrid_axis_ok` passing is the engine's
+# residency test, and it means the coordinate did not fold. The guard is a
+# `U32.is_eq(_, 0)`, reflected to `Word.and(32n, y, Word.not(32n, mask6)) ==
+# Word.zero(32n)` by `Word.w_cmp_eq`; the decomposition `gsc1_word_or_and_not`
+# (`y == (y & mask6) | (y & ~mask6)`) with `Bits.w_or_zero` then gives the low
+# six bits back, i.e. `y & mask6 == y`.
+def gsc1_word_no_fold(+yw: Word(32n),
+    +h: {Cmp.is_eq(Word.cmp(32n, Word.and(32n, yw, Word.not(32n, Bits.mask(32n, 6n))), Word.zero(32n))) == True{} : Bool})
+  -> {Word.and(32n, yw, Bits.mask(32n, 6n)) == yw : Word(32n)}:
+  +hz = WRefl.w_cmp_eq(32n, Word.and(32n, yw, Word.not(32n, Bits.mask(32n, 6n))), Word.zero(32n), h)
+  +orzero = Bits.w_or_zero(32n, Word.and(32n, yw, Bits.mask(32n, 6n)))
+  +decomp = Bits.gsc1_word_or_and_not(32n, yw, Bits.mask(32n, 6n))
+  Equal.trans(Word(32n),
+    Word.and(32n, yw, Bits.mask(32n, 6n)),
+    Word.or(32n, Word.and(32n, yw, Bits.mask(32n, 6n)), Word.zero(32n)),
+    yw,
+    Equal.sym(Word(32n), Word.or(32n, Word.and(32n, yw, Bits.mask(32n, 6n)), Word.zero(32n)), Word.and(32n, yw, Bits.mask(32n, 6n)), orzero),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.and(32n, yw, Bits.mask(32n, 6n)), Word.zero(32n)),
+      Word.or(32n, Word.and(32n, yw, Bits.mask(32n, 6n)), Word.and(32n, yw, Word.not(32n, Bits.mask(32n, 6n)))),
+      yw,
+      Equal.cong(Word(32n), Word(32n), z => Word.or(32n, Word.and(32n, yw, Bits.mask(32n, 6n)), z), Word.zero(32n), Word.and(32n, yw, Word.not(32n, Bits.mask(32n, 6n))), Equal.sym(Word(32n), Word.and(32n, yw, Word.not(32n, Bits.mask(32n, 6n))), Word.zero(32n), hz)),
+      decomp))
+
+# `gsc1_axis_no_fold` at the `U32` level: a passing per-axis guard means the
+# box mask `&63` is the identity on the target coordinate.
+def gsc1_axis_no_fold(+local: U32, +d: U32,
+    +h: {WGrid.wgrid_axis_ok(local, d) == True{} : Bool})
+  -> {U32.and(U32.add(local, d), 63) == U32.add(local, d) : U32}:
+  match local:
+    case U32{lw}:
+      match d:
+        case U32{dw}:
+          +yw = Word.add(32n, lw, dw)
+          +e = gsc1_word_no_fold(yw, h)
+          Equal.cong(Word(32n), U32, z => U32{z}, Word.and(32n, yw, Bits.mask(32n, 6n)), yw, e)
