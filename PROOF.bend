@@ -32,6 +32,7 @@ import ./src/selector.bend as Selector
 import ./src/gscale.bend as Gscale
 import ./src/winset.bend as Winset
 import ./src/dirtyn.bend as Dirtyn
+import ./src/g7.bend as G7
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -502,3 +503,12 @@ def Laws.dwin_mark_wake_up(w, m, y, up, down, h):
 
 def Laws.dwin_mark_wake_down(w, m, y, up, down, h):
   Dirtyn.dwin_mark_wake_down(w, m, y, up, down, h)
+
+# ----------------------------------------------------------------------------
+# g7 / G-scale-7: the canonical window map is a `Grid.index` relabelling.
+# The proof lives in `src/g7.bend` (`g7_win_canonical_index`): the two bit facts
+# `g7_sub_zero` (`Commit.v3c_sub_zero`) and `g7_mask6` (`G5.g5_and_mask_id` at
+# width 2^6) rewrite both sides to the same nested-`or` term.
+# ----------------------------------------------------------------------------
+def Laws.win_canonical_index(x, y, z, hx, hy, hz):
+  G7.g7_win_canonical_index(x, y, z, hx, hy, hz)

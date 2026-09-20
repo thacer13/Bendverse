@@ -2053,6 +2053,50 @@ def t101_bad() -> U32:
   list_cmp_go(
     U32.to_nat(262144), wgen_go(U32.to_nat(262144), 262143, w, Nil{}), Grid.to_list(a), 0)
 
+# T102-T104 (G-scale-7, `src/g7.bend`): witnesses around the proven canonical-
+# window relabelling `win_canonical_index`. T81 sampled `win_index`==`Grid.index`
+# for x,y,z = (i*7, i*13, i*29) & 63; T102 pins it at the box corners and edges,
+# T103 exercises the two bit facts the proof rests on (`U32.sub x 0 == x` and
+# `x & 63 == x` for x < 64), and T104 shows the range hypothesis is necessary:
+# at global x = 64 the mask-free window map keeps 64 while `Grid.index` folds to
+# 0, so a bare `forall x y z` statement would be false.
+def t102_bad() -> U32:
+  +w = Window.canonical()
+  b0 = inc_if_false(U32.is_eq(Window.win_index(w, 0, 0, 0), Grid.index(0, 0, 0)), 0)
+  b1 = inc_if_false(U32.is_eq(Window.win_index(w, 63, 63, 63), Grid.index(63, 63, 63)), b0)
+  b2 = inc_if_false(U32.is_eq(Window.win_index(w, 63, 0, 0), Grid.index(63, 0, 0)), b1)
+  b3 = inc_if_false(U32.is_eq(Window.win_index(w, 0, 63, 0), Grid.index(0, 63, 0)), b2)
+  b4 = inc_if_false(U32.is_eq(Window.win_index(w, 0, 0, 63), Grid.index(0, 0, 63)), b3)
+  b5 = inc_if_false(U32.is_eq(Window.win_index(w, 62, 1, 17), Grid.index(62, 1, 17)), b4)
+  inc_if_false(U32.is_eq(Window.win_index(w, 5, 40, 33), Grid.index(5, 40, 33)), b5)
+
+def g7_sub_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +x = U32.mul(i, 2654435761)
+      g7_sub_go(p, U32.add(i, 1), inc_if_false(U32.is_eq(U32.sub(x, 0), x), bad))
+
+def g7_mask_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      g7_mask_go(p, U32.add(i, 1), inc_if_false(U32.is_eq(U32.and(i, 63), i), bad))
+
+def t103_bad() -> U32:
+  b0 = g7_sub_go(U32.to_nat(256), 0, 0)
+  g7_mask_go(U32.to_nat(64), 0, b0)
+
+def t104_bad() -> U32:
+  +w = Window.canonical()
+  +l = Window.win_index(w, 64, 0, 0)
+  +r = Grid.index(64, 0, 0)
+  b0 = inc_if_false(U32.is_eq(l, 64), 0)
+  b1 = inc_if_false(U32.is_eq(r, 0), b0)
+  inc_if_false(U32.is_ne(l, r), b1)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2152,3 +2196,6 @@ def main() -> IO(Unit):
     report("T99 window one-chunk x-move: 16 enter / 16 leave (S1 step 4b)", t99_bad())
     report("T100 window shift is additive (S1 step 4b)", t100_bad())
     report("T101 moved window assembles its own array (S1 step 4c)", t101_bad())
+    report("T102 window relabel at box corners/edges (G-scale-7)", t102_bad())
+    report("T103 window relabel bit facts: sub0 + mask6 (G-scale-7)", t103_bad())
+    report("T104 window relabel range hypothesis necessary (G-scale-7)", t104_bad())
