@@ -3687,3 +3687,55 @@ including wake activations); `S1` the `SCALE.md` steps 2–6 migration.
   `bend test/simtests.bend` native -> 24/24 PASS; `bend_canary` -> 6 ok, 0 bad.
 - `bend runners/export.bend --check-only` and `bend runners/serve.bend
   --check-only` -> `All terms check.`; both build natively.
+
+### A.94 — bridge + scale integration: sidecar transport, B2 decision, G-scale-3 proof
+
+**Status:** two worker branches (`bridge2`, `gscale`) landed on `master`, merged in
+order (`bridge2` fast-forward, `gscale` with an append conflict in
+`test/tests.bend` resolved by keeping T61–T65 then T66–T70). **Laws 95 → 100**
+(PLAN agrees). Gate green, fast **65/65**, sim **24/24**, canary 6/6.
+
+**Why.** With the export surface (A.93) landed, the two remaining engine-side
+surfaces Bendview's M3/M5 need were the live transport/delta contract and the
+coordinate soundness of the window migration. Both were parallelizable and were
+dispatched as workers; the supervisor kept the critical path (`S1`).
+
+**`bridge2` (track, `runners/` only).** `runners/serve.bend` is no longer a
+skeleton: the length-framed little-endian `[payload_len][kind][payload]`
+transport, all out kinds (HELLO/SNAPSHOT/DELTA/PING/BYE) and in kinds
+(CREDIT/REQUEST/STOP), the dense first snapshot byte-identical to
+`runners/export.bend`'s body, and a **sparse** snapshot that omits chunks the
+engine's own regenerability test (`Store.evict`: sleeping ∧ gen-equal) can
+recover via `Store.assemble`. **`B2` decided: render-visible fields only** — a
+`DELTA` record is `(idx, word)` with `word = Cell.deactivate(new)`; the activity
+bit is engine-internal and `WWake` is not transmitted. `idx` stays the global
+`Grid.index`; the framing names no coordinate, so `S1` changes only the payload
+interpretation. T61–T65 witness framing, kinds, the dense/sparse snapshots, and
+the delta bytes. Residual filed as `G-bridge-1`: the credit window and delta
+coalescing (`SERVE.md` §5–§6) are specified but not realised (synchronous
+writer).
+
+**`gscale` (track, `src/` + proofs).** `src/gscale.bend` closes **`G-scale-3`**:
+the `cw` split/rejoin `(w>>4)<<4 + (w&15) == w & 16383` (`gscale_global_rt`) is
+now a theorem in the `Bits`/`Word` model, with the disjoint-field `add == or`
+brick (`gscale_add_and_or`), the shifted-field-zero bricks, and the
+`model_index_rt`-style key/local model roundtrips (`gscale_kmodel_rt`,
+`gscale_lmodel_rt`); the in-range reflection reuses `G5.g5_and_mask_id`. Five
+laws `gscale_cw_{x,y,z,key,local}_rt`; T66–T70 witness them (T69/T70 are
+stronger than T57/T58 — unconditional masked reconstruction). The laws mention
+no `Grid.index`, so they are **not** in the `G-scale-6` torus retirement set.
+Scoping note (not a gap): the y/z laws place the axis in its own slot with `0`
+elsewhere — exactly the y/z identity, since `cw_global_y`/`_z` read only that
+field; the x law uses all three coordinates and lifting y/z is a mechanical
+extension.
+
+**Frontier.** `B1`/`B2` landed; `S1` (`SCALE.md` steps 2–6) is now the frontier
+and stays with the supervisor. `G-scale-1`..`G-scale-6` remain open except
+`G-scale-3` (closed here).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 65/65 PASS
+  (was 55); `bend test/simtests.bend` native -> 24/24 PASS; `bend_canary` -> 6 ok,
+  0 bad.
+- `bend runners/serve.bend --check-only` -> `All terms check.`; native run emits
+  and re-parses the six-frame stream.

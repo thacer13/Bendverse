@@ -95,7 +95,7 @@ these costs more than reading them.
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 95 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 100 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -381,7 +381,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-95 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+100 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -646,6 +646,8 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `bridge` (engine→renderer) | P0 export surface: `runners/export.bend` writes a chunk-oriented snapshot (`.bvs`) + `Worldgen.gen` reference vectors (`.bvg`); `runners/SERVE.md` + `runners/serve.bend` are the sidecar transport design/skeleton; T52–T55 pin the golden contract (cell word, index, chunk key, gen vector). IO only, `src/` untouched | A.93 |
 | `scale` (trace + coordinates) | P1: `Sim.tick_trace` returns `(world, deltas)` (global coord + new word), `tick` unchanged, T56 witnesses replay == tick on the render-visible fields. P3: additive `src/cw.bend` global-coordinate module (T57–T60) + `SCALE.md` migration design; live `Grid`/`Sim` untouched, gate green | A.93 |
 | `V0` | semantics rewrite complete: phase purity (`V0-1`), closure (`V0-2`), direction/colour batching (`V0-3`), cost via the carried dirty-row work set (`V0-4b`), and the neighbourhood support seed (`V0-5`) — every `C1`/`C2`/`C3` and `R1`–`R11` row in §4.1 now conforms | A.63–A.81 |
+| `bridge2` (transport) | `runners/serve.bend` real sidecar: length-framed `[len][kind][payload]` (HELLO/SNAPSHOT/DELTA/PING/BYE out, CREDIT/REQUEST/STOP in), the sparse snapshot (`Store.evict` regenerability + `assemble`), and the **B2 decision** (DELTA = render-visible fields, `(idx, Cell.deactivate word)`, global `Grid.index`, no `WWake`); T61–T65. IO only, `src/` untouched. Residual: credit/coalescing (`G-bridge-1`) | A.94 |
+| `gscale` (G-scale-3) | `src/gscale.bend` proves the `cw` split/rejoin in `Bits`/`Word`: `(w>>4)<<4 + (w&15) == w & 16383` (`gscale_global_rt`) plus the key/local model roundtrips, five laws `gscale_cw_{x,y,z,key,local}_rt`; T66–T70. Closes `G-scale-3`; mentions no `Grid.index`, so not in the torus retirement set | A.94 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -663,7 +665,7 @@ index).
 
 #### Frontier — do next
 
-*(empty — every `V0` sub-step is landed; the optional track below is the only open work.)*
+*(`S1` — the chunk-window migration below — is the frontier; every `V0` sub-step is landed. The optional track is droppable.)*
 
 #### Frontend — presentation track (new dimension)
 
@@ -680,19 +682,22 @@ index).
 
 #### Engine↔renderer bridge (Bendview)
 
-- [ ] **B1** Transport implementation · open · deps: `bridge` P0 · serves: —
-  — `runners/serve.bend` is a skeleton; `runners/SERVE.md` specifies the framing,
-  credit/backpressure, and delta coalescing. Land the real sidecar (or decide on
-  in-process C FFI) plus a sparse snapshot (omit gen-equal chunks).
-- [ ] **B2** Delta contract decision · open · deps: `scale` P1 · serves: —
-  — T56 witnesses replay on the *render-visible* fields; `WWake` activations are
-  not in the delta (the active bit differs). Decide whether the renderer needs
-  full-word replay (then carry wake activations) or the visible fields are the
-  contract; one line in §4.1 either way.
-- [ ] **S1** Chunk-window migration · open · deps: `scale` P3 · serves: scale
+- [x] **B1** Transport implementation · landed (A.94) · deps: `bridge` P0 · serves: —
+  — the real sidecar is in `runners/serve.bend` (length-framed `[len][kind][payload]`,
+  all out/in kinds) plus the sparse snapshot (`Store.evict`'s sleeping ∧ gen-equal
+  test; `assemble` regenerates). Residual: credit-window accounting and delta
+  coalescing are specified in `SERVE.md` §5–§6 but not realised (synchronous
+  writer) — filed as `G-bridge-1`.
+- [x] **B2** Delta contract decision · landed (A.94) · deps: `scale` P1 · serves: —
+  — **decided: render-visible fields only.** A `DELTA` record is `(idx, word)` with
+  `word = Cell.deactivate(new)`; the activity bit is engine-internal and `WWake`
+  is not transmitted. Encoded in `serve.bend`, witnessed by T65. `idx` stays the
+  global `Grid.index`; the framing is coordinate-agnostic, so `S1` changes only
+  the payload interpretation.
+- [ ] **S1** Chunk-window migration · **next** · deps: `scale` P3 · serves: scale
   — `SCALE.md` steps 2–6: window-relative addressing, explicit resident set,
   window motion, window-sized dirty set, torus-law retirement. Each step
-  gate-green; gap candidates `G-scale-1`..`G-scale-6`.
+  gate-green; gap candidates `G-scale-1`..`G-scale-6` (`G-scale-3` now closed).
 
 #### Optional track — droppable, does not gate the frontier
 
@@ -717,13 +722,16 @@ index).
 | id | state | deps | unblocks |
 |---|---|---|---|
 | `V3c` | landed (A.90) | — | — |
+| `B1` | landed (A.94) | `bridge` P0 | — |
+| `B2` | landed (A.94) | `scale` P1 | — |
+| `S1` | **next** | `scale` P3 | Bendview M3/M4 |
 | `F1` | open (frontend) | — | — |
 | `M7d` | optional | `V3c` (landed A.90) | — |
 | `M7b`/`M7e` | blocked | — | — |
 | `P1` | deferred | — | — |
 
-**Order note.** The frontier is empty (`V0` landed); the optional parallel track
-is independent of it. `M8a–M8d` and `M9` have landed. M7 and V2b are independent; V2b
+**Order note.** The frontier is `S1` (`B1`/`B2` landed in A.94); the optional
+parallel track is independent of it. `M8a–M8d` and `M9` have landed. M7 and V2b are independent; V2b
 may proceed first if the GPU path stalls. Dropping M7/M8 costs nothing above the
 scale track; dropping V2 costs the settling guarantee.
 
@@ -916,10 +924,11 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G17` | unproven | a move wrote the target with the mover's active bit set (`Rules.mov`, and the slide write of `w`), so a later colour phase re-evaluated the mover in the same tick — the evaluated set was not fixed and a grain could fall more than one cell per tick | closed | — | **closed (A.72, V0-4b-1):** `Rules.mov` and the slide write now clear the active bit (`Cell.deactivate`); the move's already-emitted `WWake` re-activates the target at tick end (V0-4a). T34 witnesses one cell per tick. `mov_preserves_pot`/`nempty_mov` proof terms updated (material is unchanged, so the laws still hold) |
 | `G-scale-1` | unproven | `Grid.step_inside` conflates "off the window" with "off the world" | open | S1 | a moving window needs a margin/load rule so a rule target just outside the resident set is not silently inert; closes by a window-margin invariant plus a test/law that every `Rules.plan` target of a resident cell is resident or loaded (`SCALE.md` §6) |
 | `G-scale-2` | unproven | `Dirty.Mask` is exactly 64 `y` rows | open | S1 | a window needs a window-sized mask or per-chunk dirty set; closes by a size-parameterised mask plus the `mark_wake` reach invariant |
-| `G-scale-3` | unproven | the `cw` split/rejoin identity `(x>>4)<<4 + (x&15) == x` is test-witnessed (T57–T60), not proven | open | S1 | gates coordinate soundness of the migrated engine; closes by a bit lemma over `Bits`/`Word`, analogous to `Bits.model_index_rt` |
+| `G-scale-3` | unproven | the `cw` split/rejoin identity `(x>>4)<<4 + (x&15) == x` is test-witnessed (T57–T60), not proven | closed | S1 | **closed (A.94, `gscale`):** `src/gscale.bend` proves it in `Bits`/`Word` — `gscale_global_rt` (`(w>>4)<<4 + (w&15) == w & 16383`, the in-range identity via `G5.g5_and_mask_id`), the disjoint-field `add == or` brick `gscale_add_and_or`, and the `model_index_rt`-style key/local roundtrips `gscale_kmodel_rt`/`gscale_lmodel_rt`; laws `gscale_cw_{x,y,z,key,local}_rt`; T66–T70 |
 | `G-scale-4` | unproven | the resident set is implicit in `assemble_go`'s loop bounds | open | S1 | a window needs an explicit set plus a load/evict policy; closes by a set model and `assemble`/`evict` roundtrip laws |
 | `G-scale-5` | performance | the phase fold's cost scales with the active set, not the window | open | S1 | gates the scale target; closes by measurement on a real window, not a proof |
 | `G-scale-6` | retirement | every law mentioning `Grid.index`/`Grid.ix` is a torus law; migrating the live path orphans them | open | S1 | follow the `AGENTS.md` retirement protocol (keep, mark retired, update §4.1); never delete or silently weaken |
+| `G-bridge-1` | unproven | the sidecar's credit window and delta coalescing are specified (`SERVE.md` §5–§6) but not realised — the writer is synchronous/single-threaded and control input is read at most once | open | B1 residual | a forked reader (`IO.fork`/`Chan`) draining stdin into a bounded queue with credit decrement and snapshot-on-stall, or the in-process C FFI option; closes by a transport test over a real pipe (not a law) |
 
 ### 5.4 Deferred — publishing a proven slice to BendHub
 
