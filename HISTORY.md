@@ -4319,3 +4319,69 @@ silently claimed.
   `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
   6 ok / 0 bad.
 - Worker report: `../Bendverse-wnat.report.md` (branch `wnat`, commit `58e550b`).
+
+### A.110 — S1 slice W1: the window-local coordinate seam (`src/wgrid.bend`) + the `Window` threading
+
+**Status:** on `master` (two commits: `c63d438`, `b9802a9`). **+1 law**
+(122 → 123). Gate green, fast **118/118**, sim **25/25**, checker canaries
+**6 ok / 0 bad**. Live-path change, but **canonical-only**, so behaviour is
+unchanged by construction.
+
+**What landed (`src/wgrid.bend`, new).** The seam between the live rules and the
+resident `Window` (`SCALE.md` §8, W1):
+
+- `wgrid_index w x y z = Window.win_index w x y z` — the torus-free flat index;
+- `wgrid_ix/iy/iz w i = Window.win_gx/gy/gz w i` — the *global* inverses (the
+  `Grid.ix/iy/iz` analogues; the window-local inverses stay `Window.win_ix/…`);
+- a window-parameterised `wgrid_neighbor`/`wgrid_step_inside` and the six face
+  helpers (`wgrid_below`/`above`/`west`/`east`/`south`/`north`).
+
+**Threading.** A `+win: Window` is threaded from the tick entry down to every
+neighbour/guard resolution site: `Ops` (`wake_x/y/z`, `side_sel`, `face`,
+`seed_go`), `Rules` (`plan`; `side4`/`diag4` gained window variants), `Support`
+(`sup`, `pass_gated`, `pass_todo`) and `Sim` (every tick/phase/commit function;
+the `Delta` coordinate map now uses `WGrid.wgrid_ix/iy/iz`). New explicit entries
+`Sim.tick_w`/`ticks_w`/`tick_trace_w`; the existing `tick`/`ticks`/`tick_trace`
+and the leaf helpers (`Ops.wake`, `Ops.side_sel`, `Support.pass_all`,
+`Rules.side4`/`diag4`) are wrappers over `Window.canonical()`, so every existing
+call site and test is unchanged.
+
+**W1 is canonical-only.** The neighbour and guard bodies *delegate* to
+`Grid.neighbor`/`Grid.step_inside`, so the seam is syntactically transparent:
+`wgrid_neighbor(Window.canonical(), i, …)` and, through the `side4`/`diag4`
+wrappers, every `Grid.neighbor`-shaped proof (`diag4_y_flip`, `batch.bend`,
+`color.bend`) reduce to the same term. (An earlier window-frame body —
+`and(add(win_ix i, dx), 63)` etc. — was rejected by the checker because
+`Window.win_ix` and `Grid.ix` are distinct constants, so the `diag4` proof no
+longer closed; delegation is the right W1 shape.)
+
+**Law.** `wgrid_canonical_index`: for in-box `x,y,z`,
+`WGrid.wgrid_index(Window.canonical(), x, y, z) == Grid.index(x, y, z)`. The
+proof is `G7.g7_win_canonical_index` verbatim (the `g7_sub_zero` + `g7_mask6`
+route) — `wgrid_index` is a transparent wrapper over `Window.win_index`.
+Witnesses: T122 (`wgrid_index` canonical relabel), T123 (`wgrid_neighbor`
+canonical == `Grid.neighbor` over a swept index set and eight directions),
+T124 (`wgrid_step_inside` canonical == `Grid.step_inside`, including the inert
+face steps), T125 (a *moved* window keeps its global coordinate: `wgrid_ix` of
+`wgrid_index(at(12,0,0), 200,5,7)` is 200 while `Grid.ix(Grid.index(200,5,7))`
+folds to 8).
+
+**Honest residual.** W1 does **not** yet change resolution at a moving window
+face — `wgrid_neighbor`'s `Window` parameter is carried but its body still wraps
+(and is unused). That is the point of the slice: W2 (`G-scale-1`) swaps the two
+bodies for residency-aware versions and the call sites are already threaded.
+Also left canonical-only: `Sim.active_list`/`phase` (their scan bound is still
+`Grid.volume`; W4 parameterises sizes), and `Support.wake_all` (setup passes).
+When W2 changes `wgrid_neighbor`, the `diag4`/`side4` shape proofs
+(`src/phase.bend`, `src/batch.bend`) must be revisited — recorded here rather
+than silently discovered.
+
+**Verified-opened:** `S1` slice W1. `G-scale-1` (residency/margin) is the next
+slice (W2), then the dirty-set rewire (W3), power-of-two sizing (W4), the
+motion driver (W5, closing `G-scale-5` by measurement), and the torus-law
+retirement (W6, `G-scale-6`).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 118/118 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.

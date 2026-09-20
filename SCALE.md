@@ -152,12 +152,16 @@ file the gap.
 Steps 2–4 (the model: `Window`, explicit resident set, generator selector,
 window-local addressing, motion primitives, window-edge shell, the store
 load/evict policy) and the `G-scale-2` item (3) isomorphism are landed
-(A.95–A.109). What remains is the **rule migration**: moving the live tick
-pipeline off the fixed `Grid` torus onto a window. §7 stays binding — it is a
-coordinate + residency change, not a semantics change.
+(A.95–A.109). **W1 is landed (A.110):** `src/wgrid.bend` is the window-local
+coordinate seam (`wgrid_index`, `wgrid_ix/iy/iz`, and a window-parameterised
+`wgrid_neighbor`/`wgrid_step_inside`), and the resident `Window` is threaded
+through `Ops`/`Rules`/`Support`/`Sim` (canonical-only: the bodies still delegate
+to `Grid`, so every proof/test stands). What remains is the **rule migration**:
+moving the live tick pipeline off the fixed `Grid` torus onto a window. §7 stays
+binding — it is a coordinate + residency change, not a semantics change.
 
-**State (verify with `bend_status` / `bend_audit` first).** Gate green, 122 laws,
-fast 114/114, sim 25/25, gaps 6 open / 13 closed. Relevant landed API:
+**State (verify with `bend_status` / `bend_audit` first).** Gate green, 123 laws,
+fast 118/118, sim 25/25, gaps 6 open / 13 closed. Relevant landed API:
 `src/window.bend` (`Window`, `win_index`, `win_lx/ly/lz`, `win_gx/gy/gz`,
 `shift`, `entering`/`leaving`), `src/store.bend` (`assemble_w`, `window_store`),
 `src/winshell.bend` (`win_border`/`gen_at`), `src/maskword.bend` + `src/wordnat.bend`
@@ -176,14 +180,17 @@ law `win_canonical_index`, A.105), so each slice keeps the gate green and every
 existing law/test standing until the retirement slice. Land one slice at a time;
 each must be gate-green + fast + sim before the next.
 
-### W1 — window-local coordinate map (`WGrid`), canonical-only
-New `src/wgrid.bend`: `wgrid_index w x y z = Window.win_index w x y z`,
+### W1 — window-local coordinate map (`WGrid`), canonical-only — **landed (A.110)**
+`src/wgrid.bend`: `wgrid_index w x y z = Window.win_index w x y z`,
 `wgrid_ix/iy/iz` (via the `win_g*` inverses), and a window-parameterised
-`neighbor`/`step_inside`. Thread a `Window` through `Rules`/`Support`/`Ops`/`Sim`
-as wrappers over `Window.canonical()` (the `_sel` pattern of A.101), so every call
-site is unchanged and the canonical instance is definitionally `Grid`.
-*Evidence:* gate green; fast/sim unchanged; a law `wgrid_canonical_index`
-(delegating to `g7_win_canonical_index`). **Big serial slice — one writer.**
+`wgrid_neighbor`/`wgrid_step_inside` (plus `wgrid_below`/`above`/`west`/`east`/
+`south`/`north`). The resident `Window` is threaded through
+`Rules`/`Support`/`Ops`/`Sim`; the live entry points (`tick`, `ticks`,
+`tick_trace`, `wake`, `side_sel`, …) are wrappers over `Window.canonical()`, and
+`tick_w`/`ticks_w`/`tick_trace_w` take the window explicitly (for W2/W5). W1 is
+**canonical-only**: `wgrid_neighbor`/`wgrid_step_inside` delegate to `Grid`, so
+the seam is transparent. *Evidence:* gate green; fast 118/118, sim 25/25; law
+`wgrid_canonical_index` (delegating to `g7_win_canonical_index`); T122–T125.
 
 ### W2 — window-local neighbour + the margin rule (`G-scale-1`)
 `Rules.plan` builds neighbour indices with `Grid.neighbor` (wraps) and guards with

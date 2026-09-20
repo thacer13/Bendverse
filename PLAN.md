@@ -95,7 +95,7 @@ these costs more than reading them.
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 122 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 123 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -381,7 +381,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-122 laws, every one discharged. Nine are reflexivity proofs (`{==}`, both sides
+123 laws, every one discharged. Nine are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -666,6 +666,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `bridge3` (sidecar flow control) | `runners/serve.bend` realises `SERVE.md` §5–§6: bounded queue, credit window (`bridge3_credit`/`bridge3_emit`, no overrun), drop-and-keyframe delta coalescing, idle PING, and a **forked** stdin reader (`Chan` + `IO.spawn`) so control is read continuously; T76–T80. `G-bridge-1` partially closed (engine/writer split + read reassembly remain) | A.96 |
 | `bridge2` (snapshot framing fix) | `runners/export.bend`'s dense record encoder gathered by a flat `Grid.index` slice (`gi/4096 = y`), so each "chunk" record was a **64×64 `y`-plane** labelled with a `Chunk.key` — 130835/262144 cells misplaced, and mutually inconsistent with the (correct) sparse body. Fixed: one shared `bxe_cell_index`/`bxe_chunk_cells` gather in the `Store.chunk_list` order, reused by the dense and sparse paths (`serve.bend` drops its private copy); `G-bridge-2` closed. T47 (native, full body dense == sparse) + T83 (fast, address mapping). IO only | A.97 |
 | `bridge2` (record order) | the A.97 fix corrected the record *address* but the walk still consed ascending, so each record's cells were in **reverse** `Chunk.local` order (file offset `i` held local `4095-i`). Fixed: the walk is descending so the head is local 0 (`runners/export.bend`); T84 compares the gather element-by-element to `Store.chunk_list` (T47 alone is blind — both encoders shared the order). Doc corrected: records are chunk-ordinal, not packed-key-monotonic. Files `G-bridge-3` (closed) | A.98 |
+| `wgrid` (S1 slice W1) | the window-local coordinate seam. New `src/wgrid.bend`: `wgrid_index` (= `Window.win_index`), the global inverses `wgrid_ix/iy/iz` (= `win_g*`), a window-parameterised `wgrid_neighbor`/`wgrid_step_inside` plus the six face helpers. W1 is **canonical-only**: the neighbour/guard bodies delegate to `Grid`, so the seam is transparent and every existing proof/test stands. The resident `Window` is threaded through `Ops` (`wake_x/y/z`, `side_sel`), `Rules` (`plan`, and `side4`/`diag4` window variants), `Support` (`sup`, `pass_gated`, `pass_todo`) and `Sim` (every tick/phase/commit function, `Delta` coordinates via `WGrid`), with `tick_w`/`ticks_w`/`tick_trace_w` entries and canonical wrappers. Law `wgrid_canonical_index` (via `G7.g7_win_canonical_index`); T122–T125. W2 swaps the two bodies for residency-aware resolution (`G-scale-1`) | A.110 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -744,7 +745,13 @@ index).
   `src/wordnat.bend` proves the U32↔Nat index bridge (`Word.cmp`/`Nat.cmp`
   value theory) and the headline `mask_word_get`; T110–T117. Remaining: **step 5**
   live 64-row rewire (item 1), **step 6** torus-law retirement, `G-scale-8`'s
-  wiring of the policy *into the live `Sim` loop*. **Next slice: W1 (window-local `WGrid`, canonical-only) — the full W1–W6 handoff is `SCALE.md` §8.** Each step gate-green; gap candidates
+  wiring of the policy *into the live `Sim` loop*. **W1 landed (A.110):** the
+  window-local coordinate seam (`src/wgrid.bend`) and the `Window` threading
+  through `Ops`/`Rules`/`Support`/`Sim` are in place, **canonical-only** — the
+  live path passes `Window.canonical()` and `wgrid_neighbor`/`wgrid_step_inside`
+  delegate to `Grid`, so behaviour is unchanged. **Next slice: W2
+  (residency-aware neighbour resolution, `G-scale-1`) — the full W1–W6 handoff is
+  `SCALE.md` §8.** Each step gate-green; gap candidates
   `G-scale-1`..`G-scale-8` (`G-scale-3` closed). Decision A (`G-scale-8`): the
   window / infinite mode samples shell-free `Worldgen.gen_terrain`, the closed
   box keeps its shell as a **reference mode** (`R11` adapted, A.99).
