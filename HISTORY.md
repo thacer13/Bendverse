@@ -3977,3 +3977,38 @@ agreement is a test, not a law.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 91/91 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS; `bend_canary` -> 6 ok, 0 bad.
+
+### A.101 — S1 step 4a: the generator selector (decision A in the engine)
+
+**Status:** additive on `master`; **no law-count change** (114 laws). Gate green,
+fast **93/93**, sim **25/25**. Live behaviour unchanged (reference mode is the
+default everywhere).
+
+**Why.** Decision A (`G-scale-8`, A.99) needs the *window* mode to regenerate its
+sparse overlay from shell-free `gen_terrain`, while the closed box keeps `gen`
+(the absolute shell). That is a generator choice at every regeneration site
+(`Chunk.build` → `Store.chunk_list` → `Store.assemble_cells` / `evict`).
+
+**What landed.** `Worldgen.box()` / `Worldgen.terrain()` expose the choice as a
+`Bool`, dispatched by `Worldgen.at`. It is threaded through
+`Chunk.gen_local_sel`/`build_at_sel`/`build_sel` and
+`Store.chunk_list_sel`/`assemble_cells_sel`/`assemble_go_sel`/`assemble_sel`/
+`assemble_keys_go_sel`/`assemble_keys_sel`/`put_all_go_sel`/`build_all_sel`/
+`evict_key_sel`/`evict_sel`. **Every original function is kept as a thin wrapper**
+that passes `Worldgen.box()`, so no existing call site, test, or live path
+changes — T18/T95/T96 and the whole suite stay green.
+
+**Witnesses.** T97: the `GTerrain` store (`build_all_sel`/`assemble_keys_sel`)
+reconstructs the shell-free `Worldgen.build_terrain`. T98: the box world and the
+terrain world differ (the shell).
+
+**Method note (a Bend gotcha).** The selector is a `Bool`, not a `Data` datatype:
+a `+`-annotated `Data` parameter is rejected by the checker once it is threaded
+through this depth of `chunk`/`store` calls (`expected Data, observed Type`). A
+second, unrelated gotcha the debugging surfaced: a `+name = expr` binding whose
+right-hand side involves a `List` is likewise rejected — so the `_sel` calls are
+written with plain, single-use bindings.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 93/93 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS.
