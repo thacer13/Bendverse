@@ -280,6 +280,60 @@ def bridge2_ctrl_show(c: Bridge2Ctrl) -> String:
     case BUnknown{kind}:
       "unknown kind=" ++ U32.show(kind)
 
+# --------------------------------------------------------- delta decoding
+# Decode a served DELTA payload back into `Sim.Delta` records. The payload is
+# `tick u32, count u32, (idx u32, word u32)...`; the two header words are dropped
+# and each pair becomes a global-coordinate `Sim.Delta`, so the witness replays
+# exactly the bytes the link emits. `word` is already `Cell.deactivate`d by
+# `bridge2_delta_records`.
+def bridge3_delta_ds_go(ws: List<&2, U32>) -> List<&1, Sim.Delta>:
+  match ws:
+    case Nil{}:
+      Nil{}
+    case Con{+idx, r1}:
+      match r1:
+        case Nil{}:
+          Nil{}
+        case Con{word, r2}:
+          Sim.Delta{Grid.ix(idx), Grid.iy(idx), Grid.iz(idx), word} <> bridge3_delta_ds_go(r2)
+
+def bridge3_delta_ds(payload: List<&2, U32>) -> List<&1, Sim.Delta>:
+  bridge3_delta_ds_go(List.drop(&2, U32, bridge2_dec_words(payload), 2n))
+
+# Decode a whole DELTA frame (8-byte header + payload).
+def bridge3_delta_frame_ds(frame: List<&2, U32>) -> List<&1, Sim.Delta>:
+  bridge3_delta_ds(List.drop(&2, U32, frame, 8n))
+
+# The raw `(idx, word)` record words of a served DELTA payload/frame (the tick
+# and count header words dropped). A witness replays these directly, so it never
+# needs a `List<Sim.Delta>` across the module seam.
+def bridge3_delta_words(payload: List<&2, U32>) -> List<&2, U32>:
+  List.drop(&2, U32, bridge2_dec_words(payload), 2n)
+
+def bridge3_delta_frame_words(frame: List<&2, U32>) -> List<&2, U32>:
+  bridge3_delta_words(List.drop(&2, U32, frame, 8n))
+
+# Walk a length-framed stream and return the frame kinds in order. `payload_len`
+# is a byte count; every payload here is whole u32 words, so it is `len/4` words
+# to skip past the payload.
+def bridge3_frame_kinds_go(fuel: Nat, +ws: List<&2, U32>) -> List<&2, U32>:
+  match fuel:
+    case 0n:
+      Nil{}
+    case 1n+p:
+      match ws:
+        case Nil{}:
+          Nil{}
+        case Con{+len, r1}:
+          match r1:
+            case Nil{}:
+              Nil{}
+            case Con{kind, r2}:
+              kind <> bridge3_frame_kinds_go(p, List.drop(&2, U32, r2, U32.to_nat(U32.div(len, 4))))
+
+def bridge3_frame_kinds(stream: List<&2, U32>) -> List<&2, U32>:
+  bridge3_frame_kinds_go(1048576n, bridge2_dec_words(stream))
+
 # ---------------------------------------------------------------------- IO
 # Open `/dev/stdout` in append mode: a redirect from the shell already truncated
 # the file, and O_APPEND keeps successive frames ordered instead of truncating.
@@ -325,38 +379,6 @@ def bridge2_has_control(xs: List<&1, String>) -> Bool:
         case _:
           bridge2_has_control(t)
 
-# Sparse checkpoint: rebuild the chunk store from the ticked world, evict the
-# sleeping gen-equal chunks (the regenerability test) and frame what remains.
-def bridge2_checkpoint_store(r: Array<U32> & Store.Store, +tick: U32) -> IO(Unit):
-  match r:
-    case (world, store):
-      do IO<Unit>:
-        ev : Store.Store = Store.evict(store)
-        bridge2_stdout(bridge2_snapshot_sparse(ev, tick))
-        bridge2_stdout(bridge2_ping(tick))
-        bridge2_stdout(bridge2_bye())
-        IO.print_err("serve: checkpoint tick=" ++ U32.show(tick) ++ ", bye\n")
-
-def bridge2_checkpoint(world: Array<U32>, +tick: U32) -> IO(Unit):
-  bridge2_checkpoint_store(bridge2_world_store(world), tick)
-
-# After the dense first snapshot, advance one tick and ship its render-visible
-# delta, then a sparse checkpoint and a clean BYE.
-def bridge2_tick_result(r: Array<U32> & List<Sim.Delta>) -> IO(Unit):
-  match r:
-    case (world, ds):
-      do IO<Unit>:
-        bridge2_stdout(bridge2_delta_frame(1, ds))
-        bridge2_checkpoint(world, 1)
-
-def bridge2_emit() -> IO(Unit):
-  do IO<Unit>:
-    IO.print_err("serve: hello\n")
-    bridge2_stdout(bridge2_hello(0))
-    bridge2_stdout(bridge2_snapshot_dense(Fixtures.spawn(Sim.build()), 0))
-    IO.print_err("serve: dense snapshot tick=0\n")
-    bridge2_tick_result(Sim.tick_trace(Fixtures.spawn(Sim.build())))
-
 # ============================================================================
 # serve -- flow control (track `bridge3`, closes `G-bridge-1`).
 #
@@ -389,116 +411,128 @@ type Bridge3Flow is Data:
     coalesced: U32,  # deltas dropped since the last armed keyframe
     keyframe: Bool,  # a fresh SNAPSHOT is armed
     tick: U32,       # newest tick the engine has produced
-    idle: U32        # ticks since the last emitted frame (PING timer)
+    idle: U32,       # ticks since the last emitted frame (PING timer)
+    stop: Bool       # control said STOP/EOF: flush the checkpoint, then exit
   }
 
 def bridge3_flow_new(+cap: U32) -> Bridge3Flow:
-  B3Flow{0, 0, cap, 0, False{}, 0, 0}
+  B3Flow{0, 0, cap, 0, False{}, 0, 0, False{}}
 
 def bridge3_window(f: Bridge3Flow) -> U32:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: window
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}: window
 
 def bridge3_queued(f: Bridge3Flow) -> U32:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: queued
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}: queued
 
 def bridge3_coalesced(f: Bridge3Flow) -> U32:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: coalesced
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}: coalesced
 
 def bridge3_is_keyframe(f: Bridge3Flow) -> Bool:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: keyframe
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}: keyframe
 
 def bridge3_idle(f: Bridge3Flow) -> U32:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: idle
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}: idle
+
+def bridge3_is_stopped(f: Bridge3Flow) -> Bool:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}: stop
 
 def bridge3_can_emit(f: Bridge3Flow) -> Bool:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}:
       Bool.and(U32.is_gt(window, 0), U32.is_gt(queued, 0))
 
 def bridge3_has_room(f: Bridge3Flow) -> Bool:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}:
       U32.is_lt(queued, cap)
 
 def bridge3_has_credit(f: Bridge3Flow) -> Bool:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}:
       U32.is_gt(window, 0)
 
 # A CREDIT frame advances the send window; a REQUEST arms a keyframe.
 def bridge3_credit(f: Bridge3Flow, +n: U32) -> Bridge3Flow:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
-      B3Flow{U32.add(window, n), queued, cap, coalesced, keyframe, tick, idle}
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}:
+      B3Flow{U32.add(window, n), queued, cap, coalesced, keyframe, tick, idle, stop}
 
 def bridge3_arm_keyframe(f: Bridge3Flow, +tick: U32) -> Bridge3Flow:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick0, idle}:
-      B3Flow{window, queued, cap, coalesced, True{}, tick, idle}
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick0, idle, stop}:
+      B3Flow{window, queued, cap, coalesced, True{}, tick, idle, stop}
+
+# STOP/EOF: sticky, and grants a flush window so the final checkpoint
+# (SNAPSHOT + PING) can be written even though the renderer has stopped granting.
+def bridge3_stop(f: Bridge3Flow) -> Bridge3Flow:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}:
+      B3Flow{U32.add(window, 8), queued, cap, coalesced, keyframe, tick, idle, True{}}
 
 # --- emit: debit one credit and one slot, reset the idle timer ---------------
-def bridge3_emit_if(can: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+def bridge3_emit_if(can: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32, +stop: Bool) -> Bridge3Flow:
   match can:
     case True{}:
-      B3Flow{U32.sub(window, 1), U32.sub(queued, 1), cap, coalesced, keyframe, tick, 0}
+      B3Flow{U32.sub(window, 1), U32.sub(queued, 1), cap, coalesced, keyframe, tick, 0, stop}
     case False{}:
-      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}
 
 def bridge3_emit(f: Bridge3Flow) -> Bridge3Flow:
   match f:
-    case B3Flow{+window, +queued, cap, coalesced, keyframe, tick, idle}:
+    case B3Flow{+window, +queued, cap, coalesced, keyframe, tick, idle, +stop}:
       bridge3_emit_if(Bool.and(U32.is_gt(window, 0), U32.is_gt(queued, 0)),
-        window, queued, cap, coalesced, keyframe, tick, idle)
+        window, queued, cap, coalesced, keyframe, tick, idle, stop)
 
 # --- bounded queue: push, with coalescing on overflow ------------------------
-def bridge3_push_delta_if(room: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+def bridge3_push_delta_if(room: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32, +stop: Bool) -> Bridge3Flow:
   match room:
     case True{}:
-      B3Flow{window, U32.add(queued, 1), cap, coalesced, keyframe, tick, idle}
+      B3Flow{window, U32.add(queued, 1), cap, coalesced, keyframe, tick, idle, stop}
     case False{}:
-      B3Flow{window, queued, cap, U32.add(coalesced, 1), True{}, tick, idle}
+      B3Flow{window, queued, cap, U32.add(coalesced, 1), True{}, tick, idle, stop}
 
 def bridge3_push_delta(f: Bridge3Flow, +tick: U32) -> Bridge3Flow:
   match f:
-    case B3Flow{window, +queued, +cap, coalesced, keyframe, tick0, idle}:
-      bridge3_push_delta_if(U32.is_lt(queued, cap), window, queued, cap, coalesced, keyframe, tick, idle)
+    case B3Flow{window, +queued, +cap, coalesced, keyframe, tick0, idle, stop}:
+      bridge3_push_delta_if(U32.is_lt(queued, cap), window, queued, cap, coalesced, keyframe, tick, idle, stop)
 
-def bridge3_push_frame_if(room: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+def bridge3_push_frame_if(room: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32, +stop: Bool) -> Bridge3Flow:
   match room:
     case True{}:
-      B3Flow{window, U32.add(queued, 1), cap, coalesced, keyframe, tick, idle}
+      B3Flow{window, U32.add(queued, 1), cap, coalesced, keyframe, tick, idle, stop}
     case False{}:
-      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}
 
 def bridge3_push_frame(f: Bridge3Flow, +tick: U32) -> Bridge3Flow:
   match f:
-    case B3Flow{window, +queued, +cap, coalesced, keyframe, tick0, idle}:
-      bridge3_push_frame_if(U32.is_lt(queued, cap), window, queued, cap, coalesced, keyframe, tick, idle)
+    case B3Flow{window, +queued, +cap, coalesced, keyframe, tick0, idle, stop}:
+      bridge3_push_frame_if(U32.is_lt(queued, cap), window, queued, cap, coalesced, keyframe, tick, idle, stop)
 
 # Consume an armed keyframe: replace the queued delta run with one SNAPSHOT.
-def bridge3_take_kf_if(ok: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+def bridge3_take_kf_if(ok: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32, +stop: Bool) -> Bridge3Flow:
   match ok:
     case True{}:
-      B3Flow{window, 1, cap, 0, False{}, tick, idle}
+      B3Flow{window, 1, cap, 0, False{}, tick, idle, stop}
     case False{}:
-      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}
 
 def bridge3_take_keyframe(f: Bridge3Flow) -> Bridge3Flow:
   match f:
-    case B3Flow{+window, +queued, +cap, +coalesced, +keyframe, tick, idle}:
+    case B3Flow{+window, +queued, +cap, +coalesced, +keyframe, tick, idle, +stop}:
       bridge3_take_kf_if(Bool.and(keyframe, U32.is_gt(window, 0)),
-        window, queued, cap, coalesced, keyframe, tick, idle)
+        window, queued, cap, coalesced, keyframe, tick, idle, stop)
 
 # --- idle PING ---------------------------------------------------------------
 def bridge3_idle_tick(f: Bridge3Flow) -> Bridge3Flow:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
-      B3Flow{window, queued, cap, coalesced, keyframe, tick, U32.add(idle, 1)}
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}:
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, U32.add(idle, 1), stop}
 
 # Writer policy: 0 none, 1 SNAPSHOT, 2 DELTA, 3 PING. A keyframe beats queued
 # deltas; a PING is offered only when the queue is empty and the stream is idle.
@@ -509,7 +543,7 @@ def bridge3_next_k(kf: Bool, q: Bool, w: Bool, idle_ok: Bool) -> U32:
 
 def bridge3_next(f: Bridge3Flow, +threshold: U32) -> U32:
   match f:
-    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle, stop}:
       bridge3_next_k(keyframe, U32.is_gt(queued, 0), U32.is_gt(window, 0), U32.is_ge(idle, threshold))
 
 # --- iteration helpers (tests and the writer) --------------------------------
@@ -537,14 +571,16 @@ def bridge3_apply_ctrl(f: Bridge3Flow, c: Bridge2Ctrl) -> Bridge3Flow:
       bridge3_credit(f, frames)
     case BRequest{tick, flags}:
       bridge3_arm_keyframe(f, tick)
+    case BStop{}:
+      bridge3_stop(f)
     case _:
       f
 
 def bridge3_recv_fold(f: Bridge3Flow, m: Maybe<&1, Bridge2Ctrl>) -> Bridge3Flow:
   match m:
     case None{}:
-      # renderer closed stdin (STOP/EOF): flush the remaining frames and exit
-      bridge3_credit(f, 8)
+      # renderer closed stdin (STOP/EOF): arm a flush window and stop
+      bridge3_stop(f)
     case Some{c}:
       bridge3_apply_ctrl(f, c)
 
@@ -589,6 +625,13 @@ def bridge3_write_frame(f: Bridge3Flow, chan: Chan(Bridge2Ctrl), +tick: U32, fra
     +f3 : Bridge3Flow <- bridge3_grant_until(f2, chan)
     bridge3_write_if(bridge3_has_credit(f3), frame, f3)
 
+def bridge3_bytes_or_nil(res: Result<&1, &1, U32 & String, List<&2, U32>>) -> List<&2, U32>:
+  match res:
+    case Done{value}:
+      value
+    case Fail{(code, message)}:
+      Nil{}
+
 # Continuous stdin reader: decode each control frame and hand it to the writer
 # over a room-1 `Chan`. Closing stdin (EOF) closes the channel, which the writer
 # reads as STOP. This replaces the one-shot `bridge2_read_control`.
@@ -621,12 +664,14 @@ def bridge3_reader_go(
           match q:
             case (f2, res):
               do IO<Unit>:
-                bytes2 : List<&2, U32> <- IO.pass(List<&2, U32>, res)
+                bytes2 : List<&2, U32> = bridge3_bytes_or_nil(res)
                 bridge3_reader_go(p, 2, chan, (f2, Fail{(0, "")}), bytes2)
         case _:
           match bytes:
             case Nil{}:
-              Chan.close(Bridge2Ctrl, chan)
+              do IO<Unit>:
+                IO.print_err("serve: control EOF\n")
+                Chan.close(Bridge2Ctrl, chan)
             case Con{h, t}:
               do IO<Unit>:
                 sent : Bool <- Chan.send(Bridge2Ctrl, chan, bridge2_decode_control(bytes))
@@ -637,29 +682,78 @@ def bridge3_reader(chan: Chan(Bridge2Ctrl)) -> IO(Unit):
     f : File <- IO.try(File, File.open("/dev/stdin", "r"))
     bridge3_reader_go(1048576n, 0, chan, (f, Fail{(0, "")}), Nil{})
 
-# The flow-based writer: HELLO, a dense genesis SNAPSHOT, one tick's DELTA, a
-# sparse checkpoint SNAPSHOT, a PING, and a clean BYE -- every frame after
-# HELLO gated by the credit window the forked reader fills from CREDIT.
-def bridge3_checkpoint_store(r: Array<U32> & Store.Store, +chan: Chan(Bridge2Ctrl), f: Bridge3Flow) -> IO(Unit):
+# The flow-based live link: HELLO, a dense SNAPSHOT of the genesis world at tick
+# 0, then a continuous DELTA stream (one frame per canonical-window tick, global
+# coordinates from `Sim.tick_trace`), gated by the credit window the forked
+# reader fills from CREDIT. A STOP frame (or EOF) sets the flow's sticky stop
+# flag; the loop then flushes a sparse checkpoint SNAPSHOT, a PING and a BYE.
+#
+# This is deliberately the FIXED canonical window (`Sim.tick_trace`), not the W5
+# motion driver: window motion is a separate, later decision.
+def bridge3_link_world() -> Array<U32>:
+  Fixtures.spawn(Sim.build())
+
+def bridge3_live_fuel() -> Nat:
+  1073741824n
+
+# Sparse checkpoint at the loop's current tick, then PING and BYE.
+def bridge3_checkpoint_store(r: Array<U32> & Store.Store, +chan: Chan(Bridge2Ctrl), +tick: U32, f: Bridge3Flow) -> IO(Unit):
   match r:
     case (world, store):
       do IO<Unit>:
         ev : Store.Store = Store.evict(store)
-        f1 : Bridge3Flow <- bridge3_write_frame(f, chan, 1, bridge2_snapshot_sparse(ev, 1))
-        f2 : Bridge3Flow <- bridge3_write_frame(f1, chan, 1, bridge2_ping(1))
+        f1 : Bridge3Flow <- bridge3_write_frame(f, chan, tick, bridge2_snapshot_sparse(ev, tick))
+        f2 : Bridge3Flow <- bridge3_write_frame(f1, chan, tick, bridge2_ping(tick))
         bridge2_stdout(bridge2_bye())
-        IO.print_err("serve: checkpoint tick=1, bye\n")
+        IO.print_err("serve: checkpoint tick=" ++ U32.show(tick) ++ ", bye\n")
 
-def bridge3_checkpoint_flow(world: Array<U32>, chan: Chan(Bridge2Ctrl), f: Bridge3Flow) -> IO(Unit):
-  bridge3_checkpoint_store(bridge2_world_store(world), chan, f)
+def bridge3_checkpoint_flow(world: Array<U32>, chan: Chan(Bridge2Ctrl), +tick: U32, f: Bridge3Flow) -> IO(Unit):
+  bridge3_checkpoint_store(bridge2_world_store(world), chan, tick, f)
 
-def bridge3_tick_frame(r: Array<U32> & List<Sim.Delta>, +chan: Chan(Bridge2Ctrl), f: Bridge3Flow) -> IO(Unit):
+# The continuous loop body. `r` threads the previous tick's `(world, deltas)` as
+# a parameter (Bend cannot scrutinize a computed value). The loop stops when the
+# flow is stopped or the fuel is exhausted, then checkpoints.
+#
+# Flush the terminal checkpoint at the loop's current tick.
+def bridge3_live_finish(r: Array<U32> & List<Sim.Delta>, chan: Chan(Bridge2Ctrl), +tick: U32, f: Bridge3Flow) -> IO(Unit):
   match r:
     case (world, ds):
-      do IO<Unit>:
-        f2 : Bridge3Flow <- bridge3_write_frame(f, chan, 1, bridge2_delta_frame(1, ds))
-        bridge3_checkpoint_flow(world, chan, f2)
+      bridge3_checkpoint_flow(world, chan, tick, f)
 
+# The continuous loop body: one self-recursive `def` with a phase selector (Bend
+# has no forward references / mutual recursion). `fuel` is `2 * ticks` because
+# every self-call must decrement it: phase 0 checks the stop flag, phase 1 writes
+# one tick's DELTA and ticks again. `r` threads the previous tick's
+# `(world, deltas)` as a parameter (Bend cannot scrutinize a computed value), and
+# `tick` is the tick `ds` belongs to. It checkpoints on STOP/EOF or fuel
+# exhaustion; the tick before the stop check means a post-STOP SNAPSHOT may
+# supersede one unbroadcast tick -- legal, since a SNAPSHOT supersedes all deltas.
+def bridge3_live_go(
+  fuel: Nat, +phase: U32, +tick: U32, +chan: Chan(Bridge2Ctrl), f: Bridge3Flow,
+  r: Array<U32> & List<Sim.Delta>
+) -> IO(Unit):
+  match fuel:
+    case 0n:
+      bridge3_live_finish(r, chan, tick, f)
+    case 1n+p:
+      match phase:
+        case 0:
+          match f:
+            case B3Flow{window, queued, cap, coalesced, keyframe, tick0, idle, stop}:
+              match stop:
+                case True{}:
+                  bridge3_live_finish(r, chan, tick, f)
+                case False{}:
+                  bridge3_live_go(p, 1, tick, chan, f, r)
+        case _:
+          match r:
+            case (world, ds):
+              do IO<Unit>:
+                f2 : Bridge3Flow <- bridge3_write_frame(f, chan, tick, bridge2_delta_frame(tick, ds))
+                bridge3_live_go(p, 0, U32.add(tick, 1), chan, f2, Sim.tick_trace(world))
+
+# Control path: a forked reader parses CREDIT/REQUEST/STOP from stdin; the
+# writer is fully credit-gated, so the loop runs until STOP/EOF.
 def bridge3_serve_control() -> IO(Unit):
   do IO<Unit>:
     +chan : Chan(Bridge2Ctrl) <- Chan.new(Bridge2Ctrl, 1)
@@ -667,16 +761,28 @@ def bridge3_serve_control() -> IO(Unit):
     IO.print_err("serve: hello\n")
     bridge2_stdout(bridge2_hello(0))
     f0 : Bridge3Flow = bridge3_flow_new(8)
-    f1 : Bridge3Flow <- bridge3_write_frame(f0, chan, 0, bridge2_snapshot_dense(Fixtures.spawn(Sim.build()), 0))
+    f1 : Bridge3Flow <- bridge3_write_frame(f0, chan, 0, bridge2_snapshot_dense(bridge3_link_world(), 0))
     IO.print_err("serve: dense snapshot tick=0\n")
-    bridge3_tick_frame(Sim.tick_trace(Fixtures.spawn(Sim.build())), chan, f1)
+    bridge3_live_go(bridge3_live_fuel(), 0, 1, chan, f1, Sim.tick_trace(bridge3_link_world()))
+
+# No-control path: the same loop, but the window is pre-seeded so no reader is
+# needed; it runs a bounded number of ticks and then checkpoints.
+def bridge3_serve_bounded(+ticks: Nat) -> IO(Unit):
+  do IO<Unit>:
+    +chan : Chan(Bridge2Ctrl) <- Chan.new(Bridge2Ctrl, 1)
+    IO.print_err("serve: hello\n")
+    bridge2_stdout(bridge2_hello(0))
+    f0 : Bridge3Flow = bridge3_credit(bridge3_flow_new(8), 64)
+    f1 : Bridge3Flow <- bridge3_write_frame(f0, chan, 0, bridge2_snapshot_dense(bridge3_link_world(), 0))
+    IO.print_err("serve: dense snapshot tick=0\n")
+    bridge3_live_go(Nat.double(ticks), 0, 1, chan, f1, Sim.tick_trace(bridge3_link_world()))
 
 def bridge3_serve_if(control: Bool) -> IO(Unit):
   match control:
     case True{}:
       bridge3_serve_control()
     case False{}:
-      bridge2_emit()
+      bridge3_serve_bounded(8n)
 
 def main() -> IO(Unit):
   do IO<Unit>:

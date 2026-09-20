@@ -736,6 +736,189 @@ def t139() -> U32:
   t139_ck(Sim.w5_checkpoint(w1, world1), w1, ref1)
 
 
+# ============================================================================
+# T145-T149 (track `serve`): the fixed-window live link (`runners/serve.bend`).
+# The IO loop is not observable, so these witness the pure pieces it is built
+# from: a run of served DELTA frames round-trips and replays to the ticked world,
+# the canonical-window link's frames are ordered HELLO/SNAPSHOT/DELTA.../
+# SNAPSHOT/PING/BYE, and STOP is a sticky, credit-granting flag. They start from
+# the spawned world (the same fixture as T56): the settled `Sim.build` is a fixed
+# point and would make the link vacuous.
+# ============================================================================
+
+# Walk `fuel = 2 * ticks` phase-alternating steps over the canonical window:
+# phase 0 advances one `Sim.tick_trace`, phase 1 encodes that tick's frame and
+# decodes it back, accumulating the deltas the link actually put on the wire.
+# `r` is threaded as a parameter (Bend cannot scrutinize a computed value).
+def serve_loop_fin(acc: List<&2, U32>, r: Array<U32> & List<Sim.Delta>) -> Array<U32> & List<&2, U32>:
+  match r:
+    case (world, ds):
+      (world, acc)
+
+def serve_loop_go(
+  fuel: Nat, +phase: U32, +tick: U32, acc: List<&2, U32>,
+  r: Array<U32> & List<Sim.Delta>
+) -> Array<U32> & List<&2, U32>:
+  match fuel:
+    case 0n:
+      serve_loop_fin(acc, r)
+    case 1n+p:
+      match phase:
+        case 0:
+          match r:
+            case (world, ds):
+              serve_loop_go(p, 1, tick, acc, Sim.tick_trace(world))
+        case _:
+          match r:
+            case (world, ds):
+              serve_loop_go(p, 0, U32.add(tick, 1),
+                List.append(&2, U32, acc,
+                  Serve.bridge3_delta_frame_words(Serve.bridge2_delta_frame(tick, ds))),
+                (world, Nil{}))
+
+def serve_loop(fuel: Nat, world: Array<U32>) -> Array<U32> & List<&2, U32>:
+  serve_loop_go(Nat.double(fuel), 0, 1, Nil{}, (world, Nil{}))
+
+# Replay accumulated `(idx, word)` records onto the pre-tick world.
+def serve_replay_pairs(ws: List<&2, U32>, world: Array<U32>) -> Array<U32>:
+  match ws:
+    case Nil{}:
+      world
+    case Con{+idx, r1}:
+      match r1:
+        case Nil{}:
+          world
+        case Con{word, r2}:
+          serve_replay_pairs(r2, world[idx] <- word)
+
+# Compare two worlds up to the engine-internal activity bit (T56's relation):
+# the served word is `Cell.deactivate`d, and a wake-only change is not on the wire.
+def serve_cmp(xs: List<U32>, ys: List<U32>, +bad: U32) -> U32:
+  match xs:
+    case Nil{}:
+      bad
+    case Con{hx, tx}:
+      match ys:
+        case Nil{}:
+          bad
+        case Con{hy, ty}:
+          serve_cmp(tx, ty, inc_if_false(U32.is_eq(Cell.deactivate(hx), Cell.deactivate(hy)), bad))
+
+def serve_same(a: Array<U32>, b: Array<U32>) -> U32:
+  serve_cmp(Grid.to_list(a), Grid.to_list(b), 0)
+
+# T145: six served ticks replay to the six-tick world, and the run is non-empty.
+def t145_check(r: Array<U32> & List<&2, U32>) -> U32:
+  match r:
+    case (post, +ws):
+      w0 = Fixtures.spawn(Sim.build())
+      rep = serve_replay_pairs(ws, w0)
+      +b0 = serve_same(rep, post)
+      inc_if_false(Bool.not(List.is_empty(&2, U32, ws)), b0)
+
+def t145() -> U32:
+  t145_check(serve_loop(6n, Fixtures.spawn(Sim.build())))
+
+# T146: the served DELTA frame is `kind 2, tick, count`, length `8 + 8*count`, and
+# the first tick actually carries records (not a vacuous link).
+def t146_check(r: Array<U32> & List<Sim.Delta>, +tick: U32) -> U32:
+  match r:
+    case (world, ds):
+      +ws = Serve.bridge2_dec_words(Serve.bridge2_delta_frame(tick, ds))
+      +len = Serve.bridge2_word0(ws)
+      +kind = Serve.bridge2_word1(ws)
+      +rest = List.drop(&2, U32, ws, 2n)
+      +ftick = Serve.bridge2_word0(rest)
+      +cnt = Serve.bridge2_word1(rest)
+      +recs = U32.div(U32.sub(len, 8), 8)
+      b0 = inc_if_false(U32.is_eq(kind, 2), 0)
+      b1 = inc_if_false(U32.is_eq(ftick, tick), b0)
+      b2 = inc_if_false(U32.is_eq(cnt, recs), b1)
+      b3 = inc_if_false(U32.is_eq(len, U32.add(8, U32.mul(recs, 8))), b2)
+      inc_if_false(U32.is_gt(recs, 0), b3)
+
+def t146() -> U32:
+  t146_check(Sim.tick_trace(Fixtures.spawn(Sim.build())), 1)
+
+# T147: each served record's `idx` decodes to a global coordinate whose
+# `Grid.index` is exactly that `idx` (the B2 contract coordinate convention).
+def t147_go(ws: List<&2, U32>, +bad: U32) -> U32:
+  match ws:
+    case Nil{}:
+      bad
+    case Con{+idx, r1}:
+      match r1:
+        case Nil{}:
+          bad
+        case Con{word, r2}:
+          +k = Grid.index(Grid.ix(idx), Grid.iy(idx), Grid.iz(idx))
+          t147_go(r2, inc_if_false(U32.is_eq(k, idx), bad))
+
+def t147_check(r: Array<U32> & List<Sim.Delta>, +tick: U32) -> U32:
+  match r:
+    case (world, ds):
+      t147_go(Serve.bridge3_delta_frame_words(Serve.bridge2_delta_frame(tick, ds)), 0)
+
+def t147() -> U32:
+  t147_check(Sim.tick_trace(Fixtures.spawn(Sim.build())), 1)
+
+# T148: the canonical-window link's frames are ordered HELLO, SNAPSHOT, DELTA,
+# DELTA, checkpoint SNAPSHOT, PING, BYE. The checkpoint uses an empty store (the
+# ordering does not depend on the body), so the witness stays small.
+def kinds_eq(xs: List<&2, U32>, ys: List<&2, U32>) -> Bool:
+  match xs:
+    case Nil{}:
+      match ys:
+        case Nil{}:
+          True{}
+        case Con{hy, ty}:
+          False{}
+    case Con{hx, tx}:
+      match ys:
+        case Nil{}:
+          False{}
+        case Con{hy, ty}:
+          Bool.and(U32.is_eq(hx, hy), kinds_eq(tx, ty))
+
+# HELLO, SNAPSHOT, DELTA, DELTA, checkpoint SNAPSHOT, PING, BYE.
+def serve_link_kinds() -> List<&2, U32>:
+  0 <> (1 <> (2 <> (2 <> (1 <> (3 <> (4 <> Nil{}))))))
+
+def t148() -> U32:
+  +hello = Serve.bridge2_hello(0)
+  +dense = Serve.bridge2_snapshot_dense(Sim.build(), 0)
+  +d1 = Serve.bridge2_delta_frame(1, Nil{})
+  +d2 = Serve.bridge2_delta_frame(2, Nil{})
+  +ck = Serve.bridge2_snapshot_sparse(Store.empty(), 2)
+  +ping = Serve.bridge2_ping(2)
+  +bye = Serve.bridge2_bye()
+  +stream = List.append(&2, U32, hello,
+    List.append(&2, U32, dense,
+      List.append(&2, U32, d1,
+        List.append(&2, U32, d2,
+          List.append(&2, U32, ck,
+            List.append(&2, U32, ping, bye))))))
+  is_bad(kinds_eq(Serve.bridge3_frame_kinds(stream), serve_link_kinds()))
+
+# T149: STOP is sticky and grants a flush window; emitting the checkpoint frames
+# drains it one credit at a time, and stop survives credit/push/emit.
+def t149() -> U32:
+  f0 = Serve.bridge3_flow_new(2)
+  +f1 = Serve.bridge3_push_go(2n, 1, f0)
+  +f2 = Serve.bridge3_stop(f1)
+  b0 = inc_if_false(Serve.bridge3_is_stopped(f2), 0)
+  b1 = inc_if_false(U32.is_eq(Serve.bridge3_window(f2), 8), b0)
+  +f3 = Serve.bridge3_emit(f2)
+  b2 = inc_if_false(U32.is_eq(Serve.bridge3_window(f3), 7), b1)
+  b3 = inc_if_false(Serve.bridge3_is_stopped(f3), b2)
+  +f4 = Serve.bridge3_credit(f3, 4)
+  b4 = inc_if_false(Serve.bridge3_is_stopped(f4), b3)
+  +f5 = Serve.bridge3_push_frame(f4, 3)
+  +f6 = Serve.bridge3_emit(f5)
+  b5 = inc_if_false(U32.is_eq(Serve.bridge3_window(f6), 10), b4)
+  inc_if_false(Serve.bridge3_is_stopped(f6), b5)
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -768,3 +951,8 @@ def main() -> IO(Unit):
     report("T137 moved tick deltas carry global coords (W5)", t137())
     report("T138 w5_trace_step world + accumulated deltas (W5)", t138())
     report("T139 checkpoint preserves ticked state across a move (W5)", t139())
+    report("T145 serve delta-loop replay reconstructs the ticked world", t145())
+    report("T146 serve DELTA frame shape + non-vacuous", t146())
+    report("T147 serve DELTA records carry global coordinates", t147())
+    report("T148 fixed-window link frame ordering (HELLO..BYE)", t148())
+    report("T149 STOP is sticky and grants the flush window", t149())
