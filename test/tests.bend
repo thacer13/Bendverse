@@ -1995,6 +1995,42 @@ def t98_bad() -> U32:
   diff = list_cmp_go(U32.to_nat(262144), Grid.to_list(wb), Grid.to_list(wt), 0)
   inc_if_false(Bool.not(U32.is_eq(diff, 0)), 0)
 
+# T99-T100 (S1 step 4b): window motion. T99: a one-chunk x-translation of the
+# canonical window partitions its 64 resident chunks into 16 entering, 16
+# leaving, 48 unchanged, and every entering chunk is in the new window and not
+# the old. T100: `shift` is additive (two one-chunk shifts == one two-chunk).
+def ulen(xs: List<&2, U32>) -> U32:
+  match xs:
+    case Nil{}: 0
+    case Con{h, t}: U32.add(1, ulen(t))
+
+def ent_mem(fuel: Nat, keys: List<&2, U32>, +w: Window.Window, +w2: Window.Window, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      match keys:
+        case Nil{}: bad
+        case Con{+h, t}:
+          +ok = Bool.and(Window.in_resident(w2, h), Bool.not(Window.in_resident(w, h)))
+          ent_mem(p, t, w, w2, inc_if_false(ok, bad))
+
+def t99_bad() -> U32:
+  +w = Window.canonical()
+  +w2 = Window.shift(w, 1, 0, 0)
+  +ent = Window.entering(w, w2)
+  +lea = Window.leaving(w, w2)
+  b0 = inc_if_false(U32.is_eq(ulen(ent), 16), 0)
+  b1 = inc_if_false(U32.is_eq(ulen(lea), 16), b0)
+  ent_mem(64n, ent, w, w2, b1)
+
+def t100_bad() -> U32:
+  +w = Window.canonical()
+  +a = Window.shift(Window.shift(w, 1, 0, 0), 1, 0, 0)
+  +b = Window.shift(w, 2, 0, 0)
+  b0 = inc_if_false(U32.is_eq(Window.base_x(a), Window.base_x(b)), 0)
+  b1 = inc_if_false(U32.is_eq(Window.base_y(a), Window.base_y(b)), b0)
+  inc_if_false(U32.is_eq(Window.base_z(a), Window.base_z(b)), b1)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2091,3 +2127,5 @@ def main() -> IO(Unit):
     report("T96 explicit resident set reconstructs worldgen (S1 step 3)", t96_bad())
     report("T97 GTerrain selector reconstructs shell-free terrain (S1 step 4a)", t97_bad())
     report("T98 GBox vs GTerrain differ on the shell (decision A)", t98_bad())
+    report("T99 window one-chunk x-move: 16 enter / 16 leave (S1 step 4b)", t99_bad())
+    report("T100 window shift is additive (S1 step 4b)", t100_bad())

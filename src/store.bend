@@ -144,7 +144,7 @@ def assemble(s: Store) -> Array<U32>:
 # instead of the implicit `assemble_go` loop bounds. Chunks are disjoint, so the
 # order of `keys` does not affect the result; `assemble s` is the canonical
 # instance (`Window.resident_keys canonical()`), which T95 checks.
-def assemble_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<U32>, +s: Store, world: Array<U32>) -> Array<U32>:
+def assemble_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<&2, U32>, +s: Store, world: Array<U32>) -> Array<U32>:
   match fuel:
     case 0n:
       world
@@ -155,10 +155,10 @@ def assemble_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<U32>, +s: Store, worl
         case Con{+h, t}:
           assemble_keys_go_sel(sel, p, t, s, assemble_cells_sel(sel, get(s, h), h, world))
 
-def assemble_keys_sel(+sel: Bool, keys: List<U32>, s: Store) -> Array<U32>:
+def assemble_keys_sel(+sel: Bool, keys: List<&2, U32>, s: Store) -> Array<U32>:
   assemble_keys_go_sel(sel, 64n, keys, s, [0 : U32^18n])
 
-def assemble_keys(keys: List<U32>, s: Store) -> Array<U32>:
+def assemble_keys(keys: List<&2, U32>, s: Store) -> Array<U32>:
   assemble_keys_sel(Worldgen.box(), keys, s)
 
 def put_all_go_sel(+sel: Bool, fuel: Nat, +ci: U32, store: Store) -> Store:
