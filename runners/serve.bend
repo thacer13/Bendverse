@@ -35,8 +35,22 @@ import ./export.bend as Export
 # ============================================================================
 
 # ---------------------------------------------------------------- framing
+# Strict payload byte count for the frame header. `List.length` is NOT
+# tail-recursive (`1n+List.length(...)`), so measuring a dense snapshot (262216
+# words) or a large sparse body overflows the machine stack. This accumulator
+# walk is tail-recursive and constant-stack, so framing survives any payload the
+# writer can actually hold. (The frame header needs the byte count; `payload` is
+# a `List<&2, U32>` of bytes, so the length IS the count.)
+def bridge2_len_go(xs: List<&2, U32>, +acc: Nat) -> Nat:
+  match xs:
+    case Nil{}: acc
+    case Con{h, t}: bridge2_len_go(t, 1n+acc)
+
+def bridge2_len(+xs: List<&2, U32>) -> Nat:
+  bridge2_len_go(xs, 0n)
+
 def bridge2_frame(+kind: U32, +payload: List<&2, U32>) -> List<&2, U32>:
-  +n = U32.from_nat(List.length(&2, U32, payload))
+  +n = U32.from_nat(bridge2_len(payload))
   Export.bxe_u32_le(n, Export.bxe_u32_le(kind, payload))
 
 # HELLO: version, world_edge, chunk_edge, seed, tick. Every field is the
@@ -169,7 +183,7 @@ def bridge2_delta_records(ds: List<Sim.Delta>) -> List<&2, U32>:
 
 def bridge2_delta_frame(+tick: U32, ds: List<Sim.Delta>) -> List<&2, U32>:
   +recs = bridge2_delta_records(ds)
-  +cnt = U32.div(U32.from_nat(List.length(&2, U32, recs)), 8)
+  +cnt = U32.div(U32.from_nat(bridge2_len(recs)), 8)
   payload = Export.bxe_u32_le(tick, Export.bxe_u32_le(cnt, recs))
   bridge2_frame(2, payload)
 

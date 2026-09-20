@@ -1388,6 +1388,27 @@ def t65_bad() -> U32:
   b1 = bridge2_cmp(got, rec_exp, b0)
   inc_if_false(U32.is_eq(Cell.active(Cell.deactivate(12345)), 0), b1)
 
+# T150: framing measures its payload with a constant-stack walk. `List.length`
+# is not tail-recursive (`1n+List.length(...)`), and the dense snapshot's body
+# is 1048864 byte-words, so measuring it overflowed the machine stack and killed
+# the first SNAPSHOT right after HELLO (Bendview M5 engine report). `bridge2_len`
+# must agree with `List.length` where the latter is safe, and must frame a list
+# far deeper than the overflow threshold (the exact agreement is on a small
+# list; the deep list is measured by the frame header, which is the contract).
+def bridge2_big_go(fuel: Nat, acc: List<&2, U32>) -> List<&2, U32>:
+  match fuel:
+    case 0n: acc
+    case 1n+p: bridge2_big_go(p, 1 <> acc)
+
+def t150_bad() -> U32:
+  small = Export.bxe_u32_le(7, Export.bxe_u32_le(9, Nil{}))
+  b0 = inc_if_false(U32.is_eq(U32.from_nat(Serve.bridge2_len(small)), 8), 0)
+  payload = bridge2_big_go(262144n, Nil{})
+  frame = Serve.bridge2_frame(1, payload)
+  hdr = List.take(&2, U32, frame, 8n)
+  exp = Export.bxe_u32_le(262144, Export.bxe_u32_le(1, Nil{}))
+  bridge2_cmp(hdr, exp, b0)
+
 # T66-T70 (P3/G-scale-3): the five proven `gscale` laws, witnessed over a dense
 # range. T66-T68 check the bounded axis roundtrips (`cw_global_x/y/z` of an
 # in-range coordinate is the coordinate) exactly as stated; T69/T70 check the
@@ -2624,6 +2645,7 @@ def main() -> IO(Unit):
     report("T63 serve dense first snapshot == export body", t63_bad())
     report("T64 serve sparse snapshot + assemble recovery", t64_bad())
     report("T65 serve delta B2 (visible fields, global idx)", t65_bad())
+    report("T150 serve frame len is constant-stack (deep payload)", t150_bad())
     report("T66 gscale cw x roundtrip (in range)", t66_bad())
     report("T67 gscale cw y roundtrip (in range)", t67_bad())
     report("T68 gscale cw z roundtrip (in range)", t68_bad())

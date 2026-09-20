@@ -4609,3 +4609,37 @@ still closes by measurement.
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 130/130 PASS;
   `bend test/simtests.bend` native -> 35/35 PASS; `tools/checker-canary.sh` ->
   6 ok / 0 bad.
+
+### A.116 — serve frame length is constant-stack (Bendview engine report)
+
+**Status:** integrated on `master`. **+0 laws.** Gate green, fast **131/131**
+(was 130), sim **35/35**, checker canaries **6 ok / 0 bad**.
+
+**What landed (`runners/serve.bend`, `test/tests.bend`).** `bridge2_frame`
+computed the frame's `payload_len` with `U32.from_nat(List.length(&2, U32,
+payload))`, and Base's `List.length` is **not tail-recursive** (`1n+List.length
+(...)`) — it builds one machine-stack frame per element. The first `SNAPSHOT`'s
+dense body is 1048864 byte-words, so measuring it exhausted the stack right after
+`HELLO` (`bend: memory fault (machine stack overflow?)`, 28 bytes written): the
+sidecar could never emit a real stream. Fixed with `bridge2_len_go`/`bridge2_len`,
+a tail-recursive accumulator (constant stack), and `bridge2_frame` now uses it;
+`bridge2_delta_frame`'s separate `List.length(recs)` is fixed the same way, since
+a large delta had the same hazard. Verified end to end: `bend runners/serve.bend`
+emits `HELLO` → dense `SNAPSHOT` (1048864 B) → 8 `DELTA`s → sparse checkpoint
+`SNAPSHOT` → `PING` → `BYE` as 1758768 bytes whose frames parse exactly to EOF.
+Fast **T150** is the regression: `bridge2_frame` on a 262144-deep payload must
+report `payload_len = 262144` (the old `List.length` faults at that depth).
+
+**Design note.** The report suggested framing the dense path from the known
+`Export.bxe_snapshot_size()` instead. We kept the generic `bridge2_frame`
+measuring the payload it is handed (one source of truth; every call site,
+including sparse and delta, is fixed at once) at the cost of one extra O(n)
+traversal per frame — negligible beside the frame write itself. `G-bridge-1`'s
+engine/writer split residual is unchanged.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 131/131 PASS;
+  `bend test/simtests.bend` native -> 35/35 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+- `bend runners/serve.bend` reproduces the full 1758768-byte stream (above).
+  Reported by Bendview: `../Bendview/docs/engine-report-serve-frame-length.md`.
