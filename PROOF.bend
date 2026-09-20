@@ -31,6 +31,7 @@ import ./src/word.bend as WR
 import ./src/selector.bend as Selector
 import ./src/gscale.bend as Gscale
 import ./src/winset.bend as Winset
+import ./src/dirtyn.bend as Dirtyn
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -469,3 +470,35 @@ def Laws.winset_remove_insert(k, rest):
       Winset.winset_remove(k2, rest2),
       Equal.cong(Bool, Winset.Winset, b => Bool.pick(Winset.Winset, b, Winset.winset_remove(k2, rest2), Winset.WinsetCon{k2, Winset.winset_remove(k2, rest2)}), U32.is_eq(k2, k2), True{}, er),
       {==}))
+
+# ----------------------------------------------------------------------------
+# dirtyn (SCALE.md step 5 / G-scale-2): laws of the size-parameterised row mask.
+# The proofs are the `Dirtyn` module lemmas (structural in the width); the
+# `mark_if` laws are definitional (`Bool.pick` on a literal).
+# ----------------------------------------------------------------------------
+def Laws.dwin_width_n6():
+  {==}
+
+def Laws.dwin_zero_get(w, y):
+  Dirtyn.dwin_zero_get(w, y)
+
+def Laws.dwin_or_y_self(w, y, m, h):
+  Dirtyn.dwin_get_or_y_self(w, m, y, h)
+
+def Laws.dwin_or_y_mono(w, m, y, k, h):
+  Dirtyn.dwin_get_or_y_mono(w, m, y, k, h)
+
+def Laws.dwin_mark_if_true(w, m, y):
+  {==}
+
+def Laws.dwin_mark_if_false(w, m, y):
+  {==}
+
+def Laws.dwin_mark_wake_self(w, m, y, up, down, h):
+  Dirtyn.dwin_mark_wake_self(w, m, y, up, down, h)
+
+def Laws.dwin_mark_wake_up(w, m, y, up, down, h):
+  Dirtyn.dwin_mark_wake_up(w, m, y, up, down, h)
+
+def Laws.dwin_mark_wake_down(w, m, y, up, down, h):
+  Dirtyn.dwin_mark_wake_down(w, m, y, up, down, h)

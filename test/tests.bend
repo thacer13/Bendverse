@@ -25,6 +25,8 @@ import ../view/voxel.bend as Vox
 import ../runners/view3d.bend as View3d
 import ../runners/serve.bend as Serve
 import ../runners/export.bend as Export
+import ../src/dirty.bend as Dirty
+import ../src/dirtyn.bend as Dirtyn
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -1813,6 +1815,154 @@ def t89_bad() -> U32:
   b2 = inc_if_false(U32.is_eq(outv, 1), b1)
   b3 = inc_if_false(U32.is_eq(shv, 1), b2)
   b3
+# T90-T94 (SCALE.md step 5 / G-scale-2, `src/dirtyn.bend`): the size-parameterised
+# row mask. T90 zero mask; T91 `or_y` marks exactly its row; T92 `mark_if`; T93
+# the `mark_wake` y-1/y/y+1 reach over several widths; T94 the n=6 (w=64)
+# instance agrees with `Dirty` row-for-row, for both `or_y` and `mark_wake`.
+def t90_go(+w: Nat, fuel: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +d = Dirtyn.dwin_get(w, Dirtyn.dwin_zero(w), y)
+      t90_go(w, p, Nat.add(y, 1n), inc_if_false(Bool.not(d), bad))
+
+def t90_wn(n: Nat, bad: U32) -> U32:
+  +w = Dirtyn.dwin_width(n)
+  t90_go(w, w, 0n, bad)
+
+def t90_ns(fuel: Nat, +n: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      t90_ns(p, Nat.add(n, 1n), t90_wn(n, bad))
+
+def t90_bad() -> U32:
+  t90_ns(8n, 1n, 0)
+
+def t91_k(+w: Nat, fuel: Nat, +k: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +m = Dirtyn.dwin_or_y(w, Dirtyn.dwin_zero(w), y)
+      +d = Dirtyn.dwin_get(w, m, k)
+      +e = Nat.is_eq(k, y)
+      t91_k(w, p, Nat.add(k, 1n), y, inc_if_false(Bool.not(Bool.xor(d, e)), bad))
+
+def t91_y(+w: Nat, fuel: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      t91_y(w, p, Nat.add(y, 1n), t91_k(w, w, 0n, y, bad))
+
+def t91_wn(n: Nat, bad: U32) -> U32:
+  +w = Dirtyn.dwin_width(n)
+  t91_y(w, w, 0n, bad)
+
+def t91_ns(fuel: Nat, +n: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      t91_ns(p, Nat.add(n, 1n), t91_wn(n, bad))
+
+def t91_bad() -> U32:
+  t91_ns(6n, 1n, 0)
+
+def t92_k(+w: Nat, fuel: Nat, +k: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +m0 = Dirtyn.dwin_or_y(w, Dirtyn.dwin_zero(w), Nat.mod(Nat.add(y, 1n), w))
+      +mt = Dirtyn.dwin_mark_if(w, m0, y, True{})
+      +mf = Dirtyn.dwin_mark_if(w, m0, y, False{})
+      +dt = Dirtyn.dwin_get(w, mt, k)
+      +df = Dirtyn.dwin_get(w, mf, k)
+      +d0 = Dirtyn.dwin_get(w, m0, k)
+      +e = Nat.is_eq(k, y)
+      +b1 = inc_if_false(Bool.or(Bool.not(e), dt), bad)
+      t92_k(w, p, Nat.add(k, 1n), y, inc_if_false(Bool.not(Bool.xor(df, d0)), b1))
+
+def t92_y(+w: Nat, fuel: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      t92_y(w, p, Nat.add(y, 1n), t92_k(w, w, 0n, y, bad))
+
+def t92_wn(n: Nat, bad: U32) -> U32:
+  +w = Dirtyn.dwin_width(n)
+  t92_y(w, w, 0n, bad)
+
+def t92_ns(fuel: Nat, +n: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      t92_ns(p, Nat.add(n, 1n), t92_wn(n, bad))
+
+def t92_bad() -> U32:
+  t92_ns(6n, 1n, 0)
+
+def t93_y(+w: Nat, fuel: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +up = Dirtyn.dwin_up(w, y)
+      +down = Dirtyn.dwin_down(w, y)
+      +m = Dirtyn.dwin_mark_wake_auto(w, Dirtyn.dwin_zero(w), y)
+      +b0 = inc_if_false(Dirtyn.dwin_get(w, m, y), bad)
+      +b1 = inc_if_false(Dirtyn.dwin_get(w, m, up), b0)
+      t93_y(w, p, Nat.add(y, 1n), inc_if_false(Dirtyn.dwin_get(w, m, down), b1))
+
+def t93_wn(n: Nat, bad: U32) -> U32:
+  +w = Dirtyn.dwin_width(n)
+  t93_y(w, w, 0n, bad)
+
+def t93_ns(fuel: Nat, +n: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      t93_ns(p, Nat.add(n, 1n), t93_wn(n, bad))
+
+def t93_bad() -> U32:
+  t93_ns(6n, 1n, 0)
+
+def t94_k(fuel: Nat, +k: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +yu = U32.from_nat(y)
+      +ku = U32.from_nat(k)
+      +dq = Dirty.or_y(Dirty.zermask(), yu)
+      +dw = Dirtyn.dwin_or_y(64n, Dirtyn.dwin_zero(64n), y)
+      +a = Dirty.is_dirty_y(dq, ku)
+      +b = Dirtyn.dwin_get(64n, dw, k)
+      +b1 = inc_if_false(Bool.not(Bool.xor(a, b)), bad)
+      +up = Nat.mod(Nat.add(y, 1n), 64n)
+      +down = Nat.mod(Nat.add(y, 63n), 64n)
+      +i = Grid.index(0, yu, 0)
+      +aw = Dirty.is_dirty_y(Dirty.mark_wake(Dirty.zermask(), i), ku)
+      +bw = Dirtyn.dwin_get(64n, Dirtyn.dwin_mark_wake(64n, Dirtyn.dwin_zero(64n), y, up, down), k)
+      t94_k(p, Nat.add(k, 1n), y, inc_if_false(Bool.not(Bool.xor(aw, bw)), b1))
+
+def t94_y(fuel: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      t94_y(p, Nat.add(y, 1n), t94_k(64n, 0n, y, bad))
+
+def t94_bad() -> U32:
+  t94_y(64n, 0n, 0)
+
 # T95-T96 (S1 step 3): assembly over an *explicit* resident set. T95: for the
 # canonical window, `Store.assemble_keys (Window.resident_keys canonical)` is the
 # same world as the implicit `Store.assemble` (the loop-bound set == the key
@@ -1916,5 +2066,10 @@ def main() -> IO(Unit):
     report("T87 gen != gen_terrain on shell planes", t87_bad())
     report("T88 gen == gen_terrain shell-free (incl. out-of-box)", t88_bad())
     report("T89 terrain sample coverage (no bedrock, out-of-box, shell)", t89_bad())
+    report("T90 dirtyn zero mask has no dirty row", t90_bad())
+    report("T91 dirtyn or_y marks exactly its row", t91_bad())
+    report("T92 dirtyn mark_if true/false", t92_bad())
+    report("T93 dirtyn mark_wake y-1/y/y+1 reach", t93_bad())
+    report("T94 dirtyn n=6 agrees with Dirty (or_y + mark_wake)", t94_bad())
     report("T95 explicit resident set == implicit assemble (S1 step 3)", t95_bad())
     report("T96 explicit resident set reconstructs worldgen (S1 step 3)", t96_bad())

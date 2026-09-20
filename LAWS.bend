@@ -22,6 +22,7 @@ import ./src/v3cw.bend as V3cw
 import ./src/selector.bend as Selector
 import ./src/cw.bend as Cw
 import ./src/winset.bend as Winset
+import ./src/dirtyn.bend as Dirtyn
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -860,3 +861,76 @@ law winset_remove_insert:
   for k: U32
   for rest: Winset.Winset
   {Winset.winset_remove(k, Winset.winset_insert(k, rest)) == Winset.winset_remove(k, rest) : Winset.Winset}
+
+# ----------------------------------------------------------------------------
+# dirtyn (SCALE.md step 5 / G-scale-2): the size-parameterised `y`-row mask.
+#
+# `Dirty.Mask` is exactly 64 rows; a moving window needs a mask over `2^n` rows.
+# `Dirtyn` is that mask as a `Word(w)` bit vector, with `Dirty`'s operations
+# re-expressed for the wider word. The current world is the `n = 6` (`w = 64`)
+# instance (`dwin_width_n6`); T90-T94 witness the operations and the agreement
+# with `Dirty` on the same 64 rows. The in-range hypothesis
+# `{Nat.is_lt(_, w) == True}` reduces with the width, so `mark_wake`'s reach is
+# proven without any `Bool`/`Cmp` reflection.
+# ----------------------------------------------------------------------------
+law dwin_width_n6:
+  {Dirtyn.dwin_width(6n) == 64n : Nat}
+
+law dwin_zero_get:
+  for w: Nat
+  for y: Nat
+  {Dirtyn.dwin_get(w, Dirtyn.dwin_zero(w), y) == False{} : Bool}
+
+law dwin_or_y_self:
+  for w: Nat
+  for y: Nat
+  for m: Word(w)
+  for h: {Nat.is_lt(y, w) == True{} : Bool}
+  {Dirtyn.dwin_get(w, Dirtyn.dwin_or_y(w, m, y), y) == True{} : Bool}
+
+law dwin_or_y_mono:
+  for w: Nat
+  for m: Word(w)
+  for y: Nat
+  for k: Nat
+  for h: {Dirtyn.dwin_get(w, m, k) == True{} : Bool}
+  {Dirtyn.dwin_get(w, Dirtyn.dwin_or_y(w, m, y), k) == True{} : Bool}
+
+law dwin_mark_if_true:
+  for w: Nat
+  for m: Word(w)
+  for y: Nat
+  {Dirtyn.dwin_mark_if(w, m, y, True{}) == Dirtyn.dwin_or_y(w, m, y) : Word(w)}
+
+law dwin_mark_if_false:
+  for w: Nat
+  for m: Word(w)
+  for y: Nat
+  {Dirtyn.dwin_mark_if(w, m, y, False{}) == m : Word(w)}
+
+law dwin_mark_wake_self:
+  for w: Nat
+  for m: Word(w)
+  for y: Nat
+  for up: Nat
+  for down: Nat
+  for h: {Nat.is_lt(y, w) == True{} : Bool}
+  {Dirtyn.dwin_get(w, Dirtyn.dwin_mark_wake(w, m, y, up, down), y) == True{} : Bool}
+
+law dwin_mark_wake_up:
+  for w: Nat
+  for m: Word(w)
+  for y: Nat
+  for up: Nat
+  for down: Nat
+  for h: {Nat.is_lt(up, w) == True{} : Bool}
+  {Dirtyn.dwin_get(w, Dirtyn.dwin_mark_wake(w, m, y, up, down), up) == True{} : Bool}
+
+law dwin_mark_wake_down:
+  for w: Nat
+  for m: Word(w)
+  for y: Nat
+  for up: Nat
+  for down: Nat
+  for h: {Nat.is_lt(down, w) == True{} : Bool}
+  {Dirtyn.dwin_get(w, Dirtyn.dwin_mark_wake(w, m, y, up, down), down) == True{} : Bool}
