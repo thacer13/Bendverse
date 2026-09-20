@@ -4385,3 +4385,59 @@ retirement (W6, `G-scale-6`).
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 118/118 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
   6 ok / 0 bad.
+
+### A.111 — S1 slice W2: the window margin / residency (`G-scale-1`)
+
+**Status:** on `master` (commit `0977371`). **+2 laws** (123 → 125). Gate green,
+fast **120/120**, sim **25/25**, checker canaries **6 ok / 0 bad**. Live-path
+change, but **semantics-preserving**: the rewritten guard is definitionally
+`Grid.step_inside`, so canonical behaviour is bit-identical.
+
+**What landed.**
+
+- **`src/wgrid.bend` — the guard is now explicitly the residency test.**
+  `wgrid_axis_ok(local, d)` is the per-axis test (`local + d` keeps its window-local
+  coordinate in `[0, win_edge)`), and `wgrid_step_inside` is written in `Window`
+  terms over the three axes. The body is *definitionally* `Grid.step_inside`
+  (`win_ix = Grid.ix`, `win_edge = Grid.size`), so every existing guard proof
+  (`G15`'s wake laws, the `Rules.plan` target guards) still reduces — but the
+  window-local meaning is now in the code, not hidden in `Grid`. Added the
+  model-side predicates `wgrid_resident` (a *global* coordinate lies in the
+  window) and `wgrid_target_resident` (a rule step's target is resident).
+- **`src/wmarg.bend` (new) — the residency/margin verification.**
+  `wmarg_mask6_high_zero` is the bit brick `y < 2^6 ⇒ y & ~(2^6-1) = 0`
+  (`G5.g5_wand_mask_lt` gives `y & mask6 = y`; the complement `and` is a closed
+  computation, `Bits.w_and_assoc`/`w_and_zero`). `wgrid_axis_guard` is the
+  per-axis margin: an **in-frame** target makes the axis guard `True` — the
+  direction `G-scale-1` needs, since it says a valid step is not silently inert.
+  `wgrid_step_margin` is the three-axis form. `wgrid_canonical_resident` pins the
+  canonical window's resident set to the box (`x,y,z < 64`) via `G7.g7_sub_zero`
+  on each axis.
+
+**Laws.** `wgrid_step_margin` (in-frame ⇒ guard, per axis hypotheses) and
+`wgrid_canonical_resident` (canonical residency == in-box). Witnesses: T126 is
+**exhaustive over the guard's entire finite domain** — for every window-local
+coordinate `local ∈ 0..63` and every rule offset `d ∈ {0,+1,-1}` it checks
+`wgrid_axis_ok(local, d)` equals the in-frame test and that an inner coordinate
+(`1..62`) makes the guard `True`; the frame edge is checked separately (outward
+inert, inward live). T127 witnesses a *moved* window (chunk base `x=1`): the
+residency predicate is exact on both faces, a face cell's outward step is inert
+while its inward step is live, and `wgrid_target_resident` agrees.
+
+**Honest residual.** W2 does **not** change runtime semantics and does not fully
+close `G-scale-1`. The gap's remaining content is the **driver chunk margin**
+(`active ⇒ in-frame target`), which is `W5`'s invariant, and the **converse
+bridge** (`guard ⇒ resident`), which T126 witnesses exhaustively over the finite
+domain but which is not yet a law (it needs the high-mask ⇒ `is_lt` direction and
+a `Word` mask decomposition). Both are recorded in `PLAN.md` §5.3 under
+`G-scale-1` rather than silently claimed.
+
+**Verified-opened:** `S1` slice W2. Next: W3 (live dirty-set rewire,
+`G-scale-2` item 1), then power-of-two sizing (W4), the motion driver (W5,
+closing `G-scale-5` by measurement and the `G-scale-1` margin), and the torus-law
+retirement (W6, `G-scale-6`).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 120/120 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.

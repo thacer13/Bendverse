@@ -160,8 +160,8 @@ to `Grid`, so every proof/test stands). What remains is the **rule migration**:
 moving the live tick pipeline off the fixed `Grid` torus onto a window. §7 stays
 binding — it is a coordinate + residency change, not a semantics change.
 
-**State (verify with `bend_status` / `bend_audit` first).** Gate green, 123 laws,
-fast 118/118, sim 25/25, gaps 6 open / 13 closed. Relevant landed API:
+**State (verify with `bend_status` / `bend_audit` first).** Gate green, 125 laws,
+fast 120/120, sim 25/25, gaps 6 open / 13 closed. Relevant landed API:
 `src/window.bend` (`Window`, `win_index`, `win_lx/ly/lz`, `win_gx/gy/gz`,
 `shift`, `entering`/`leaving`), `src/store.bend` (`assemble_w`, `window_store`),
 `src/winshell.bend` (`win_border`/`gen_at`), `src/maskword.bend` + `src/wordnat.bend`
@@ -192,16 +192,19 @@ each must be gate-green + fast + sim before the next.
 the seam is transparent. *Evidence:* gate green; fast 118/118, sim 25/25; law
 `wgrid_canonical_index` (delegating to `g7_win_canonical_index`); T122–T125.
 
-### W2 — window-local neighbour + the margin rule (`G-scale-1`)
-`Rules.plan` builds neighbour indices with `Grid.neighbor` (wraps) and guards with
-`Grid.step_inside`. Window version: resolve the target's global coordinate, and if
-it is resident return its `win_index`, else **inert** (the guard). Without a
-margin this silently changes meaning at the window face, so decide the policy
-here. **Decision B (recommended):** keep the window ≥1 chunk larger than the
-active region, so every neighbour of a resident active cell is resident (support
-radius 1, wake radius 1; a chunk-aligned window then trivially carries the
-margin). Prove the `G-scale-1` invariant: *every `Rules.plan` target of a resident
-cell is resident.* *Evidence:* a law/test plus a T-witness at a window face.
+### W2 — window-local neighbour + the margin rule (`G-scale-1`) — **landed (A.111)**
+`src/wgrid.bend` now makes the guard explicit: `wgrid_axis_ok` is the per-axis
+residency test, `wgrid_step_inside` is written in `Window` terms (definitionally
+`Grid.step_inside`), and `wgrid_resident`/`wgrid_target_resident` are the
+model-side predicates. New `src/wmarg.bend` proves the bit brick
+(`wmarg_mask6_high_zero`), the per-axis margin (`wgrid_axis_guard`: in-frame ⇒
+guard `True`), the three-axis `wgrid_step_margin`, and the canonical residency
+bridge (`wgrid_canonical_resident`). Laws `wgrid_step_margin`/
+`wgrid_canonical_resident`; T126 (exhaustive over the guard's finite domain) /
+T127 (moved-window faces). Runtime semantics are unchanged (canonical guard is
+bit-identical to `Grid.step_inside`). **Residual:** the driver's chunk margin
+(`active ⇒ in-frame target`) is `W5`; the converse (guard ⇒ resident) is
+exhaustively witnessed, not a law.
 *Files:* `Rules`, `Support`, `WGrid`.
 
 ### W3 — live dirty-set rewire (step 5 item 1, `G-scale-2`)
