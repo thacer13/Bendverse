@@ -36,6 +36,7 @@ import ./src/selector.bend as Selector
 import ./src/gscale.bend as Gscale
 import ./src/winset.bend as Winset
 import ./src/dirtyn.bend as Dirtyn
+import ./src/wordnat.bend as Wordnat
 import ./src/g7.bend as G7
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
@@ -544,3 +545,11 @@ def Laws.win_gen_canonical(x, y, z, s):
 # ----------------------------------------------------------------------------
 def Laws.u32_word_bit(a, k, h):
   Maskword.u32_bit(a, k, h)
+
+# maskword (S1 / G-scale-2 item 3): the completed index bridge. The proof is
+# `src/wordnat.bend` (`wnat_mask_word_get`), the `U32 <-> Nat` value theory
+# (`Word.cmp`/`Nat.cmp` bridge, masked-value bound, mask split) composed with the
+# `u32_bit`/`cat_get_*` bricks above.
+# ----------------------------------------------------------------------------
+def Laws.mask_word_get(m, y, h):
+  Wordnat.wnat_mask_word_get(m, y, h)

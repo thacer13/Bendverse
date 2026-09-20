@@ -4275,3 +4275,47 @@ The policy is test-witnessed here, not law-proven.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 106/106 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS.
+
+### A.109 — G-scale-2 item (3) closed: the `Dirty.Mask ↔ Word(64)` isomorphism
+
+**Status:** additive on `master` (parallel `wnat` track, branch commit `58e550b`
+merged). **+1 law** (121 → 122). Gate green, fast **114/114**, sim **25/25**.
+Checker canaries **6 ok / 0 bad** (worker). No live-path change.
+
+**What landed (`src/wordnat.bend`, new).** The final composition of the
+`Dirty.Mask ↔ Word(64)` isomorphism. `Dirty.is_dirty_y` is `U32`-indexed while
+`Dirtyn.dwin_get` is `Nat`-indexed, so this module develops the U32↔Nat index
+value theory over `Word.to_nat`:
+
+- `wnat_w_cmp` — `Word.cmp n a b == Nat.cmp (to_nat a) (to_nat b)` (the value
+  bridge), via `wnat_to_nat_cons`;
+- `wnat_two_pow` (structural `2^k`, no `Nat.pow`), `wnat_mask_bound`
+  (`to_nat(and(w, mask k)) < 2^k`), `wnat_mask_step`/`wnat_mask_decomp`, and
+  `wnat_and_mask_eq`;
+- `wnat_u32_lt32`/`_lt64` — `U32.is_lt(y, 32/64)` equals
+  `Nat.is_lt (U32.to_nat y) 32/64`;
+- the `is_dirty_y` `Bool.pick` reductions and the lo/hi branches, combined by
+  `wnat_mask_word_get`.
+
+**Law.** `mask_word_get`: for `m: Dirty.Mask`, `y: U32`,
+`h: {U32.is_lt(y,64)}`, `Dirty.is_dirty_y(m, y) == Dirtyn.dwin_get(64n,
+Maskword.mask_word(m), U32.to_nat(y))`. It reuses A.107's `u32_bit` and
+`cat_get_low`/`cat_get_high` unchanged. Witnesses: T110–T117 (the value theory
+facts, both `mask_word_get` masks over all 64 rows, and the mask/64-bound
+ranges).
+
+**Honest residual.** The task's `Word.inc` value lemma and the explicit
+`U32.to_nat`/`U32.from_nat` roundtrips are **test-witnessed** (T110, T116) but not
+proven as laws — the composition did not need them (it uses `wnat_w_cmp` and the
+fact that `from_nat(32n)`/`from_nat(64n)` reduce to the literals). If wanted as
+laws, that `Word.inc` brick is the missing piece. Recorded here rather than
+silently claimed.
+
+**Verified-closed:** `G-scale-2` item (3). Item (1) (the live 64-row rewire) and
+`G-scale-6` (torus-law retirement) remain.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 114/114 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+- Worker report: `../Bendverse-wnat.report.md` (branch `wnat`, commit `58e550b`).

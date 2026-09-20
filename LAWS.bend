@@ -27,6 +27,7 @@ import ./src/window.bend as Window
 import ./src/worldgen.bend as Worldgen
 import ./src/winshell.bend as Winshell
 import ./src/maskword.bend as Maskword
+import ./src/dirty.bend as Dirty
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -1005,3 +1006,18 @@ law u32_word_bit:
   for k: Nat
   for h: {Nat.is_lt(k, 32n) == True{} : Bool}
   {U32.is_ne(U32.and(a, U32.shln(1, k)), 0) == Dirtyn.dwin_get(32n, Maskword.u32_word(a), k) : Bool}
+
+# S1 / PLAN `G-scale-2` item (3), the completed `Dirty.Mask <-> Word(64)` index
+# bridge. `Dirty.is_dirty_y` is `U32`-indexed (`is_lt(y,32)` selects `lo`/`hi`,
+# `to_nat(and(y,31))` selects the bit) while `Dirtyn.dwin_get` is `Nat`-indexed;
+# this law identifies them: for `y < 64` the live bit test is `dwin_get` on the
+# concatenated `Word(64)` at the `Nat` index `U32.to_nat(y)`. The proof is the
+# `src/wordnat.bend` development (`wnat_mask_word_get`), built on the
+# `Word.cmp`/`Nat.cmp` bridge (`wnat_w_cmp`), the masked-value bound
+# (`wnat_mask_bound`), the mask split (`wnat_mask_step`/`wnat_and_mask_eq`) and
+# the `u32_bit`/`cat_get_*` bricks of `src/maskword.bend`.
+law mask_word_get:
+  for m: Dirty.Mask
+  for y: U32
+  for h: {U32.is_lt(y, 64) == True{} : Bool}
+  {Dirty.is_dirty_y(m, y) == Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)) : Bool}
