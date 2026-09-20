@@ -85,3 +85,37 @@ def build_at(depth: Nat, +base: U32) -> Array<U32>:
 
 def build() -> Array<U32>:
   build_at(18n, 0)
+
+# ------------------------------------------------------------------ gen mode
+# Decision A (G-scale-8): the terrain function `gen_terrain` is shell-free; the
+# closed reference box adds bedrock on the ABSOLUTE planes x/y/z in {0,63} via
+# `gen`. A window / infinite world selects `terrain()` (`False`). This is a
+# `Bool`, not a `Data` selector: it duplicates freely, where a `+`-annotated
+# `Data` parameter is rejected by the checker in the deep `chunk`/`store`
+# threading.
+def box() -> Bool:
+  True{}
+
+def terrain() -> Bool:
+  False{}
+
+def at(sel: Bool, x: U32, y: U32, z: U32, s: U32) -> U32:
+  match sel:
+    case True{}:
+      gen(x, y, z, s)
+    case False{}:
+      gen_terrain(x, y, z, s)
+
+# The 64^3 reference world's *terrain* (shell-free) -- `build` with `gen_terrain`.
+# The canonical reference world is `build`; this is the same box without the shell.
+def terrain_at(depth: Nat, +base: U32) -> Array<U32>:
+  match depth:
+    case 0n:
+      ALeaf{gen_terrain(Grid.ix(base), Grid.iy(base), Grid.iz(base), 42)}
+    case 1n+ +p:
+      +h = U32.shln(1, p)
+      xs ys = terrain_at(p, base) terrain_at(p, U32.add(base, h))
+      ANode{xs, ys}
+
+def build_terrain() -> Array<U32>:
+  terrain_at(18n, 0)

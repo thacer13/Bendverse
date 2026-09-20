@@ -2,6 +2,7 @@ import Base
 import ./grid.bend as Grid
 import ./cell.bend as Cell
 import ./chunk.bend as Chunk
+import ./worldgen.bend as Worldgen
 
 type Store is Data:
   STip{}
@@ -18,8 +19,11 @@ def relist(xs: List<U32>) -> List<&2, U32>:
     case Con{h, t}:
       h <> relist(t)
 
+def chunk_list_sel(sel: Bool, k: U32) -> List<&2, U32>:
+  relist(Grid.to_list(Chunk.build_sel(sel, k)))
+
 def chunk_list(k: U32) -> List<&2, U32>:
-  relist(Grid.to_list(Chunk.build(k)))
+  chunk_list_sel(Worldgen.box(), k)
 
 def maybe_if(b: Bool, val: List<&2, U32>) -> Maybe<&2, List<&2, U32>>:
   match b:
@@ -106,31 +110,41 @@ def assemble_chunk(fuel: Nat, +i: U32, +k: U32, cells: List<&2, U32>, world: Arr
           +idx = Grid.index(Chunk.global_x(k, i), Chunk.global_y(k, i), Chunk.global_z(k, i))
           assemble_chunk(p, U32.add(i, 1), k, t, world[idx] <- h)
 
-def assemble_cells(m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> Array<U32>:
+def assemble_cells_sel(+sel: Bool, m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> Array<U32>:
   match m:
     case None{}:
-      # A missing (evicted) chunk is regenerated from its pure gen: the store is
-      # a sparse overlay on the coordinate-indexed worldgen (rule 11).
-      assemble_chunk(U32.to_nat(Chunk.cells()), 0, k, chunk_list(k), world)
+      # A missing (evicted) chunk is regenerated from the selected generator
+      # (reference shell or shell-free terrain): the store is a sparse overlay
+      # on the coordinate-indexed worldgen (rule 11).
+      assemble_chunk(U32.to_nat(Chunk.cells()), 0, k, chunk_list_sel(sel, k), world)
     case Some{cells}:
       assemble_chunk(U32.to_nat(Chunk.cells()), 0, k, cells, world)
 
-def assemble_go(fuel: Nat, +ci: U32, +s: Store, world: Array<U32>) -> Array<U32>:
+def assemble_cells(m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> Array<U32>:
+  assemble_cells_sel(Worldgen.box(), m, k, world)
+
+def assemble_go_sel(+sel: Bool, fuel: Nat, +ci: U32, +s: Store, world: Array<U32>) -> Array<U32>:
   match fuel:
     case 0n:
       world
     case 1n+p:
       +k = Chunk.key(U32.and(ci, 3), U32.and(U32.shrn(ci, 2n), 3), U32.and(U32.shrn(ci, 4n), 3))
-      assemble_go(p, U32.add(ci, 1), s, assemble_cells(get(s, k), k, world))
+      assemble_go_sel(sel, p, U32.add(ci, 1), s, assemble_cells_sel(sel, get(s, k), k, world))
+
+def assemble_go(fuel: Nat, +ci: U32, +s: Store, world: Array<U32>) -> Array<U32>:
+  assemble_go_sel(Worldgen.box(), fuel, ci, s, world)
+
+def assemble_sel(+sel: Bool, s: Store) -> Array<U32>:
+  assemble_go_sel(sel, 64n, 0, s, [0 : U32^18n])
 
 def assemble(s: Store) -> Array<U32>:
-  assemble_go(64n, 0, s, [0 : U32^18n])
+  assemble_sel(Worldgen.box(), s)
 
 # S1 step 3: assemble over an *explicit* resident key list (a window's set)
 # instead of the implicit `assemble_go` loop bounds. Chunks are disjoint, so the
 # order of `keys` does not affect the result; `assemble s` is the canonical
 # instance (`Window.resident_keys canonical()`), which T95 checks.
-def assemble_keys_go(fuel: Nat, keys: List<U32>, +s: Store, world: Array<U32>) -> Array<U32>:
+def assemble_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<U32>, +s: Store, world: Array<U32>) -> Array<U32>:
   match fuel:
     case 0n:
       world
@@ -139,21 +153,27 @@ def assemble_keys_go(fuel: Nat, keys: List<U32>, +s: Store, world: Array<U32>) -
         case Nil{}:
           world
         case Con{+h, t}:
-          assemble_keys_go(p, t, s, assemble_cells(get(s, h), h, world))
+          assemble_keys_go_sel(sel, p, t, s, assemble_cells_sel(sel, get(s, h), h, world))
+
+def assemble_keys_sel(+sel: Bool, keys: List<U32>, s: Store) -> Array<U32>:
+  assemble_keys_go_sel(sel, 64n, keys, s, [0 : U32^18n])
 
 def assemble_keys(keys: List<U32>, s: Store) -> Array<U32>:
-  assemble_keys_go(64n, keys, s, [0 : U32^18n])
+  assemble_keys_sel(Worldgen.box(), keys, s)
 
-def put_all_go(fuel: Nat, +ci: U32, store: Store) -> Store:
+def put_all_go_sel(+sel: Bool, fuel: Nat, +ci: U32, store: Store) -> Store:
   match fuel:
     case 0n:
       store
     case 1n+p:
       +k = Chunk.key(U32.and(ci, 3), U32.and(U32.shrn(ci, 2n), 3), U32.and(U32.shrn(ci, 4n), 3))
-      put_all_go(p, U32.add(ci, 1), set(store, k, chunk_list(k)))
+      put_all_go_sel(sel, p, U32.add(ci, 1), set(store, k, chunk_list_sel(sel, k)))
+
+def build_all_sel(+sel: Bool) -> Store:
+  put_all_go_sel(sel, 64n, 0, STip{})
 
 def build_all() -> Store:
-  put_all_go(64n, 0, STip{})
+  build_all_sel(Worldgen.box())
 
 # ------------------------------------------------------------------ eviction
 # Eviction works on the store, where each chunk is a reusable `Data` list, so a
@@ -203,8 +223,8 @@ def keep_cells(store: Store, +k: U32, cells: List<&2, U32>, +drop: Bool) -> Stor
 
 # evict_key walks the 64 chunk keys. `m` is the store's entry at key k; `s` is
 # the source store (reused for `get`), and `acc` accumulates the residents.
-def evict_key(
-  fuel: Nat, m: Maybe<&2, List<&2, U32>>, +ci: U32, +s: Store, acc: Store, +k: U32
+def evict_key_sel(
+  +sel: Bool, fuel: Nat, m: Maybe<&2, List<&2, U32>>, +ci: U32, +s: Store, acc: Store, +k: U32
 ) -> Store:
   match fuel:
     case 0n:
@@ -214,17 +234,20 @@ def evict_key(
         case None{}:
           +ni = U32.add(ci, 1)
           +nk = Chunk.key(U32.and(ni, 3), U32.and(U32.shrn(ni, 2n), 3), U32.and(U32.shrn(ni, 4n), 3))
-          evict_key(p, get(s, nk), ni, s, acc, nk)
+          evict_key_sel(sel, p, get(s, nk), ni, s, acc, nk)
         case Some{+cells}:
           +sl = sleeping_cells(U32.to_nat(Chunk.cells()), cells, False{})
-          +ge = gen_eq_cells(U32.to_nat(Chunk.cells()), cells, chunk_list(k), True{})
+          +ge = gen_eq_cells(U32.to_nat(Chunk.cells()), cells, chunk_list_sel(sel, k), True{})
           +drop = Bool.and(sl, ge)
           +ni = U32.add(ci, 1)
           +nk = Chunk.key(U32.and(ni, 3), U32.and(U32.shrn(ni, 2n), 3), U32.and(U32.shrn(ni, 4n), 3))
-          evict_key(p, get(s, nk), ni, s, keep_cells(acc, k, cells, drop), nk)
+          evict_key_sel(sel, p, get(s, nk), ni, s, keep_cells(acc, k, cells, drop), nk)
+
+def evict_sel(+sel: Bool, +s: Store) -> Store:
+  +k0 = Chunk.key(0, 0, 0)
+  evict_key_sel(sel, U32.to_nat(64), get(s, k0), 0, s, STip{}, k0)
 
 # `evict` drops every sleeping, gen-equal chunk; the result assembles to the
 # same world as the input because `assemble` regenerates dropped chunks.
 def evict(+s: Store) -> Store:
-  +k0 = Chunk.key(0, 0, 0)
-  evict_key(U32.to_nat(64), get(s, k0), 0, s, STip{}, k0)
+  evict_sel(Worldgen.box(), s)

@@ -1979,6 +1979,22 @@ def t96_bad() -> U32:
   list_cmp_go(U32.to_nat(262144), Grid.to_list(Worldgen.build()),
     Grid.to_list(Store.assemble_keys(Window.resident_keys(Window.canonical()), s)), 0)
 
+# T97-T98 (S1 step 4a, decision A): the generator selector. T97: the store's
+# GTerrain regeneration reconstructs the shell-free reference terrain
+# (`Worldgen.build_terrain`). T98: GBox and GTerrain actually differ -- the
+# `(0,0,0)` corner is bedrock `2017` only in the reference mode, and an interior
+# cell agrees -- so the selector changes what is generated.
+def t97_bad() -> U32:
+  s = Store.build_all_sel(Worldgen.terrain())
+  a = Store.assemble_keys_sel(Worldgen.terrain(), Window.resident_keys(Window.canonical()), s)
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(Worldgen.build_terrain()), Grid.to_list(a), 0)
+
+def t98_bad() -> U32:
+  wb = Store.assemble(Store.build_all())
+  wt = Store.assemble_sel(Worldgen.terrain(), Store.build_all_sel(Worldgen.terrain()))
+  diff = list_cmp_go(U32.to_nat(262144), Grid.to_list(wb), Grid.to_list(wt), 0)
+  inc_if_false(Bool.not(U32.is_eq(diff, 0)), 0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2073,3 +2089,5 @@ def main() -> IO(Unit):
     report("T94 dirtyn n=6 agrees with Dirty (or_y + mark_wake)", t94_bad())
     report("T95 explicit resident set == implicit assemble (S1 step 3)", t95_bad())
     report("T96 explicit resident set reconstructs worldgen (S1 step 3)", t96_bad())
+    report("T97 GTerrain selector reconstructs shell-free terrain (S1 step 4a)", t97_bad())
+    report("T98 GBox vs GTerrain differ on the shell (decision A)", t98_bad())

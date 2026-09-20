@@ -46,14 +46,23 @@ def global_z(k: U32, i: U32) -> U32:
 def gen_local(+k: U32, +i: U32) -> U32:
   Worldgen.gen(global_x(k, i), global_y(k, i), global_z(k, i), 42)
 
-def build_at(depth: Nat, +base: U32, +k: U32) -> Array<U32>:
+def gen_local_sel(sel: Bool, +k: U32, +i: U32) -> U32:
+  Worldgen.at(sel, global_x(k, i), global_y(k, i), global_z(k, i), 42)
+
+def build_at_sel(+sel: Bool, depth: Nat, +base: U32, +k: U32) -> Array<U32>:
   match depth:
     case 0n:
-      ALeaf{gen_local(k, base)}
+      ALeaf{gen_local_sel(sel, k, base)}
     case 1n+ +p:
       +h = U32.shln(1, p)
-      xs ys = build_at(p, base, k) build_at(p, U32.add(base, h), k)
+      xs ys = build_at_sel(sel, p, base, k) build_at_sel(sel, p, U32.add(base, h), k)
       ANode{xs, ys}
+
+def build_at(depth: Nat, +base: U32, +k: U32) -> Array<U32>:
+  build_at_sel(Worldgen.box(), depth, base, k)
 
 def build(k: U32) -> Array<U32>:
   build_at(12n, 0, k)
+
+def build_sel(+sel: Bool, +k: U32) -> Array<U32>:
+  build_at_sel(sel, 12n, 0, k)
