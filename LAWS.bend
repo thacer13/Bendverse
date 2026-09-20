@@ -21,6 +21,7 @@ import ./src/commit.bend as Commit
 import ./src/v3cw.bend as V3cw
 import ./src/selector.bend as Selector
 import ./src/cw.bend as Cw
+import ./src/winset.bend as Winset
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -818,3 +819,44 @@ law gscale_cw_local_rt:
   for l: U32
   for h: {U32.is_lt(l, 4096) == True{} : Bool}
   {Cw.cw_local(Cw.cw_local_x(l), Cw.cw_local_y(l), Cw.cw_local_z(l)) == l : U32}
+
+# The full three-coordinate forms of the y/z axis roundtrips: the axis field is
+# recovered from an arbitrary packed key/local (any (x, y, z)), rather than from
+# a key whose other slots are zero (`Gscale.gscale_key_y_ext`/`_z_ext`,
+# `Gscale.gscale_local_y_ext`/`_z_ext`). Additive; the bounded laws above stay.
+law gscale_cw_y_rt_full:
+  for x: U32
+  for y: U32
+  for z: U32
+  for h: {U32.is_lt(y, 16384) == True{} : Bool}
+  {Cw.cw_global_y(Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z)), Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))) == y : U32}
+
+law gscale_cw_z_rt_full:
+  for x: U32
+  for y: U32
+  for z: U32
+  for h: {U32.is_lt(z, 16384) == True{} : Bool}
+  {Cw.cw_global_z(Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z)), Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))) == z : U32}
+
+# ----------------------------------------------------------------------------
+# winset (G-scale-4 groundwork): the explicit resident set. Membership is by
+# `U32.is_eq` over a list, so these are the load/evict roundtrips a window needs.
+# The general membership-after-remove and the `assemble`/`evict` roundtrip are
+# not yet proven; they remain gap `G-scale-4` (see PLAN §5.3).
+# ----------------------------------------------------------------------------
+law winset_mem_insert_self:
+  for k: U32
+  for s: Winset.Winset
+  {Winset.winset_mem(k, Winset.winset_insert(k, s)) == True{} : Bool}
+
+law winset_mem_insert_other:
+  for k2: U32
+  for k: U32
+  for s: Winset.Winset
+  for h: {U32.is_eq(k2, k) == False{} : Bool}
+  {Winset.winset_mem(k2, Winset.winset_insert(k, s)) == Winset.winset_mem(k2, s) : Bool}
+
+law winset_remove_insert:
+  for k: U32
+  for rest: Winset.Winset
+  {Winset.winset_remove(k, Winset.winset_insert(k, rest)) == Winset.winset_remove(k, rest) : Winset.Winset}

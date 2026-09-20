@@ -18,6 +18,7 @@ import ../src/tick.bend as Tick
 import ../src/g5.bend as G5
 import ../src/sim.bend as Sim
 import ../src/cw.bend as Cw
+import ../src/winset.bend as Winset
 import ../src/window.bend as Window
 import ../scenarios/fixtures.bend as Fixtures
 import ../view/voxel.bend as Vox
@@ -1451,6 +1452,98 @@ def gscale_local_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
 def t70_bad() -> U32:
   gscale_local_go(U32.to_nat(4096), 0, 0)
 
+# T71-T72 (track `gscale2`): the full three-coordinate y/z roundtrips
+# (`gscale_cw_y_rt_full` / `gscale_cw_z_rt_full`). Unlike T67/T68 these pack all
+# three chunk slots, so the axis field has to be recovered from a general key.
+def gscale_y_full_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +x = U32.and(U32.add(U32.mul(i, 7919), 1), 16383)
+      +y = U32.and(U32.add(U32.mul(i, 13), 3), 16383)
+      +z = U32.and(U32.add(U32.mul(i, 29), 2), 16383)
+      +k = Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z))
+      +l = Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))
+      ok = U32.is_eq(Cw.cw_global_y(k, l), y)
+      gscale_y_full_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t71_bad() -> U32:
+  gscale_y_full_go(U32.to_nat(4096), 0, 0)
+
+def gscale_z_full_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +x = U32.and(U32.add(U32.mul(i, 7919), 5), 16383)
+      +y = U32.and(U32.add(U32.mul(i, 13), 7), 16383)
+      +z = U32.and(U32.add(U32.mul(i, 29), 11), 16383)
+      +k = Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z))
+      +l = Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))
+      ok = U32.is_eq(Cw.cw_global_z(k, l), z)
+      gscale_z_full_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t72_bad() -> U32:
+  gscale_z_full_go(U32.to_nat(4096), 0, 0)
+
+# T73-T75 (track `gscale2`, G-scale-4 groundwork): the explicit resident set.
+# T73 witnesses membership/insert/remove over `cw_key`s; T74 that
+# `winset_evict` drops regenerable residents (pure gen) and keeps modified ones;
+# T75 that `winset_gen_cell` is the store's gen list and that
+# `assemble(evict)` recovers worldgen.
+def winset_ops_bad() -> U32:
+  +a = Cw.cw_key(1, 2, 3)
+  +b = Cw.cw_key(4, 5, 6)
+  +c = Cw.cw_key(7, 7, 7)
+  +s2 = Winset.winset_insert(b, Winset.winset_insert(a, Winset.winset_empty()))
+  bad0 = inc_if_false(Winset.winset_mem(a, s2), 0)
+  bad1 = inc_if_false(Winset.winset_mem(b, s2), bad0)
+  bad2 = inc_if_false(Bool.not(Winset.winset_mem(c, s2)), bad1)
+  +s3 = Winset.winset_remove(a, s2)
+  bad3 = inc_if_false(Bool.not(Winset.winset_mem(a, s3)), bad2)
+  bad4 = inc_if_false(Winset.winset_mem(b, s3), bad3)
+  +all = Winset.winset_all()
+  bad5 = inc_if_false(Winset.winset_mem(Cw.cw_key(3, 3, 3), all), bad4)
+  inc_if_false(Bool.not(Winset.winset_mem(Cw.cw_key(4, 0, 0), all)), bad5)
+
+def t73_bad() -> U32:
+  winset_ops_bad()
+
+def winset_evict_bad() -> U32:
+  +store = Store.build_all()
+  +kgen = Cw.cw_key(0, 0, 0)
+  +kmod = Cw.cw_key(1, 2, 3)
+  +sm = Store.set(store, kmod, mod_first(Store.chunk_list(kmod)))
+  +s = Winset.winset_insert(kmod, Winset.winset_insert(kgen, Winset.winset_empty()))
+  +ev = Winset.winset_evict(sm, s)
+  bad0 = inc_if_false(Bool.not(Winset.winset_mem(kgen, ev)), 0)
+  inc_if_false(Winset.winset_mem(kmod, ev), bad0)
+
+def t74_bad() -> U32:
+  winset_evict_bad()
+
+def winset_gen_go(fuel: Nat, +k: U32, +i: U32, +gen: List<&2, U32>, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match gen:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          ok = U32.is_eq(Winset.winset_gen_cell(k, i), h)
+          winset_gen_go(p, k, U32.add(i, 1), t, inc_if_false(ok, bad))
+
+def winset_roundtrip_bad() -> U32:
+  +k = Chunk.key(2, 3, 1)
+  bad0 = winset_gen_go(U32.to_nat(4096), k, 0, Store.chunk_list(k), 0)
+  +store = Store.build_all()
+  bad1 = inc_if_false(Winset.winset_regenerable(store, k), bad0)
+  +km = Chunk.key(1, 2, 3)
+  +sm = Store.set(store, km, mod_first(Store.chunk_list(km)))
+  inc_if_false(Bool.not(Winset.winset_regenerable(sm, km)), bad1)
+
+def t75_bad() -> U32:
+  winset_roundtrip_bad()
 # T81-T82 (S1 step 2, `src/window.bend`): the window model. T81 witnesses that
 # `win_index` on the canonical 64^3 window is exactly `Grid.index` (the relabel)
 # and that `win_gx/gy/gz` invert it; T82 witnesses the torus-free property: a
@@ -1551,5 +1644,10 @@ def main() -> IO(Unit):
     report("T68 gscale cw z roundtrip (in range)", t68_bad())
     report("T69 gscale cw key masked roundtrip", t69_bad())
     report("T70 gscale cw local masked roundtrip", t70_bad())
+    report("T71 gscale cw y roundtrip (full 3-coord)", t71_bad())
+    report("T72 gscale cw z roundtrip (full 3-coord)", t72_bad())
+    report("T73 winset mem/insert/remove", t73_bad())
+    report("T74 winset evict drops regenerable residents", t74_bad())
+    report("T75 winset gen cell + assemble/evict roundtrip", t75_bad())
     report("T81 window canonical index == Grid.index", t81_bad())
     report("T82 window no torus mask (global 80 not folded)", t82_bad())
