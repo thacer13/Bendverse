@@ -176,3 +176,75 @@ def n_add_sub_le(a: Nat, b: Nat, h: {Nat.is_ge(a, b) == True{} : Bool})
       {==}
     case 1n+q 1n+p:
       Equal.cong(Nat, Nat, x => Nat.add(1n, x), Nat.add(p, Nat.sub(q, p)), q, n_add_sub_le(q, p, h))
+
+# ------------------------------------------------------------------ mod range
+# SCALE.md step 5 / PLAN `G-scale-2`. `Dirtyn.dwin_up`/`dwin_down` wrap a row
+# index with `Nat.mod`, and the `mark_wake` reach laws need the wrap result to be
+# in range (`Nat.is_lt(_, w)`). Base exposes no `Nat.mod` range lemma, so the
+# bound is developed here from `Nat.divmod.go`'s loop invariant.
+#
+# `divmod.go(n, m, d, r)` counts `r` up from 0 while `m` counts down; when `m`
+# hits 0 it resets to `(m := r, r := 0)` and bumps the quotient `d`. So `m + r`
+# is the invariant (it is `b - 1` when started at `m = b - 1`, `d = r = 0`), and
+# the returned remainder is at most `m + r`.
+
+# `a < a + (1 + b)`: the successor bound, structural in `a`.
+def n_lt_add_succ(a: Nat, +b: Nat)
+  -> {Nat.is_lt(a, Nat.add(a, Nat.add(1n, b))) == True{} : Bool}:
+  match a:
+    case 0n:
+      {==}
+    case 1n+p:
+      n_lt_add_succ(p, b)
+
+# `divmod.go`'s remainder is `< 1 + (m + r)`, by induction on `n`.
+def go_rem_le(n: Nat, +m: Nat, +d: Nat, +r: Nat)
+  -> {Nat.is_lt(Nat.mod.fin(Nat.divmod.go(n, m, d, r)), Nat.add(1n, Nat.add(m, r))) == True{} : Bool}:
+  match n:
+    case 0n:
+      +hb = Equal.trans(Nat,
+        Nat.add(1n, Nat.add(m, r)),
+        Nat.add(1n, Nat.add(r, m)),
+        Nat.add(r, Nat.add(1n, m)),
+        Equal.cong(Nat, Nat, x => Nat.add(1n, x), Nat.add(m, r), Nat.add(r, m), n_add_comm(m, r)),
+        Equal.sym(Nat, Nat.add(r, Nat.add(1n, m)), Nat.add(1n, Nat.add(r, m)), n_add_succ_right(r, m)))
+      Equal.trans(Bool,
+        Nat.is_lt(r, Nat.add(1n, Nat.add(m, r))),
+        Nat.is_lt(r, Nat.add(r, Nat.add(1n, m))),
+        True{},
+        Equal.cong(Nat, Bool, z => Nat.is_lt(r, z), Nat.add(1n, Nat.add(m, r)), Nat.add(r, Nat.add(1n, m)), hb),
+        n_lt_add_succ(r, m))
+    case 1n+np:
+      match m:
+        case 0n:
+          +hb = Equal.cong(Nat, Nat, x => Nat.add(1n, x), Nat.add(0n, r), Nat.add(r, 0n),
+            Equal.sym(Nat, Nat.add(r, 0n), Nat.add(0n, r), n_add_zero_right(r)))
+          Equal.trans(Bool,
+            Nat.is_lt(Nat.mod.fin(Nat.divmod.go(np, r, Nat.add(1n, d), 0n)), Nat.add(1n, Nat.add(0n, r))),
+            Nat.is_lt(Nat.mod.fin(Nat.divmod.go(np, r, Nat.add(1n, d), 0n)), Nat.add(1n, Nat.add(r, 0n))),
+            True{},
+            Equal.cong(Nat, Bool, z => Nat.is_lt(Nat.mod.fin(Nat.divmod.go(np, r, Nat.add(1n, d), 0n)), z), Nat.add(1n, Nat.add(0n, r)), Nat.add(1n, Nat.add(r, 0n)), hb),
+            go_rem_le(np, r, Nat.add(1n, d), 0n))
+        case 1n+mp:
+          +hb = Equal.sym(Nat,
+            Nat.add(1n, Nat.add(mp, Nat.add(1n, r))),
+            Nat.add(1n, Nat.add(Nat.add(1n, mp), r)),
+            Equal.cong(Nat, Nat, x => Nat.add(1n, x), Nat.add(mp, Nat.add(1n, r)), Nat.add(Nat.add(1n, mp), r), n_add_succ_right(mp, r)))
+          Equal.trans(Bool,
+            Nat.is_lt(Nat.mod.fin(Nat.divmod.go(np, mp, d, Nat.add(1n, r))), Nat.add(1n, Nat.add(Nat.add(1n, mp), r))),
+            Nat.is_lt(Nat.mod.fin(Nat.divmod.go(np, mp, d, Nat.add(1n, r))), Nat.add(1n, Nat.add(mp, Nat.add(1n, r)))),
+            True{},
+            Equal.cong(Nat, Bool, z => Nat.is_lt(Nat.mod.fin(Nat.divmod.go(np, mp, d, Nat.add(1n, r))), z), Nat.add(1n, Nat.add(Nat.add(1n, mp), r)), Nat.add(1n, Nat.add(mp, Nat.add(1n, r))), hb),
+            go_rem_le(np, mp, d, Nat.add(1n, r)))
+
+# `Nat.mod(a, 1 + b) < 1 + b` (the divisor is positive).
+def n_mod_lt(a: Nat, +b: Nat)
+  -> {Nat.is_lt(Nat.mod(a, Nat.add(1n, b)), Nat.add(1n, b)) == True{} : Bool}:
+  +hb = Equal.sym(Nat, Nat.add(1n, Nat.add(b, 0n)), Nat.add(1n, b),
+    Equal.cong(Nat, Nat, x => Nat.add(1n, x), Nat.add(b, 0n), b, n_add_zero_right(b)))
+  Equal.trans(Bool,
+    Nat.is_lt(Nat.mod(a, Nat.add(1n, b)), Nat.add(1n, b)),
+    Nat.is_lt(Nat.mod(a, Nat.add(1n, b)), Nat.add(1n, Nat.add(b, 0n))),
+    True{},
+    Equal.cong(Nat, Bool, z => Nat.is_lt(Nat.mod(a, Nat.add(1n, b)), z), Nat.add(1n, b), Nat.add(1n, Nat.add(b, 0n)), hb),
+    go_rem_le(a, b, 0n, 0n))

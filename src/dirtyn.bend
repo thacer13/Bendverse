@@ -277,3 +277,28 @@ def dwin_mark_wake_down(+w: Nat, +m: Word(w), +y: Nat, +up: Nat, +down: Nat,
       Equal.cong(Bool, Bool, b => Bool.or(dwin_get(w, m2, down), b),
         dwin_get(w, dwin_bit(w, down), down), True{}, dwin_get_bit_self(w, down, h)),
       dwin_or_true_r(dwin_get(w, m2, down))))
+
+# ------------------------------------------------------------------ wrap range
+# SCALE.md step 5 / PLAN `G-scale-2` (the open wrap-range lemma). The `mark_wake`
+# reach laws above take `{Nat.is_lt(up, w) == True}` / `{Nat.is_lt(down, w) ==
+# True}` as hypotheses; these two lemmas discharge them for the `mod`-based wrap
+# `dwin_up` / `dwin_down`, so `dwin_mark_wake_auto` is usable without a caller
+# side condition. The bound is `NatL.n_mod_lt` (developed in `src/nat.bend`).
+def dwin_up_lt(w: Nat, +y: Nat, h: {Nat.is_lt(0n, w) == True{} : Bool})
+  -> {Nat.is_lt(dwin_up(w, y), w) == True{} : Bool}:
+  match w:
+    case 0n:
+      Equal.cong(Bool, Bool,
+        z => Bool.pick(Bool, z, True{}, Nat.is_lt(dwin_up(0n, y), 0n)), False{}, True{}, h)
+    case 1n+b:
+      NatL.n_mod_lt(Nat.add(y, 1n), b)
+
+def dwin_down_lt(w: Nat, +y: Nat, h: {Nat.is_lt(0n, w) == True{} : Bool})
+  -> {Nat.is_lt(dwin_down(w, y), w) == True{} : Bool}:
+  match w:
+    case 0n:
+      Equal.cong(Bool, Bool,
+        z => Bool.pick(Bool, z, True{}, Nat.is_lt(dwin_down(0n, y), 0n)), False{}, True{}, h)
+    case 1n+b:
+      +bb = b
+      NatL.n_mod_lt(Nat.add(y, Nat.sub(Nat.add(1n, bb), 1n)), bb)

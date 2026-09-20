@@ -934,3 +934,25 @@ law dwin_mark_wake_down:
   for down: Nat
   for h: {Nat.is_lt(down, w) == True{} : Bool}
   {Dirtyn.dwin_get(w, Dirtyn.dwin_mark_wake(w, m, y, up, down), down) == True{} : Bool}
+
+# SCALE.md step 5 / PLAN `G-scale-2`: the `Dirtyn` wrap range. `nat_mod_lt` is
+# the underlying bound (`Nat.mod` of a positive divisor), `dwin_up_lt` /
+# `dwin_down_lt` are its `dwin_up` / `dwin_down` instances -- the wrap
+# neighbours of `dwin_mark_wake_auto` are in range, so the `mark_wake` reach
+# laws apply without a caller side condition.
+law nat_mod_lt:
+  for a: Nat
+  for b: Nat
+  {Nat.is_lt(Nat.mod(a, Nat.add(1n, b)), Nat.add(1n, b)) == True{} : Bool}
+
+law dwin_up_lt:
+  for w: Nat
+  for y: Nat
+  for h: {Nat.is_lt(0n, w) == True{} : Bool}
+  {Nat.is_lt(Dirtyn.dwin_up(w, y), w) == True{} : Bool}
+
+law dwin_down_lt:
+  for w: Nat
+  for y: Nat
+  for h: {Nat.is_lt(0n, w) == True{} : Bool}
+  {Nat.is_lt(Dirtyn.dwin_down(w, y), w) == True{} : Bool}

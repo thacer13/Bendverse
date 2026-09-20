@@ -1,6 +1,7 @@
 import Base
 import ./LAWS.bend as Laws
 import ./src/bits.bend as Bits
+import ./src/nat.bend as NatL
 import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
 import ./src/cw.bend as Cw
@@ -502,3 +503,16 @@ def Laws.dwin_mark_wake_up(w, m, y, up, down, h):
 
 def Laws.dwin_mark_wake_down(w, m, y, up, down, h):
   Dirtyn.dwin_mark_wake_down(w, m, y, up, down, h)
+
+# nat / dirtyn (SCALE.md step 5 / G-scale-2): the `Nat.mod` range bound and its
+# `dwin_up` / `dwin_down` instances. The proofs are the `src/nat.bend` and
+# `src/dirtyn.bend` lemmas.
+# ----------------------------------------------------------------------------
+def Laws.nat_mod_lt(a, b):
+  NatL.n_mod_lt(a, b)
+
+def Laws.dwin_up_lt(w, y, h):
+  Dirtyn.dwin_up_lt(w, y, h)
+
+def Laws.dwin_down_lt(w, y, h):
+  Dirtyn.dwin_down_lt(w, y, h)

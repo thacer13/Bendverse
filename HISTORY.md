@@ -4083,3 +4083,41 @@ Type`); arrays are threaded linearly, so the witness binds `a` plainly.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 96/96 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS.
+
+### A.104 — S1 step 5 (part): the `Nat.mod` wrap range
+
+**Status:** additive on `master`; **+3 laws** (114 → 117). Gate green, fast
+**97/97**, sim **25/25**. No live-path change.
+
+**What landed.** `SCALE.md` step 5's live rewire needs the `Dirtyn` wrap
+neighbours to be in range, but Base exposes no `Nat.mod` range lemma — this was
+`G-scale-2` item (2). `src/nat.bend` now develops it from `Nat.divmod.go`'s loop
+invariant:
+
+- `n_lt_add_succ(a, b)` — `a < a + (1 + b)`, structural in `a`;
+- `go_rem_le(n, m, d, r)` — `divmod.go`'s remainder is `< 1 + (m + r)`, by
+  induction on `n`. The invariant is `m + r` (started at `m = b - 1`): while
+  `m > 0` it steps `(m-1, r+1)`; at `m = 0` it resets to `(r, 0)` and bumps the
+  quotient, which preserves `m + r = b - 1`, so the returned remainder is
+  `<= b - 1 < b`;
+- `n_mod_lt(a, b)` — `Nat.mod(a, 1 + b) < 1 + b`.
+
+`src/dirtyn.bend` adds the two instances the gap names: `dwin_up_lt` /
+`dwin_down_lt`, each discharging `dwin_up`/`dwin_down`'s `{Nat.is_lt(_, w)}`
+hypothesis for a positive width `w` (a `match w` with a phantom `0` branch by
+`Bool.pick` contradiction). With them, `dwin_mark_wake_auto`'s `y±1` reach laws
+apply with no caller side condition.
+
+**Laws.** `nat_mod_lt`, `dwin_up_lt`, `dwin_down_lt` (`LAWS.bend` /
+`PROOF.bend`, delegated to the module lemmas). T105 witnesses the `n = 6`
+(`w = 64`) instance: every wrap neighbour of every row is `< 64`, and the
+topology is the mod-64 wrap (`up(0)=1`, `up(63)=0`, `down(0)=63`, `down(63)=62`).
+
+**Not done (step 5 remainder).** `G-scale-2` (1) the live 64-row `Dirty` path is
+still not rewired to `Dirtyn`; (3) the `n = 6` agreement is still test-witnessed
+(T94) rather than a `Dirty.Mask`(`lo`/`hi`) ↔ `Word(64)` isomorphism law. Both
+remain open in §5.3.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 97/97 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS.

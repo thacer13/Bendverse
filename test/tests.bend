@@ -1963,6 +1963,27 @@ def t94_y(fuel: Nat, +y: Nat, bad: U32) -> U32:
 def t94_bad() -> U32:
   t94_y(64n, 0n, 0)
 
+# T105 (SCALE.md step 5 / G-scale-2, wrap range): the n=6 (w=64) instance of
+# `dwin_up_lt` / `dwin_down_lt`. Every wrap neighbour of every row is in range,
+# and the topology is the mod-64 wrap (`up` = y+1, `down` = y-1: up(0)=1,
+# up(63)=0, down(0)=63, down(63)=62). T93 witnessed the reach, this witnesses
+# the range the lemma closes.
+def t105_go(fuel: Nat, +y: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +u = Nat.is_lt(Dirtyn.dwin_up(64n, y), 64n)
+      +d = Nat.is_lt(Dirtyn.dwin_down(64n, y), 64n)
+      t105_go(p, Nat.add(y, 1n), inc_if_false(Bool.and(u, d), bad))
+
+def t105_bad() -> U32:
+  +b0 = t105_go(64n, 0n, 0)
+  +b1 = inc_if_false(Nat.is_eq(Dirtyn.dwin_up(64n, 0n), 1n), b0)
+  +b2 = inc_if_false(Nat.is_eq(Dirtyn.dwin_up(64n, 63n), 0n), b1)
+  +b3 = inc_if_false(Nat.is_eq(Dirtyn.dwin_down(64n, 0n), 63n), b2)
+  inc_if_false(Nat.is_eq(Dirtyn.dwin_down(64n, 63n), 62n), b3)
+
 # T95-T96 (S1 step 3): assembly over an *explicit* resident set. T95: for the
 # canonical window, `Store.assemble_keys (Window.resident_keys canonical)` is the
 # same world as the implicit `Store.assemble` (the loop-bound set == the key
@@ -2145,6 +2166,7 @@ def main() -> IO(Unit):
     report("T92 dirtyn mark_if true/false", t92_bad())
     report("T93 dirtyn mark_wake y-1/y/y+1 reach", t93_bad())
     report("T94 dirtyn n=6 agrees with Dirty (or_y + mark_wake)", t94_bad())
+    report("T105 dirtyn wrap in range at n=6 (+ wrap topology)", t105_bad())
     report("T95 explicit resident set == implicit assemble (S1 step 3)", t95_bad())
     report("T96 explicit resident set reconstructs worldgen (S1 step 3)", t96_bad())
     report("T97 GTerrain selector reconstructs shell-free terrain (S1 step 4a)", t97_bad())
