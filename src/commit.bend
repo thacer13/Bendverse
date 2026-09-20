@@ -707,3 +707,77 @@ def v3c_ne_idx_same_r(+xs: R.PT, +ys: R.PT, +n: U32, +i: U32, +j: U32,
   +nzi = ne_idx(xs, h, i, j)
   +nzj = ne_idx(ys, h, U32.sub(i, h), U32.sub(j, h))
   v3c_pick_rr(nzi, nzj, U32.is_lt(i, h), U32.is_lt(j, h), hzi, hzj)
+
+# ---------------- the `add ∘ sub` roundtrip ----------------
+# `U32` arithmetic is modular, so `sub(i, h) + h = i` holds for *all* `i`, `h`
+# (the ignored borrow is exactly the carry the addition puts back). This is the
+# identity the both-right completeness case needs to cancel `U32.sub` and to
+# carry range facts, and it is the suggested "subtraction clears the top bit"
+# step in unconditional form. `v3c_addsub_bit` is the per-bit two's-complement
+# fact; `v3c_addsub_go` threads the coupled borrow/carry through `Word.adc`.
+
+def v3c_bfst(p: Bool & Bool) -> Bool:
+  match p:
+    case (a, _): a
+
+def v3c_bsnd(p: Bool & Bool) -> Bool:
+  match p:
+    case (_, b): b
+
+def v3c_addsub_bit(ah: Bool, bh: Bool, c: Bool)
+  -> {Bool.full_add(v3c_bfst(Bool.full_add(ah, Bool.not(bh), c)), bh, Bool.not(c))
+        == (ah, Bool.not(v3c_bsnd(Bool.full_add(ah, Bool.not(bh), c)))) : Bool & Bool}:
+  match ah bh c:
+    case False{} False{} False{}: {==}
+    case False{} False{} True{}: {==}
+    case False{} True{} False{}: {==}
+    case False{} True{} True{}: {==}
+    case True{} False{} False{}: {==}
+    case True{} False{} True{}: {==}
+    case True{} True{} False{}: {==}
+    case True{} True{} True{}: {==}
+
+def v3c_addsub_go(n: Nat, a: Word(n), b: Word(n), c: Bool)
+  -> {Word.adc(n, Word.adc(n, a, b, True{}, c), b, False{}, Bool.not(c)) == a : Word(n)}:
+  match n:
+    case 0n:
+      match a b:
+        case WNil{} WNil{}: {==}
+    case 1n+p:
+      match a b c:
+        case WCon{False{}, at} WCon{False{}, bt} False{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{False{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, False{}), bt, False{}, True{}),
+            at, v3c_addsub_go(p, at, bt, False{}))
+        case WCon{False{}, at} WCon{True{}, bt} False{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{False{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, False{}), bt, False{}, True{}),
+            at, v3c_addsub_go(p, at, bt, False{}))
+        case WCon{True{}, at} WCon{False{}, bt} False{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{True{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, True{}), bt, False{}, False{}),
+            at, v3c_addsub_go(p, at, bt, True{}))
+        case WCon{True{}, at} WCon{True{}, bt} False{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{True{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, False{}), bt, False{}, True{}),
+            at, v3c_addsub_go(p, at, bt, False{}))
+        case WCon{False{}, at} WCon{False{}, bt} True{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{False{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, True{}), bt, False{}, False{}),
+            at, v3c_addsub_go(p, at, bt, True{}))
+        case WCon{False{}, at} WCon{True{}, bt} True{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{False{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, False{}), bt, False{}, True{}),
+            at, v3c_addsub_go(p, at, bt, False{}))
+        case WCon{True{}, at} WCon{False{}, bt} True{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{True{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, True{}), bt, False{}, False{}),
+            at, v3c_addsub_go(p, at, bt, True{}))
+        case WCon{True{}, at} WCon{True{}, bt} True{}:
+          Equal.cong(Word(p), Word(1n+p), t => WCon{True{}, t},
+            Word.adc(p, Word.adc(p, at, bt, True{}, True{}), bt, False{}, False{}),
+            at, v3c_addsub_go(p, at, bt, True{}))
+
+def v3c_add_sub(n: Nat, a: Word(n), b: Word(n))
+  -> {Word.add(n, Word.sub(n, a, b), b) == a : Word(n)}:
+  v3c_addsub_go(n, a, b, True{})
