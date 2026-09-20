@@ -395,7 +395,7 @@ export interface GapRow {
 export function parseGapTable(planText: string): GapRow[] {
 	const out: GapRow[] = [];
 	for (const line of planText.split("\n")) {
-		const m = /^\|\s*`(G\d+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$/.exec(line);
+		const m = /^\|\s*`(G[\w-]+)`\s*\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|([^|]*)\|\s*$/.exec(line);
 		if (!m) continue;
 		out.push({
 			id: m[1],
