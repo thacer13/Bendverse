@@ -3518,3 +3518,72 @@ still gates only `M7d`, not `C3`.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.` (branch and merged master).
 - `bend test/tests.bend` -> 40/40 PASS; `bend test/simtests.bend` native -> 24/24 PASS.
+
+### A.90 — `V3c` engine wire: `Rules.commit_sets` is the fold (`G3` closed)
+
+**Status:** verification only; no engine or law-meaning change. New `src/v3cw.bend`
++297, two laws, T46–T48. Gate green, fast 44/44 (merged), sim 24/24. `PLAN.md`
+§4.1 (R10)/§5.1/§5.2/§5.3 updated.
+
+**Why.** `V3c`'s fold (`v3c_fold`, A.84) and its distinctness predicate
+(`v3c_ne_idx_exact`, A.89) were about the abstract `Commit.V3cWrite` list; the
+engine commits a `Rules.Write` list (`commit_sets`). This wires the two, closing
+`G3`'s last thread.
+
+**What.** `src/v3cw.bend`: `v3cw_proj` maps `WSet{idx, op, src}` to
+`MkWrite{idx, apply_op(src, op)}` and drops `WWake` (the tick's wake pass is
+separate and Φ/state-neutral for the set fold); `v3cw_set_swap` shows the engine's
+`Array.set(pack t, i, v)` equals `pack(swap_m(t, n, i, v))` when `n == g5_twidth(t)`
+and `i` is in range (via `g5_size_pack`, `g5_and_mask_id`, `Count.afst_swap_m`);
+`v3cw_twidth_swap_m` keeps the size hypothesis across the induction; and
+`v3cw_commit_fold` proves `unpack(commit_sets(lin ws, pack t)) ==
+v3c_fold(proj ws, t, n)`. `v3cw_commit_commutes` is the region-split equality
+(`v3c_fold_commutes` transported), with distinctness keyed by `Commit.v3c_pair_ne`
+on the projection — so `ne_idx`/`U32.is_eq` is the engine predicate. Laws:
+`v3cw_commit_fold`, `v3cw_commit_commutes`.
+
+**Methodological caveat.** `Rules.commit_sets` consumes its list linearly
+(`List<&1, Write>`), while the fold/region laws mention the list twice (reusable,
+`&2`); the laws are stated over a reusable `ws` plus `v3cw_lin ws`, a
+multiplicity-erased copy that rebuilds the identical write list. It is the identity
+on the write data, so the law is about the engine's write data; the only difference
+is the kind annotation. The alternative — making `commit_sets` take `+writes` — is
+an engine-signature change with a possible hot-path refcount cost.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (branch and merged master).
+- `bend test/tests.bend` -> 44/44 PASS; `bend test/simtests.bend` native -> 24/24 PASS.
+
+### A.91 — `view3d`: an interactive 3D voxel viewer (presentation)
+
+**Status:** presentation only; **no engine, law, or test-meaning change** (no `src/`
+edit, no `LAWS.bend` claim). New `view/voxel.bend` + `runners/view3d.bend`, T49.
+Gate green, fast 44/44, sim 24/24. `PLAN.md` §2.11/§5.1/§6 updated.
+
+**Why.** The runners keep the model observable; the existing `window.bend` shows a
+2D cross-section. This adds a real 3D view — the first presentation milestone since
+M6 — without touching the verified engine.
+
+**What.** `view/voxel.bend` (pure, zero IO) is an Amanatides–Woo DDA voxel raycaster
++ perspective camera: per pixel it builds a ray from the camera basis, marches the
+64³ `Array<U32>` world, stops at the first non-empty cell, and shades material
+colour × a face-normal lambert term; it builds a 128×128 quadtree `Image`.
+`runners/view3d.bend` is the `App.run` shell: state = world + `speed` + camera + a
+held-key mask + mouse-drag. `view` folds held keys into the camera each frame and
+renders; `tick` runs `Sim.ticks(speed)` per frame (`speed` 0/1/2/4 =
+paused/normal/faster) — `App.run` is frame-driven, so this is the natural tick rate.
+Controls: W/A/S/D, Q/E or ←/→ yaw, ↑/↓ pitch, R/F rise/sink, mouse-drag look, space
+pause, `-`/`=` speed. `main.bend` still delegates to `ascii.bend`.
+
+**Evidence.** T49 checks the six axis rays against a shell-only world (material,
+face normal, nearest-hit distance). Native: worldgen + build + a full 128×128 render
+≈ 94 ms (~15–20 fps; JS interpreter ≈4.8 s, so run it compiled). The raycaster was
+exercised headlessly via `bend_spike`; `runners/view3d.bend --check-only` passes and
+it builds (`bend runners/view3d.bend -o bin/view3d`). `tick` could not be driven
+headlessly — this Bend build rejects monadic `<-` binds in `do` blocks, so there is
+no in-repo harness for `App.tick` without a window.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 44/44 PASS;
+  `bend test/simtests.bend` native -> 24/24 PASS.
+- `bend runners/view3d.bend --check-only` -> `All terms check.`; native build ok.

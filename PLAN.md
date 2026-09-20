@@ -95,7 +95,7 @@ these costs more than reading them.
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 93 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 95 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -307,6 +307,13 @@ the world by calling it per cell (`build`; `build_at` is the parallel variant).
   renders the x–y cross-section at z = 32 as a 64×64 quadtree `Image`; tick
   handles left/right mouse paint (Sand/Rock) at `(mx, 63 - my, 32)`, `e` to
   erase, space to pause, close to quit. Paints set activity on 26 neighbors.
+- `runners/view3d.bend` (presentation): an `App.run` windowed 3D viewer over the
+  64³ world. `view/voxel.bend` is a pure (no-IO) Amanatides–Woo DDA voxel
+  raycaster + perspective camera; the runner holds world + `speed` + camera + a
+  held-key mask and renders a 128×128 quadtree `Image`. Fly the camera (W/A/S/D,
+  Q/E or ←/→ yaw, ↑/↓ pitch, R/F rise/sink, mouse-drag look), space pauses,
+  `-`/`=` set `speed` (sim ticks per rendered frame, 0 = paused). Not part of
+  the engine.
 - `test/tests.bend`, `test/simtests.bend`: golden tests, see §3.5.
 - `scenarios/fixtures.bend`: shared setup (`spawn`, `pull`), so `src/sim.bend`
   stays only the tick pipeline.
@@ -357,7 +364,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-93 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+95 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -491,7 +498,7 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R7` | Support derived, scoped to disturbed cells | conforming | `V0-5` (A.81): `Support.sup` derives support from the current neighbourhood (`below`, then the wall faces), never by position and never carried across a structural change. The activity gate and the `—`-no-staleness part hold; the world *scan* was the separate `C3` deviation, closed by `V0-4b-3b` (A.77) |
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
 | `R9` | Activity effects land next tick | conforming | `V0-4a` (A.71) defers each phase's wakes to tick end (T33); `V0-4b-1` (A.72) made a move **clear** the mover's active bit so it is not re-evaluated by a later colour phase (T34); `V0-4b-2` (A.74) defers the support pass's crush wake too (T36). Every wake now lands at tick end |
-| `R10` | Determinism under any schedule | conforming | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The composition step now has laws — point writes at `ne_idx`-distinct leaves commute (`point_writes_commute`, V3c-1, A.68); the fold lifts to the list/region equality (`v3c_write_past_fold`/`v3c_fold_commutes`, V3c-1b, A.84) and `ne_idx`'s soundness half is proven (`v3c_ne_idx_sound`, V3c-2, A.84: `U32.is_eq(i, j) == True` forces `ne_idx == False`). V3c-2 *completeness* is now proven (A.89): `v3c_ne_idx_exact` shows `ne_idx` is exactly `Bool.not ∘ U32.is_eq` on full in-range trees; the only `V3c`/`G3` thread left is wiring the engine's `Rules.Write` list into the fold |
+| `R10` | Determinism under any schedule | conforming | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The composition step now has laws — point writes at `ne_idx`-distinct leaves commute (`point_writes_commute`, V3c-1, A.68); the fold lifts to the list/region equality (`v3c_write_past_fold`/`v3c_fold_commutes`, V3c-1b, A.84) and `ne_idx`'s soundness half is proven (`v3c_ne_idx_sound`, V3c-2, A.84: `U32.is_eq(i, j) == True` forces `ne_idx == False`). V3c is **complete and reaches the engine**: `v3c_ne_idx_exact` (A.89: `ne_idx == Bool.not ∘ U32.is_eq` on full in-range trees) plus the engine wire (A.90: `v3cw_commit_fold`/`v3cw_commit_commutes` prove `Rules.commit_sets` on the projected write list equals `v3c_fold`, lifting the region-split equality to the engine's actual write set) |
 | `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
 | `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
 
@@ -616,6 +623,8 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V3c-2` (structural) | completeness, structural half: `v3c_ne_idx_sep`/`_same_l`/`_same_r` prove the three cases of `ne_idx`'s node recursion, and `v3c_add_sub` gives the unconditional `add ∘ sub` roundtrip (`Word.add(n, Word.sub(n, a, b), b) == a`); T34/T35 witness exactness on the 8- and 16-leaf canonical trees. Full completeness reduces to three `U32` order/range bricks (`is_lt` base reflection, `sub` range preservation, bounded `shr(two)`) | A.87 |
 | `G15` | wake bounded by the grid: `Ops.wake` now guards each neighbour with `Grid.step_inside` (`wake_x` writes through `mark_if`), so a wrapped step is inert — rule 9's reach respects the closed box, matching `V0-2`'s rule-target guard. The `PT` wake mirror carries the same guard as a parameter (`wake_write_m`/`wake_write_m_preserves`); law `g15_wake_step_inert`; T43–T45 + sim T44–T46 | A.88 |
 | `V3c-2` (complete) | completeness done: `v3c_ne_idx_complete` (the converse of the soundness law) and `v3c_ne_idx_exact` (`ne_idx(full k, two k, i, j) == Bool.not(U32.is_eq(i, j))` for in-range `i, j`) — the three arithmetic bricks (`is_lt` base reflection, `sub` range preservation, canonical size halves) plus the depth induction over the structural case laws; T36/T40–T42 | A.89 |
+| `V3c` (engine wire) | `G3` closed: `src/v3cw.bend` proves the engine's `Rules.commit_sets` on the projected write list equals `Commit.v3c_fold` (`v3cw_commit_fold`; `WSet` via `apply_op`, `WWake` neutral) and lifts the region-split equality to the engine write set (`v3cw_commit_commutes`), keyed by `Commit.v3c_pair_ne` on the projection. T46–T48. Methodological caveat: `v3cw_lin` is the multiplicity-erased copy needed because `commit_sets` is linear | A.90 |
+| `view3d` | interactive 3D viewer (presentation only): `view/voxel.bend` is a pure Amanatides–Woo DDA voxel raycaster + camera; `runners/view3d.bend` is the `App.run` shell (fly camera W/A/S/D + Q/E + arrows + mouse-drag, `speed` = sim ticks per frame, pause). T49 witnesses the DDA; `src/` untouched; ~94 ms/frame native at 128×128 | A.91 |
 | `V0` | semantics rewrite complete: phase purity (`V0-1`), closure (`V0-2`), direction/colour batching (`V0-3`), cost via the carried dirty-row work set (`V0-4b`), and the neighbourhood support seed (`V0-5`) — every `C1`/`C2`/`C3` and `R1`–`R11` row in §4.1 now conforms | A.63–A.81 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
@@ -638,26 +647,6 @@ index).
 
 #### Optional track — droppable, does not gate the frontier
 
-- [ ] **V3c** Schedule invariance: a region-split fold equals the sequential · optional · deps: — · serves: R10
-  fold — **off the critical path; pursue only if `M7d` ships.** The A.57
-  rationale (T23 cascade, T24 intra-phase activation, "forward activation
-  closure") is **obsolete**: `V0-1` (A.63) made the phase a pure function of the
-  pre-phase state, so the evaluated set is fixed (wake lands after the phase) and
-  a cell's decision no longer depends on scan order. What remains is the
-  *composition*: applying the merged write set is order-independent. **V3c-1
-  done (A.68):** point writes at `Commit.ne_idx`-distinct leaves commute
-  (`point_writes_commute`; `ne_idx` mirrors `swap_m`'s walk and is distinctness
-  for in-range indices; T31). **V3c-1b done (A.84):** the fold is lifted to the
-  list/region layer — `v3c_write_past_fold` and `v3c_fold_commutes` (append in
-  either order for pairwise-distinct writes); T32. **V3c-2 (soundness half) done
-  (A.84):** `v3c_ne_idx_sound` — `U32.is_eq(i, j) == True` forces
-  `ne_idx == False`, so a proven `ne_idx` implies the engine's distinctness; T33.
-  **V3c-2 complete (A.89):** `v3c_ne_idx_complete` + `v3c_ne_idx_exact` prove
-  `ne_idx(full k, two k, i, j) == Bool.not(U32.is_eq(i, j))` for in-range `i, j`
-  (the three arithmetic bricks + the depth induction); T36/T40–T42. The only
-  remaining `V3c`/`G3` thread is wiring the engine's `Rules.Write` list into the
-  fold. The proven parallel-safety contract remains V3a+V3b. `G3` gates only
-  `M7d`, **not `C3`**.
 - [ ] **M7d** Parallel phase folds (CPU) · optional · deps: V3c · serves: —
   — **optional, droppable**, gated on `V3c`. A core-count multiplier on top of
   `C3`, not a scale prerequisite: no CUDA (`G4`), the 64³ world is too small to
@@ -678,8 +667,8 @@ index).
 
 | id | state | deps | unblocks |
 |---|---|---|---|
-| `V3c` | optional | — (`V3c-1`/`V3c-1b`/`V3c-2` soundness landed; completeness open) | `M7d` |
-| `M7d` | optional | `V3c` | — |
+| `V3c` | landed (A.90) | — | — |
+| `M7d` | optional | `V3c` (landed A.90) | — |
 | `M7b`/`M7e` | blocked | — | — |
 | `P1` | deferred | — | — |
 
@@ -860,7 +849,7 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 |---|---|---|---|---|---|
 | `G1` | unproven | `Array.swap.go` ↔ `to_pots` point-update correspondence (V2b-ii) | closed | M8d | proven: `swap_refines_array` + `array_swap_pots` (A.27), stated over the `PT` presentation (`G8`) |
 | `G2` | unproven | `Sim.tick` is a composition of `replace_decreases` (V2b-iii) | closed | M8d | proven (A.28–A.29): all write effects at the array level + `point_write_lowers`; residuals `G9` (non-rock crush) and `G10` (write-site enumeration) |
-| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | open | M7d | builds on V3a+V3b (proven). **The A.57 framing — T23 cascade, T24 intra-phase activation, "a per-cell transition + the forward activation closure (V3c-1/V3c-2)" — is obsolete:** `V0-1` removed both counterexamples, so the evaluated set is fixed and there is no activation closure left to characterise. What remains is the *composition* equality, and it gates only `M7d`, not `C3`. A.58 landed the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; **A.65 landed V0-3a**: the live engine's directions are the closed `Rules.Dir4` set (the `k ≥ 4` self-target default is off the live path) and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`), with every write target flipping the phase `y` bit (`diag_write_flips_y_phase`, T29). **A.66 landed V0-3b**: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction classification (`color_collision_x_par`/`_z_par` — a same-colour target collision forces equal `par dx` and `par dz`), so the only cross-direction overlap is the opposite-diagonal parity class `{K0,K1}`/`{K2,K3}`, which the V0-1 tie-break resolves; T30 witnesses the parity table. `is_ne` reflection of the drop-vs-slide disjointness is not needed for the claim (it is stated over parities) and the schedule-invariance *equality* (V3c) remains. **A.68 landed V3c-1**: the composition half is now a theorem — point writes at `Commit.ne_idx`-distinct leaves commute (`point_writes_commute`, T31). `ne_idx` is a computable predicate mirroring `swap_m`'s top-down walk whose stability under the recursion is what makes the induction go through with no `U32` arithmetic; it is exactly `i != j` for in-range indices, and refining it to the engine's `U32.is_eq(i, j) == False` is the open residual. What remains for the equality: fold the kernel over the engine's `List<Write>`/region split (V3c-1b) — the per-phase `plan` reflection was `G14`, **closed by A.78 (`V3d-2`)** by typing the effect in `Rules.Write`, so the composition fold is now the only thread left here. The A.57 phrase "forward activation closure" is now moot: V0-1 fixed the evaluated set and defers wake past the phase. **A.84 landed V3c-1b + V3c-2 soundness**: the fold commutes under an append/region split for pairwise-distinct writes (`v3c_fold_commutes`, `v3c_write_past_fold`, T32) and `ne_idx == True` implies `U32.is_eq(i, j) == False` (`v3c_ne_idx_sound`, T33); **A.87 landed the structural half of completeness**: the three `ne_idx` node-recursion cases (`v3c_ne_idx_sep`/`_same_l`/`_same_r`) and the unconditional `add ∘ sub` roundtrip (`v3c_add_sub`), with T34/T35 witnessing exactness on canonical 8- and 16-leaf trees. **A.89 finished completeness**: `v3c_ne_idx_complete` + `v3c_ne_idx_exact` prove `ne_idx(full k, two k, i, j) == Bool.not(U32.is_eq(i, j))` for in-range `i, j`, landing the three arithmetic bricks (`is_lt` base reflection, `sub` range preservation, canonical size halves) and the depth induction; T36/T40–T42. The only remaining `G3` thread is wiring the engine's `Rules.Write` list into the `v3c_fold` |
+| `G3` | unproven | schedule invariance: region-split fold = sequential fold (V3c) | closed | M7d | builds on V3a+V3b (proven). **The A.57 framing — T23 cascade, T24 intra-phase activation, "a per-cell transition + the forward activation closure (V3c-1/V3c-2)" — is obsolete:** `V0-1` removed both counterexamples, so the evaluated set is fixed and there is no activation closure left to characterise. What remains is the *composition* equality, and it gates only `M7d`, not `C3`. A.58 landed the provable fragment **V3c-0**: every `Rules` write target is a `dy = -1` neighbor, so `below`'s `y`-parity flips (law `below_write_flips_y_phase`); the full color separation (bit extraction of `color_of`, `k < 4` bounds for `diag_index`/`side_index`, `is_ne` reflection) remains. Prior art (A.60): `bend2-from-zero`'s `life/LIFE_PAR_PROOF.bend` proves `tree_is_serial` — a fork/join `tree_cells` equals the sequential `block` loop by depth induction via a `cells_add` split lemma, with `src/list.bend` supplying the list glue. It establishes equal *outputs* only (no contention), which is exactly what T23/T24 refute, so it is a proof-*shape* template, not a reusable theorem. **A.63 landed V0-1**: the engine now resolves contention from the pre-phase state (a local opposite-axis tie-break, witnessed by T23), so the target map is collision-free in the running engine; **A.65 landed V0-3a**: the live engine's directions are the closed `Rules.Dir4` set (the `k ≥ 4` self-target default is off the live path) and each direction batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`), with every write target flipping the phase `y` bit (`diag_write_flips_y_phase`, T29). **A.66 landed V0-3b**: `color_of` bit extraction (`color_of_bit0/1/2` — bit `k` of the packing is coordinate `k`'s parity) and the cross-direction classification (`color_collision_x_par`/`_z_par` — a same-colour target collision forces equal `par dx` and `par dz`), so the only cross-direction overlap is the opposite-diagonal parity class `{K0,K1}`/`{K2,K3}`, which the V0-1 tie-break resolves; T30 witnesses the parity table. `is_ne` reflection of the drop-vs-slide disjointness is not needed for the claim (it is stated over parities) and the schedule-invariance *equality* (V3c) remains. **A.68 landed V3c-1**: the composition half is now a theorem — point writes at `Commit.ne_idx`-distinct leaves commute (`point_writes_commute`, T31). `ne_idx` is a computable predicate mirroring `swap_m`'s top-down walk whose stability under the recursion is what makes the induction go through with no `U32` arithmetic; it is exactly `i != j` for in-range indices, and refining it to the engine's `U32.is_eq(i, j) == False` is the open residual. What remains for the equality: fold the kernel over the engine's `List<Write>`/region split (V3c-1b) — the per-phase `plan` reflection was `G14`, **closed by A.78 (`V3d-2`)** by typing the effect in `Rules.Write`, so the composition fold is now the only thread left here. The A.57 phrase "forward activation closure" is now moot: V0-1 fixed the evaluated set and defers wake past the phase. **A.84 landed V3c-1b + V3c-2 soundness**: the fold commutes under an append/region split for pairwise-distinct writes (`v3c_fold_commutes`, `v3c_write_past_fold`, T32) and `ne_idx == True` implies `U32.is_eq(i, j) == False` (`v3c_ne_idx_sound`, T33); **A.87 landed the structural half of completeness**: the three `ne_idx` node-recursion cases (`v3c_ne_idx_sep`/`_same_l`/`_same_r`) and the unconditional `add ∘ sub` roundtrip (`v3c_add_sub`), with T34/T35 witnessing exactness on canonical 8- and 16-leaf trees. **A.89 finished completeness**: `v3c_ne_idx_complete` + `v3c_ne_idx_exact` prove `ne_idx(full k, two k, i, j) == Bool.not(U32.is_eq(i, j))` for in-range `i, j`, landing the three arithmetic bricks (`is_lt` base reflection, `sub` range preservation, canonical size halves) and the depth induction; T36/T40–T42. **A.90 closed the engine wire**: `v3cw_commit_fold`/`v3cw_commit_commutes` bridge `Rules.commit_sets` to `v3c_fold` on the projected write list (distinctness keyed by `Commit.v3c_pair_ne`), so the region-split equality reaches the engine's actual write set; caveat: `v3cw_lin` is the multiplicity-erased copy needed because `commit_sets` is linear (an alternative is making `commit_sets` take a reusable list, at a possible hot-path refcount cost) |
 | `G4` | accepted | GPU (`!`) paths are unvalidated — no CUDA on the dev machine | accepted | M7b M7e | run on a CUDA host; keep `!` usage semantically correct |
 | `G5` | standing | laws constrain models (`Word` `List` `Nat` `PT`), not the imperative `Array` engine | open | all Array claims | per-claim refinement; `G1` closed for `Array.swap.go`, write→Φ effects proven (A.28–A.29); the write-site enumeration instances `G10`/`G14` are now closed (A.48, A.53–A.56, A.79 — the last by typing the effect in `Rules.Write`), so what remains was the selector/read threading from `Rules.plan`/`Support.sup` to their `PT` mirrors. **A.83 closed the read half** for the support selector machine (`src/g5.bend`: `g5_read_get_go`/`g5_read_get`/`g5_size_pack`/`g5_tget_swap` — every live `sup_m` read is the engine's `Array.get(world, i)` at the same index, and the post-write read-back is the written value). **A.86 closed the mask residual**: `g5_twidth_pow`, `g5_and_mask_id` and `g5_read_get_bare` prove the bare-index read (`snd(Array.get(U32, pack t, i)) == tget(t, g5_twidth t, i)` for in-range `i`), so the read threading is closed modulo the `SupSel` branch-table transcription (a methodological residual — `sup_m` is the mirror, so it cannot be proved against itself). Non-gating observation: `Refine.pack`/`Array.size`/`Array.get` fail-stop at runtime on non-perfect packed trees; the engine only packs full power-of-two worlds, so the laws are unaffected |
 | `G6` | accepted | support (rule 7) is test-witnessed only | accepted | — | a support-recompute law |
@@ -941,6 +930,8 @@ transitively imports), never this repository: `G3`, `G5` and `G7` are open, and
 | `src/store.bend` | `U32`-keyed radix-tree chunk store, assemble (gen fallback on evicted chunks), eviction |
 | `runners/ascii.bend` | fueled ASCII runner |
 | `runners/window.bend` | `App.run` windowed runner |
+| `runners/view3d.bend` | `App.run` 3D voxel viewer (presentation) |
+| `view/voxel.bend` | pure DDA raycaster + camera (presentation, no IO) |
 | `test/tests.bend` | fast golden tests (tick-free) |
 | `test/simtests.bend` | simulation golden tests (native-recommended) |
 | `scenarios/fixtures.bend` | shared setup fixtures (`spawn`, `pull`) |
