@@ -16,6 +16,7 @@ import ../src/commit.bend as Commit
 import ../src/v3cw.bend as V3cw
 import ../src/tick.bend as Tick
 import ../src/g5.bend as G5
+import ../view/voxel.bend as Vox
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -985,6 +986,69 @@ def t48_bad() -> U32:
   b2
 
 
+# T49 (view3d): the pure voxel raycaster in `view/voxel.bend`. A shell-only
+# world (bedrock on all six faces, empty inside) makes each axis ray's first
+# hit hand-computable: from the centre (32.5, 32.5, 32.5) the far wall is
+# entered after 30.5 cells, the near wall after 31.5, and the entry face normal
+# is opposite the march axis. This is a `miss`-free world, so it also witnesses
+# that the DDA stops at the *first* non-empty cell (the reported `t`).
+def t49_border(+x: U32, +y: U32, +z: U32) -> Bool:
+  b0 = U32.is_eq(x, 0)
+  b1 = U32.is_eq(x, 63)
+  b2 = U32.is_eq(y, 0)
+  b3 = U32.is_eq(y, 63)
+  b4 = U32.is_eq(z, 0)
+  b5 = U32.is_eq(z, 63)
+  Bool.or(Bool.or(b0, b1), Bool.or(Bool.or(b2, b3), Bool.or(b4, b5)))
+
+def t49_gen(+x: U32, +y: U32, +z: U32) -> U32:
+  Cell.encode(Bool.pick(U32, t49_border(x, y, z), 1, 0), 0, 0, 0, 0)
+
+def t49_build(depth: Nat, +base: U32) -> Array<U32>:
+  match depth:
+    case 0n:
+      ALeaf{t49_gen(Grid.ix(base), Grid.iy(base), Grid.iz(base))}
+    case 1n+ +p:
+      +h = U32.shln(1, p)
+      ANode{t49_build(p, base), t49_build(p, U32.add(base, h))}
+
+def t49_world() -> Array<U32>:
+  t49_build(18n, 0)
+
+def t49_hit(q: Array<U32> & Vox.Hit) -> Vox.Hit:
+  match q:
+    case (w, h):
+      h
+
+def t49_check(h: Vox.Hit, +wm: U32, +wx: F32, +wy: F32, +wz: F32, +wt: F32) -> U32:
+  match h:
+    case Vox.Miss{}:
+      1
+    case Vox.Hit{mat, nx, ny, nz, t}:
+      okm = U32.is_eq(mat, wm)
+      okx = F32.is_eq(nx, wx)
+      oky = F32.is_eq(ny, wy)
+      okz = F32.is_eq(nz, wz)
+      okt = F32.is_lt(F32.abs(F32.sub(t, wt)), 0.01)
+      all = Bool.and(okm, Bool.and(okx, Bool.and(oky, Bool.and(okz, okt))))
+      inc_if_false(all, 0)
+
+def t49_probe(
+  +ox: F32, +oy: F32, +oz: F32, +dx: F32, +dy: F32, +dz: F32,
+  +wm: U32, +wx: F32, +wy: F32, +wz: F32, +wt: F32
+) -> U32:
+  t49_check(t49_hit(Vox.trace(t49_world(), ox, oy, oz, dx, dy, dz)), wm, wx, wy, wz, wt)
+
+def t49_bad() -> U32:
+  b0 = t49_probe(32.5, 32.5, 32.5, 1.0, 0.0, 0.0, 1, F32.neg(1.0), 0.0, 0.0, 30.5)
+  b1 = t49_probe(32.5, 32.5, 32.5, F32.neg(1.0), 0.0, 0.0, 1, 1.0, 0.0, 0.0, 31.5)
+  b2 = t49_probe(32.5, 32.5, 32.5, 0.0, 1.0, 0.0, 1, 0.0, F32.neg(1.0), 0.0, 30.5)
+  b3 = t49_probe(32.5, 32.5, 32.5, 0.0, F32.neg(1.0), 0.0, 1, 0.0, 1.0, 0.0, 31.5)
+  b4 = t49_probe(32.5, 32.5, 32.5, 0.0, 0.0, 1.0, 1, 0.0, 0.0, F32.neg(1.0), 30.5)
+  b5 = t49_probe(32.5, 32.5, 32.5, 0.0, 0.0, F32.neg(1.0), 1, 0.0, 0.0, 1.0, 31.5)
+  U32.add(b0, U32.add(b1, U32.add(b2, U32.add(b3, U32.add(b4, b5)))))
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -1030,3 +1094,4 @@ def main() -> IO(Unit):
     report("T46 engine commit == projected fold", t46_bad())
     report("T47 projection applies op + wwake neutral", t47_bad())
     report("T48 engine region split commutes", t48_bad())
+    report("T49 view3d DDA shell hits", t49_bad())
