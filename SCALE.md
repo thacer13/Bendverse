@@ -143,4 +143,97 @@ file the gap.
 - No GPU / `!` work (that is `M7b`/`M7e`, `G4`).
 - No change to the rule system, the write algebra, or the conservation/Φ laws —
   the window is a coordinate and residency change, not a semantics change.
-- No refactor of the live `Grid`/`Sim` path in this track.
+- No refactor of the live `Grid`/`Sim` path in steps 1–6 (this note's §5).
+  §8 scopes the live migration (steps 7+) **explicitly**: the same
+  coordinate/residency discipline, one gate-green slice at a time.
+
+## 8. Handoff — the live rule migration (S1 endgame, fresh-session brief)
+
+Steps 2–4 (the model: `Window`, explicit resident set, generator selector,
+window-local addressing, motion primitives, window-edge shell, the store
+load/evict policy) and the `G-scale-2` item (3) isomorphism are landed
+(A.95–A.109). What remains is the **rule migration**: moving the live tick
+pipeline off the fixed `Grid` torus onto a window. §7 stays binding — it is a
+coordinate + residency change, not a semantics change.
+
+**State (verify with `bend_status` / `bend_audit` first).** Gate green, 122 laws,
+fast 114/114, sim 25/25, gaps 6 open / 13 closed. Relevant landed API:
+`src/window.bend` (`Window`, `win_index`, `win_lx/ly/lz`, `win_gx/gy/gz`,
+`shift`, `entering`/`leaving`), `src/store.bend` (`assemble_w`, `window_store`),
+`src/winshell.bend` (`win_border`/`gen_at`), `src/maskword.bend` + `src/wordnat.bend`
+(`mask_word_get`), `src/dirtyn.bend` (size-parameterised mask + wrap range).
+
+**The seam.** The write algebra (`Refine`/`PT`, the Φ/count laws), the phase
+fold, and `Support` all work on flat `Array<U32>` indices plus the `Grid` map.
+Only three things assume the box: (i) `Grid.index`/`ix/iy/iz` (the coordinate
+map), (ii) `Grid.neighbor` (torus wrap) and `Grid.step_inside` (box edge), and
+(iii) sizes (`Grid.volume`, `active_list`, `Worldgen.build`, the 64-row
+`Dirty.Mask`). The write algebra is size-agnostic and is reused verbatim.
+
+**Contract for every slice.** The canonical window (`Window.canonical()`)
+reproduces today's `Grid` behaviour bit-for-bit (`win_index == Grid.index` is the
+law `win_canonical_index`, A.105), so each slice keeps the gate green and every
+existing law/test standing until the retirement slice. Land one slice at a time;
+each must be gate-green + fast + sim before the next.
+
+### W1 — window-local coordinate map (`WGrid`), canonical-only
+New `src/wgrid.bend`: `wgrid_index w x y z = Window.win_index w x y z`,
+`wgrid_ix/iy/iz` (via the `win_g*` inverses), and a window-parameterised
+`neighbor`/`step_inside`. Thread a `Window` through `Rules`/`Support`/`Ops`/`Sim`
+as wrappers over `Window.canonical()` (the `_sel` pattern of A.101), so every call
+site is unchanged and the canonical instance is definitionally `Grid`.
+*Evidence:* gate green; fast/sim unchanged; a law `wgrid_canonical_index`
+(delegating to `g7_win_canonical_index`). **Big serial slice — one writer.**
+
+### W2 — window-local neighbour + the margin rule (`G-scale-1`)
+`Rules.plan` builds neighbour indices with `Grid.neighbor` (wraps) and guards with
+`Grid.step_inside`. Window version: resolve the target's global coordinate, and if
+it is resident return its `win_index`, else **inert** (the guard). Without a
+margin this silently changes meaning at the window face, so decide the policy
+here. **Decision B (recommended):** keep the window ≥1 chunk larger than the
+active region, so every neighbour of a resident active cell is resident (support
+radius 1, wake radius 1; a chunk-aligned window then trivially carries the
+margin). Prove the `G-scale-1` invariant: *every `Rules.plan` target of a resident
+cell is resident.* *Evidence:* a law/test plus a T-witness at a window face.
+*Files:* `Rules`, `Support`, `WGrid`.
+
+### W3 — live dirty-set rewire (step 5 item 1, `G-scale-2`)
+Replace the two-`U32` `Dirty.Mask` with `Dirtyn` at the window's row count. For
+the 64-row canonical window this is an equivalence: `mask_word_get` (A.109) is
+exactly the bridge, and the `mark_wake` wrap range is `nat_mod_lt`/`dwin_up_lt`
+(A.104). When the window edge becomes `2^n` the mask generalises. *Files:*
+`src/dirty.bend`, `src/sim.bend`. *Evidence:* fast/sim unchanged; transparency by
+`mask_word_get`.
+
+### W4 — power-of-two window sizing
+A window of edge `2^m` cells is a `2^{3m}` array; the `PT`/`Refine` machinery
+(`swap_ref`, `g5_twidth`) is size-agnostic, so the write algebra needs nothing.
+Parameterise the size assumptions: `active_list`/`dirty_todo` scan bounds,
+`Worldgen.build*` (already coordinate-indexed), and the `[0 : U32^18n]` array
+literals in `Store`. *Evidence:* gate + a 32³ or 128³ window test.
+
+### W5 — live motion driver (`G-scale-8` wiring; closes `G-scale-5`)
+The `Sim`-level loop that moves the focus window: on crossing a chunk boundary,
+`Store.window_store w2 s` (A.108) rebuilds residency, `Store.assemble_w w2`
+(A.103) produces the array, tick, repeat; the renderer (`runners/serve.bend`)
+consumes deltas with global coordinates. `G-scale-5` (phase-fold cost) closes
+here **by measurement** on a real window, not a proof.
+
+### W6 — retirement (`step 6`, `G-scale-6`)
+Once the live path no longer mentions `Grid.index`/`Grid.ix` (W1–W5), those laws
+are torus laws about a shape off the live path. Follow `AGENTS.md`: keep each law,
+mark it retired with the retiring entry, and state in `PLAN.md` §4.1 that it is no
+longer evidence. Never delete or silently weaken. If the canonical window stays
+the default address space, some `Grid` laws may remain valid evidence for the
+reference mode — decide per law.
+
+### Independent pieces (safe worker tracks, no live-path edits)
+- `G-scale-4` residual: the `assemble`/`evict` roundtrip law (`Array` update
+  identity under `G5` + a proof-relevant `is_eq` eliminator).
+- `A.109` residual: the `Word.inc` value lemma and explicit `to_nat`/`from_nat`
+  roundtrips (T110/T116 witness them; only the `inc` brick is missing).
+- `G-scale-1`'s margin *model* lemma, before W1 threads it.
+
+**Before starting W1:** read `AGENTS.md` (retirement + downgrade protocols,
+parallel-track rules). W1 is one writer; the independent pieces above are the
+only safe parallel tracks.
