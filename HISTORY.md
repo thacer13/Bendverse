@@ -4241,3 +4241,37 @@ needs the U32↔**Nat index** bridge (`Dirty.is_dirty_y` is `U32`-indexed,
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 104/104 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS.
+
+### A.108 — G-scale-8 (part): the window store load/evict policy
+
+**Status:** additive on `master`; **no law-count change** (121 laws). Gate green,
+fast **106/106**, sim **25/25**. No live-path change.
+
+**What landed (`src/store.bend`).** The window **load/evict policy** on the store.
+`Store.window_store w s` rebuilds `s` onto exactly `w`'s resident keys
+(`Window.resident_keys w`): a chunk present in `s` is kept, a missing one is
+*loaded* from the selected generator (`chunk_list_sel`), and any chunk not
+resident in `w` is *evicted* by simply not being copied. The leaving chunks drop
+out via the rebuild rather than an in-place delete — the store trie has no
+remove, and `evict` already rebuilds from empty for the same reason. It is the
+store `Store.assemble_w` (A.103) assembles from, so `assemble_w w (window_store w
+s)` is the moved window's world.
+
+`cells_or_gen_sel` is a small helper that matches the `get` result as a
+parameter (Bend cannot `match` a computed value — the same reason
+`evict_key_sel` carries its `Maybe` as an argument).
+
+**Witnesses.** T120: the canonical window moved one chunk in `x`, then
+`assemble_w` over the windowed store, reconstructs `gen` on all 262144 cells —
+the overlap was kept and the entering chunk loaded. T121: the leaving chunk
+`(0,0,0)` is absent from the windowed store and the entering `(4,0,0)` is
+present.
+
+**Not done (the policy *law*).** `assemble_w w (evict s) == assemble_w w s` (and
+hence eviction transparency) is the `G-scale-4` residual: it needs an `Array`
+update-identity under the `G5` boundary and a proof-relevant `is_eq` eliminator.
+The policy is test-witnessed here, not law-proven.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 106/106 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS.

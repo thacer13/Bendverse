@@ -292,3 +292,35 @@ def evict_sel(+sel: Bool, +s: Store) -> Store:
 # same world as the input because `assemble` regenerates dropped chunks.
 def evict(+s: Store) -> Store:
   evict_sel(Worldgen.box(), s)
+
+# ------------------------------------------------------------------ window store
+# S1 / G-scale-8: the window **load/evict policy** on the store. `window_store w s`
+# rebuilds `s` onto exactly `w`'s resident keys: a chunk present in `s` is kept
+# (overlap), a missing one is loaded from the selected generator (entering), and
+# every chunk not resident in `w` is dropped (leaving). It is the store the
+# window's array is assembled from (`Store.assemble_w`); the leaving chunks are
+# evicted implicitly by rebuilding rather than by an in-place remove (the store
+# trie has no delete). Reading a resident chunk never touches `gen`.
+def cells_or_gen_sel(+sel: Bool, m: Maybe<&2, List<&2, U32>>, +k: U32) -> List<&2, U32>:
+  match m:
+    case None{}:
+      chunk_list_sel(sel, k)
+    case Some{+cells}:
+      cells
+
+def load_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<&2, U32>, +s: Store, acc: Store) -> Store:
+  match fuel:
+    case 0n:
+      acc
+    case 1n+p:
+      match keys:
+        case Nil{}:
+          acc
+        case Con{+h, t}:
+          load_keys_go_sel(sel, p, t, s, set(acc, h, cells_or_gen_sel(sel, get(s, h), h)))
+
+def window_store_sel(+sel: Bool, w: Window.Window, s: Store) -> Store:
+  load_keys_go_sel(sel, 64n, Window.resident_keys(w), s, STip{})
+
+def window_store(w: Window.Window, s: Store) -> Store:
+  window_store_sel(Worldgen.box(), w, s)

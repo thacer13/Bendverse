@@ -2171,6 +2171,29 @@ def t109_bad() -> U32:
   +b2 = inc_if_false(Dirtyn.dwin_get(64n, Maskword.mask_word(hi_bit0), 32n), b1)
   inc_if_false(Bool.not(Dirtyn.dwin_get(64n, Maskword.mask_word(hi_bit0), 0n)), b2)
 
+# T120-T121 (S1 / G-scale-8, store load/evict policy): `Store.window_store`
+# rebuilds the store onto a window's resident set (keep overlap, load entering
+# from `gen`, drop leaving). T120: a one-chunk x-move of the canonical window,
+# then `assemble_w` over the windowed store, reconstructs `gen` on all 262144
+# cells (the entering chunk was loaded, the overlap kept). T121: the leaving
+# chunk (0,0,0) is gone and the entering chunk (4,0,0) is present.
+def is_none_m(m: Maybe<&2, List<&2, U32>>) -> U32:
+  match m:
+    case None{}: 0
+    case Some{cells}: 1
+
+def t120_bad() -> U32:
+  +w2 = Window.shift(Window.canonical(), 1, 0, 0)
+  +s = Store.window_store(w2, Store.build_all())
+  a = Store.assemble_w(w2, s)
+  list_cmp_go(U32.to_nat(262144), wgen_go(U32.to_nat(262144), 262143, w2, Nil{}), Grid.to_list(a), 0)
+
+def t121_bad() -> U32:
+  +w2 = Window.shift(Window.canonical(), 1, 0, 0)
+  +s = Store.window_store(w2, Store.build_all())
+  b0 = inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(0, 0, 0))), 0), 0)
+  inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(4, 0, 0))), 1), b0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2278,3 +2301,5 @@ def main() -> IO(Unit):
     report("T107 moved-window shell is window-local (G-scale-8)", t107_bad())
     report("T108 U32 bit test == word dwin_get (G-scale-2 core)", t108_bad())
     report("T109 mask_word places lo/hi halves (G-scale-2 core)", t109_bad())
+    report("T120 window_store->assemble reconstructs gen (G-scale-8 load)", t120_bad())
+    report("T121 window_store evicts leaving, loads entering (G-scale-8)", t121_bad())
