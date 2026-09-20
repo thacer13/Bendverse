@@ -3,6 +3,7 @@ import ../src/grid.bend as Grid
 import ../src/cell.bend as Cell
 import ../src/worldgen.bend as Worldgen
 import ../src/sim.bend as Sim
+import ../src/window.bend as Window
 import ../src/support.bend as Support
 import ../src/store.bend as Store
 import ../src/settle.bend as Settle
@@ -582,6 +583,159 @@ def t47_pair(r: Array<U32> & Store.Store) -> U32:
 def t47() -> U32:
   t47_pair(Serve.bridge2_world_store(Sim.build()))
 
+# ============================================================================
+# T135-T139 (S1 endgame, slice W5, `src/sim.bend`): the live motion driver.
+# `Sim.w5_step` shifts the window, rebuilds residency (`Store.window_store`),
+# assembles the moved window, ticks it and checkpoints; `Sim.w5_trace_step` is
+# the same with the accumulated `Delta` list. These tests start from a crafted
+# world carrying one active sand grain (`w5_grain`, at global coordinates inside
+# the moved window) checkpointed into a store, so the tick actually moves a cell
+# and deltas are non-empty; the settled `Worldgen` world is a fixed point (T4b)
+# and would make every equivalence vacuous.
+# ============================================================================
+
+def w5_grain(w: Window.Window, gx: U32, gy: U32, gz: U32) -> Array<U32>:
+  w0 = empty_world_at(18n)
+  +idx = Window.win_index(w, gx, gy, gz)
+  Array.set(U32, w0, idx, Cell.activate(Cell.encode(Cell.sand(), 0, 0, 0, 0)))
+
+# Tail-recursive list mismatch counter (the arrays are 2^18 long).
+def w5_cmp(fuel: Nat, xs: List<U32>, ys: List<U32>, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match xs:
+        case Nil{}:
+          bad
+        case Con{hx, tx}:
+          match ys:
+            case Nil{}:
+              bad
+            case Con{hy, ty}:
+              w5_cmp(p, tx, ty, inc_if_false(U32.is_eq(hx, hy), bad))
+
+# T135: a moved-window driver step (move canonical -> chunk 1 in x, tick 3,
+# checkpoint, reassemble) agrees, cell for cell, with the same three ticks on the
+# moved window assembled directly from the same store.
+def t135_check(r: Window.Window & Store.Store, +s0: Store.Store) -> U32:
+  match r:
+    case (+w2, s2):
+      got = Store.assemble_w(w2, s2)
+      ref = Sim.ticks_w(w2, 3n, Store.assemble_w(w2, Store.window_store(w2, s0)))
+      w5_cmp(262144n, Grid.to_list(got), Grid.to_list(ref), 0)
+
+def t135() -> U32:
+  +w1 = Window.canonical()
+  +s0 = Sim.w5_ck_store(w1, w5_grain(w1, 40, 40, 20))
+  t135_check(Sim.w5_step(w1, 1, 0, 0, 3n, s0), s0)
+
+# T136: on a *moved* window's array the windowed tick entry and the canonical
+# wrapper compute the same world (`wgrid_neighbor`/`wgrid_step_inside` are
+# origin-independent for the 64^3 frame), which is the "canonically assembled"
+# cross-check the W5 brief asks for.
+def t136() -> U32:
+  +w2 = Window.at(1, 0, 0)
+  a = Sim.ticks_w(w2, 3n, w5_grain(w2, 20, 40, 20))
+  b = Sim.ticks(3n, w5_grain(w2, 20, 40, 20))
+  w5_cmp(262144n, Grid.to_list(a), Grid.to_list(b), 0)
+
+# T137: the moved window's deltas carry *global* coordinates. Ticking the same
+# window-local array with `tick_trace_w w2` and with canonical `tick_trace` gives
+# the same world; every delta of the moved trace is the canonical delta shifted
+# by the window origin (here +16 in x), with the same value.
+def t137_eq2(y: U32, z: U32, val: U32, b: Sim.Delta, +ox: U32, +oy: U32, +oz: U32, +x: U32) -> Bool:
+  match b:
+    case Sim.Delta{x2, y2, z2, val2}:
+      Bool.and(U32.is_eq(x2, U32.add(x, ox)),
+        Bool.and(U32.is_eq(y2, U32.add(y, oy)),
+          Bool.and(U32.is_eq(z2, U32.add(z, oz)), U32.is_eq(val, val2))))
+
+def t137_eq(a: Sim.Delta, b: Sim.Delta, +ox: U32, +oy: U32, +oz: U32) -> Bool:
+  match a:
+    case Sim.Delta{x, y, z, val}:
+      t137_eq2(y, z, val, b, ox, oy, oz, x)
+
+def t137_go(xs: List<Sim.Delta>, ys: List<Sim.Delta>, +ox: U32, +oy: U32, +oz: U32, bad: U32) -> U32:
+  match xs:
+    case Nil{}:
+      match ys:
+        case Nil{}: bad
+        case Con{hy, ty}: U32.add(bad, 1)
+    case Con{hx, tx}:
+      match ys:
+        case Nil{}: U32.add(bad, 1)
+        case Con{hy, ty}:
+          t137_go(tx, ty, ox, oy, oz, inc_if_false(t137_eq(hx, hy, ox, oy, oz), bad))
+
+def t137_pair(c: Array<U32> & List<Sim.Delta>, m: Array<U32> & List<Sim.Delta>) -> U32:
+  match c:
+    case (cw, cds):
+      match m:
+        case (mw, mds):
+          +b0 = w5_cmp(262144n, Grid.to_list(cw), Grid.to_list(mw), 0)
+          t137_go(cds, mds, 16, 0, 0, b0)
+
+def t137() -> U32:
+  +w2 = Window.at(1, 0, 0)
+  t137_pair(Sim.tick_trace(w5_grain(w2, 20, 40, 20)),
+            Sim.tick_trace_w(w2, w5_grain(w2, 20, 40, 20)))
+
+# T138: the driver's trace variant -- moved window, tick 2, checkpoint -- lands on
+# the same world as the directly assembled reference, and its accumulated delta
+# list is non-empty (the renderer feed).
+def t138_check(r: Window.Window & Store.Store & List<Sim.Delta>, +s0: Store.Store) -> U32:
+  match r:
+    case (+w2, s2, ds):
+      got = Store.assemble_w(w2, s2)
+      ref = Sim.ticks_w(w2, 2n, Store.assemble_w(w2, Store.window_store(w2, s0)))
+      +b0 = w5_cmp(262144n, Grid.to_list(got), Grid.to_list(ref), 0)
+      inc_if_false(Bool.not(List.is_empty(&1, Sim.Delta, ds)), b0)
+
+def t138() -> U32:
+  +w1 = Window.canonical()
+  +s0 = Sim.w5_ck_store(w1, w5_grain(w1, 40, 40, 20))
+  t138_check(Sim.w5_trace_step(w1, 1, 0, 0, 2n, s0), s0)
+
+# T139: the checkpoint preserves ticked state across a move. Tick canonical 3
+# times, checkpoint, move one chunk in x and assemble; on the overlap (global x
+# in [16, 64), i.e. moved local x in [0, 48)) the moved array must equal the
+# ticked canonical array (index shifted by 16, no x carry). This is the "later
+# move preserves state" property of the checkpoint.
+def t139_cmp(fuel: Nat, +idx: U32, xs: List<U32>, ys: List<U32>, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match xs:
+        case Nil{}:
+          bad
+        case Con{hx, tx}:
+          match ys:
+            case Nil{}:
+              bad
+            case Con{hy, ty}:
+              +lx = U32.and(idx, 63)
+              +in_ov = U32.is_lt(lx, 48)
+              +ok = Bool.or(Bool.not(in_ov), U32.is_eq(hx, hy))
+              t139_cmp(p, U32.add(idx, 1), tx, ty, inc_if_false(ok, bad))
+
+def t139_ck(r: Array<U32> & Store.Store, +w1: Window.Window, ref1: Array<U32>) -> U32:
+  match r:
+    case (_, ck):
+      +w2 = Window.shift(w1, 1, 0, 0)
+      world2 = Store.assemble_w(w2, Store.window_store(w2, ck))
+      shifted = List.drop(&1, U32, Grid.to_list(ref1), 16n)
+      t139_cmp(262144n, 0, Grid.to_list(world2), shifted, 0)
+
+def t139() -> U32:
+  +w1 = Window.canonical()
+  +s0 = Sim.w5_ck_store(w1, w5_grain(w1, 40, 40, 20))
+  world1 = Sim.ticks_w(w1, 3n, Store.assemble_w(w1, s0))
+  ref1 = Sim.ticks_w(w1, 3n, Store.assemble_w(w1, s0))
+  t139_ck(Sim.w5_checkpoint(w1, world1), w1, ref1)
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -609,3 +763,8 @@ def main() -> IO(Unit):
     report("T45 wake does not leak across the y face (G15)", t45())
     report("T46 in-box wake still propagates (G15 control)", t46())
     report("T47 dense snapshot == sparse (full body, G-bridge-2)", t47())
+    report("T135 w5_step moved-window tick == resident window tick (W5)", t135())
+    report("T136 moved-window ticks == canonical ticks on same array (W5)", t136())
+    report("T137 moved tick deltas carry global coords (W5)", t137())
+    report("T138 w5_trace_step world + accumulated deltas (W5)", t138())
+    report("T139 checkpoint preserves ticked state across a move (W5)", t139())

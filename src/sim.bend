@@ -8,6 +8,8 @@ import ./ops.bend as Ops
 import ./dirty.bend as Dirty
 import ./window.bend as Window
 import ./wgrid.bend as WGrid
+import ./chunk.bend as Chunk
+import ./store.bend as Store
 
 def build() -> Array<U32>:
   Support.pass_all(Worldgen.build())
@@ -309,3 +311,175 @@ def ticks_w(win: Window.Window, fuel: Nat, world: Array<U32>) -> Array<U32>:
 
 def ticks(fuel: Nat, world: Array<U32>) -> Array<U32>:
   ticks_w(Window.canonical(), fuel, world)
+
+# ============================================================================
+# W5 -- the live motion driver (S1 endgame, `SCALE.md` §8, `G-scale-8` wiring).
+#
+# W1 (`src/wgrid.bend`) threaded the resident `Window` through the tick pipeline
+# and W2 made the residency guard explicit, but nothing moved the window: the
+# live path still ticks the fixed `Window.canonical()` box through the plain
+# wrappers. This section is the driver that moves it. On a chunk step it:
+#
+#   1. shifts the window (`Window.shift`),
+#   2. rebuilds residency (`Store.window_store`: keep overlap, load entering
+#      from worldgen, drop leaving),
+#   3. assembles the window-local array (`Store.assemble_w`),
+#   4. ticks it k times (`tick_w` / `ticks_w`), and
+#   5. checkpoints the ticked array back into a store (`w5_checkpoint`), so the
+#      next move keeps the ticked state in the overlap.
+#
+# The checkpoint is the array-to-store inverse of `Store.assemble_w`: it gathers
+# each resident chunk in `Chunk.local` order (`Chunk.local 0` first, the order
+# `Store.chunk_list` stores) keyed by the chunk's global key — the same encoding
+# `runners/serve.bend`'s `bridge2_world_store` performs, written here as a pure
+# `src` equivalent (the runner imports this module, so the direction cannot be
+# reversed).
+#
+# Purity: the driver is `Array<U32>` / `Store.Store` / `List<Delta>` in and out,
+# no IO. It does not touch `Rules`/`Support`/`Ops`/`WGrid` semantics — it only
+# *calls* the windowed tick entries from W1. For the 64³ window the window-local
+# layout is exactly `Grid`'s, so the tick is the same computation the canonical
+# wrapper performs; what the driver adds is the residency/motion seam around it.
+# ============================================================================
+
+# Gather one resident chunk of a window-local array, in `Chunk.local` order
+# (head = local 0). The walk is DESCENDING and conses, mirroring
+# `runners/export.bend`'s `bxe_chunk_cells_go`; the address is `Window.win_index`
+# (torus-free), not `Grid.index`, so a moved window's far-edge chunk lands in its
+# own window-local slot.
+#
+# `w` and `k` are `+` (each axis projection consumes them); `q` is the
+# `(world, value)` pair from `Array.get`, matched as a parameter (Bend does not
+# scrutinize a computed value). The fuel-0 read is discarded; its index is
+# clamped so it cannot underflow.
+def w5_gather_go(
+  fuel: Nat, +w: Window.Window, +k: U32, +i: U32, q: Array<U32> & U32, acc: List<&2, U32>
+) -> Array<U32> & List<&2, U32>:
+  match fuel:
+    case 0n:
+      match q:
+        case (world, v):
+          (world, acc)
+    case 1n+p:
+      match q:
+        case (world, v):
+          +ni = U32.min(U32.sub(i, 1), i)
+          +idx = Window.win_index(
+            w, Chunk.global_x(k, ni), Chunk.global_y(k, ni), Chunk.global_z(k, ni))
+          w5_gather_go(p, w, k, ni, Array.get(U32, world, idx), v <> acc)
+
+def w5_gather(+w: Window.Window, +k: U32, world: Array<U32>) -> Array<U32> & List<&2, U32>:
+  +last = U32.sub(Chunk.cells(), 1)
+  +idx = Window.win_index(
+    w, Chunk.global_x(k, last), Chunk.global_y(k, last), Chunk.global_z(k, last))
+  w5_gather_go(U32.to_nat(Chunk.cells()), w, k, last, Array.get(U32, world, idx), Nil{})
+
+# `Store.set(s, k, cells)` on a gathered `(world, cells)` pair (a computed pair is
+# not a scrutinee, so it is threaded through this parameter).
+def w5_set_chunk(
+  r: Array<U32> & List<&2, U32>, +k: U32, s: Store.Store
+) -> Array<U32> & Store.Store:
+  match r:
+    case (world, cells):
+      (world, Store.set(s, k, cells))
+
+def w5_check_key(
+  r: Array<U32> & Store.Store, +w: Window.Window, +k: U32
+) -> Array<U32> & Store.Store:
+  match r:
+    case (world, s):
+      w5_set_chunk(w5_gather(w, k, world), k, s)
+
+# Write every resident chunk of `w`'s window-local `world` into a fresh store.
+# The result is exactly `Store.window_store(w, s)` for any store whose entry at
+# each resident key is the chunk's cells: it has `Window.resident_keys w` as its
+# key set and assembles back to `world` (`T130`/`T133`/`T134`).
+def w5_check_go(
+  fuel: Nat, +w: Window.Window, keys: List<&2, U32>, r: Array<U32> & Store.Store
+) -> Array<U32> & Store.Store:
+  match fuel:
+    case 0n:
+      r
+    case 1n+p:
+      match keys:
+        case Nil{}:
+          r
+        case Con{+h, t}:
+          w5_check_go(p, w, t, w5_check_key(r, w, h))
+
+def w5_checkpoint(+w: Window.Window, world: Array<U32>) -> Array<U32> & Store.Store:
+  w5_check_go(64n, w, Window.resident_keys(w), (world, Store.empty()))
+
+def w5_ck_get(r: Array<U32> & Store.Store) -> Store.Store:
+  match r:
+    case (_, s):
+      s
+
+# The store projection of a checkpoint (the world array is read-only for the
+# gather, so it is erased here).
+def w5_ck_store(+w: Window.Window, world: Array<U32>) -> Store.Store:
+  w5_ck_get(w5_checkpoint(w, world))
+
+# Shift + residency rebuild (no tick): the window and the store the moved window
+# assembles from. This is the structural half of the driver, testable tick-free.
+def w5_move(
+  w: Window.Window, dcx: U32, dcy: U32, dcz: U32, s: Store.Store
+) -> Window.Window & Store.Store:
+  +w2 = Window.shift(w, dcx, dcy, dcz)
+  (w2, Store.window_store(w2, s))
+
+# One chunk step: move, assemble the moved window, tick `fuel` times, checkpoint.
+# The `(window, store)` pair is threaded through a parameter because a computed
+# pair is not a scrutinee.
+def w5_step_r(r: Window.Window & Store.Store, fuel: Nat) -> Window.Window & Store.Store:
+  match r:
+    case (+w2, +s2):
+      world = Store.assemble_w(w2, s2)
+      world2 = ticks_w(w2, fuel, world)
+      (w2, w5_ck_store(w2, world2))
+
+def w5_step(
+  w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store
+) -> Window.Window & Store.Store:
+  w5_step_r(w5_move(w, dcx, dcy, dcz, s), fuel)
+
+# The tick fold that accumulates `List<Delta>` across `fuel` ticks, each tick's
+# deltas carrying *global* coordinates (W1's `commit_trace` maps the window-local
+# flat index through `WGrid.wgrid_ix/iy/iz` = `Window.win_gx/gy/gz`). `r` is the
+# current `(world, deltas)` pair; a fresh tick's pair is fed to the recursive call
+# as its scrutinee parameter (a computed value cannot be matched). The entry call
+# is `w5_ticks_trace(fuel, w, (world, Nil{}), Nil{})`.
+def w5_ticks_trace(
+  fuel: Nat, +w: Window.Window, r: Array<U32> & List<Delta>, acc: List<Delta>
+) -> Array<U32> & List<Delta>:
+  match fuel:
+    case 0n:
+      match r:
+        case (world, ds):
+          (world, List.append(&1, Delta, acc, ds))
+    case 1n+p:
+      match r:
+        case (world, ds):
+          w5_ticks_trace(p, w, tick_trace_w(w, world), List.append(&1, Delta, acc, ds))
+
+# The trace twin of `w5_step`: same world/move/checkpoint, plus the accumulated
+# deltas for the renderer.
+def w5_trace_fin(
+  +w2: Window.Window, r: Array<U32> & List<Delta>
+) -> Window.Window & Store.Store & List<Delta>:
+  match r:
+    case (world2, ds):
+      (w2, w5_ck_store(w2, world2), ds)
+
+def w5_trace_step_r(
+  r: Window.Window & Store.Store, fuel: Nat
+) -> Window.Window & Store.Store & List<Delta>:
+  match r:
+    case (+w2, +s2):
+      world = Store.assemble_w(w2, s2)
+      w5_trace_fin(w2, w5_ticks_trace(fuel, w2, (world, Nil{}), Nil{}))
+
+def w5_trace_step(
+  w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store
+) -> Window.Window & Store.Store & List<Delta>:
+  w5_trace_step_r(w5_move(w, dcx, dcy, dcz, s), fuel)

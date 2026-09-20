@@ -2398,6 +2398,84 @@ def t127_bad() -> U32:
   +b8 = inc_if_false(Bool.not(WGrid.wgrid_target_resident(w, idx, 4294967295, 0, 0)), b7)
   inc_if_false(WGrid.wgrid_target_resident(w, idx, 1, 0, 0), b8)
 
+# T130-T134 (S1 endgame, slice W5, `src/sim.bend`): the live motion driver's
+# structural half -- no ticks. `Sim.w5_move` shifts the window and rebuilds
+# residency; `Sim.w5_checkpoint` is the array->store inverse of `Store.assemble_w`.
+# T130: `w5_move` + `assemble_w` reconstructs `Worldgen.gen` on the moved window
+# (mirrors T120). T131: the leaving chunk is evicted and the entering chunk
+# loaded (mirrors T121). T132: two driver moves compose to one move by the summed
+# step (shift additivity at the driver level, store content included). T133:
+# `w5_checkpoint` round-trips a *mutated* moved-window array through
+# `Store.assemble_w`, so the gather/set path preserves every cell. T134: the
+# checkpoint's key set is exactly the window's resident set (a non-resident key
+# is absent).
+def t130_pair(r: Window.Window & Store.Store) -> U32:
+  match r:
+    case (+w2, s2):
+      a = Store.assemble_w(w2, s2)
+      list_cmp_go(
+        U32.to_nat(262144), wgen_go(U32.to_nat(262144), 262143, w2, Nil{}), Grid.to_list(a), 0)
+
+def t130_bad() -> U32:
+  t130_pair(Sim.w5_move(Window.canonical(), 1, 0, 0, Store.build_all()))
+
+def t131_pair(r: Window.Window & Store.Store) -> U32:
+  match r:
+    case (_, +s):
+      b0 = inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(0, 0, 0))), 0), 0)
+      inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(4, 0, 0))), 1), b0)
+
+def t131_bad() -> U32:
+  t131_pair(Sim.w5_move(Window.canonical(), 1, 0, 0, Store.build_all()))
+
+def t132_second(r: Window.Window & Store.Store) -> U32:
+  match r:
+    case (+w2, s2):
+      +wa = Window.shift(Window.canonical(), 2, 1, 1)
+      b0 = inc_if_false(U32.is_eq(Window.base_x(w2), Window.base_x(wa)), 0)
+      b1 = inc_if_false(U32.is_eq(Window.base_y(w2), Window.base_y(wa)), b0)
+      b2 = inc_if_false(U32.is_eq(Window.base_z(w2), Window.base_z(wa)), b1)
+      two = Store.assemble_w(w2, s2)
+      one = Store.assemble_w(w2, Store.window_store(w2, Store.build_all()))
+      list_cmp_go(U32.to_nat(262144), Grid.to_list(two), Grid.to_list(one), b2)
+
+def t132_pair(r: Window.Window & Store.Store) -> U32:
+  match r:
+    case (+w1, s1):
+      t132_second(Sim.w5_move(w1, 1, 0, 1, s1))
+
+def t132_bad() -> U32:
+  t132_pair(Sim.w5_move(Window.canonical(), 1, 1, 0, Store.build_all()))
+
+def t133_pair(r: Array<U32> & Store.Store, +w2: Window.Window, ref: Array<U32>) -> U32:
+  match r:
+    case (_, s):
+      b = Store.assemble_w(w2, s)
+      list_cmp_go(U32.to_nat(262144), Grid.to_list(ref), Grid.to_list(b), 0)
+
+def t133_bad() -> U32:
+  +w2 = Window.at(1, 1, 0)
+  +s2 = Store.window_store(w2, Store.build_all())
+  a = Store.assemble_w(w2, s2)
+  a2 = a[5000] <- Cell.encode(Cell.sand(), 0, 3, 0, 0)
+  # an independent copy of the same mutated window world
+  b = Store.assemble_w(w2, s2)
+  b2 = b[5000] <- Cell.encode(Cell.sand(), 0, 3, 0, 0)
+  t133_pair(Sim.w5_checkpoint(w2, a2), w2, b2)
+
+def t134_pair(r: Array<U32> & Store.Store) -> U32:
+  match r:
+    case (_, +s):
+      b0 = inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(0, 0, 0))), 0), 0)
+      b1 = inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(1, 0, 0))), 1), b0)
+      inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(4, 0, 0))), 1), b1)
+
+def t134_bad() -> U32:
+  +w = Window.at(1, 0, 0)
+  +s = Store.window_store(w, Store.build_all())
+  a = Store.assemble_w(w, s)
+  t134_pair(Sim.w5_checkpoint(w, a))
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2521,3 +2599,8 @@ def main() -> IO(Unit):
     report("T125 moved window keeps global coord, no torus fold (W1 seam)", t125_bad())
     report("T126 wgrid margin: in-frame => guard, exhaustive local domain (W2)", t126_bad())
     report("T127 wgrid moved-window residency + face guard (W2)", t127_bad())
+    report("T130 w5_move->assemble reconstructs gen on the moved window (W5)", t130_bad())
+    report("T131 w5_move evicts leaving, loads entering (W5)", t131_bad())
+    report("T132 w5_move composes to one move by the summed step (W5)", t132_bad())
+    report("T133 w5_checkpoint round-trips a mutated window array (W5)", t133_bad())
+    report("T134 w5_checkpoint keys == window resident set (W5)", t134_bad())
