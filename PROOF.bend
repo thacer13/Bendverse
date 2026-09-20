@@ -8,6 +8,7 @@ import ./src/cw.bend as Cw
 import ./src/window.bend as Window
 import ./src/worldgen.bend as Worldgen
 import ./src/winshell.bend as Winshell
+import ./src/maskword.bend as Maskword
 import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
@@ -536,3 +537,10 @@ def Laws.win_border_canonical(x, y, z):
 
 def Laws.win_gen_canonical(x, y, z, s):
   Winshell.win_gen_canonical(x, y, z, s)
+
+# maskword (S1 / G-scale-2 item 3): the `U32 <-> Word` bit-test bridge core.
+# The proof is `src/maskword.bend` (`u32_bit`), built from `and_wbit`,
+# `cmp_wbit_zero`, `shlput_*`/`shl_bit_32`/`shln_one` and `is_ne_wbit`.
+# ----------------------------------------------------------------------------
+def Laws.u32_word_bit(a, k, h):
+  Maskword.u32_bit(a, k, h)

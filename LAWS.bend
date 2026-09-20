@@ -26,6 +26,7 @@ import ./src/dirtyn.bend as Dirtyn
 import ./src/window.bend as Window
 import ./src/worldgen.bend as Worldgen
 import ./src/winshell.bend as Winshell
+import ./src/maskword.bend as Maskword
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -993,3 +994,14 @@ law win_gen_canonical:
   for z: U32
   for s: U32
   {Winshell.gen_at(Window.canonical(), x, y, z, s) == Worldgen.gen(x, y, z, s) : U32}
+
+# S1 / PLAN `G-scale-2` item (3), the U32 <-> Word bit-test core of the
+# `Dirty.Mask <-> Word(64)` isomorphism. `u32_word_bit` is the width-32 bridge:
+# the live `Dirty` bit test (`is_ne(and(a, 1<<k), 0)`) is `Dirtyn`'s `dwin_get`
+# on the `Word(32)` payload at bit `k`. The 64-bit composition (`mask_word` over
+# `cat`, the lo/hi split on the U32/Nat index) remains open -- see §5.3.
+law u32_word_bit:
+  for a: U32
+  for k: Nat
+  for h: {Nat.is_lt(k, 32n) == True{} : Bool}
+  {U32.is_ne(U32.and(a, U32.shln(1, k)), 0) == Dirtyn.dwin_get(32n, Maskword.u32_word(a), k) : Bool}

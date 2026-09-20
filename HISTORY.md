@@ -4202,3 +4202,42 @@ as a sharpened open item rather than half-landed; see §5.3 `G-scale-2`.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 102/102 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS.
+
+### A.107 — G-scale-2 item (3) core: the U32 ↔ `Word` bit-test bridge
+
+**Status:** additive on `master`; **+1 law** (120 → 121). Gate green, fast
+**104/104**, sim **25/25**. No live-path change.
+
+**What landed (`src/maskword.bend`, new).** The `Dirty.Mask ↔ Word(64)`
+isomorphism (G-scale-2 item 3) needs to relate the live `U32` bit test to
+`Dirtyn`'s `Word` model. This module proves the hard core, bottom-up over
+`Word`/`Bool`/`Cmp` (no `Array`, no live path):
+
+- `cat(n, lo, hi) : Word(Nat.add(32n, n))` — `lo` in bits `0..n-1`, `hi` in
+  `n..n+31`; `mask_word m = cat 32 loWord hiWord`;
+- `and_wbit` — `and(w, {k})` is `{k}` or `0` by bit `k` of `w`;
+- `cmp_wbit_zero` — a single-bit word is `GT` the zero word (so `is_eq` is
+  `False`); `cmp_zero_zero` the `EQ` case;
+- `shlput_zero` / `shlput_true_bit0` / `shlput_bit` / `shl_bit_32` / `shln_one`
+  — `Word.shl`/`shl.put` shift the single-bit word, and `U32.shln(1, k)` is the
+  `U32` of `Dirtyn.dwin_bit(32, k)`;
+- `is_ne_wbit` / `is_ne_pick_wbit` / `u32_bit` — the bridge:
+  `U32.is_ne(U32.and(a, U32.shln(1, k)), 0) == Dirtyn.dwin_get(32, u32_word a, k)`;
+- `cat_get_low` / `cat_get_high` — a `dwin_get` into `cat` reads `lo` in the low
+  half and `hi` in the high half.
+
+**Law.** `u32_word_bit` (`LAWS.bend` / `PROOF.bend`, delegated to
+`Maskword.u32_bit`). Witnesses: T108 (the bridge over 32 shift positions on
+varied `U32`s) and T109 (`mask_word` places `lo` in bits 0..31, `hi` in 32..63).
+
+**Not done (the composition residual).** The headline `mask_word_get`
+(`dwin_get(64, mask_word m, y) == Dirty.is_dirty_y(m, y)`) is not landed: it
+needs the U32↔**Nat index** bridge (`Dirty.is_dirty_y` is `U32`-indexed,
+`dwin_get` is `Nat`-indexed) — `U32.to_nat`/`U32.from_nat` roundtrip, a bound on
+`to_nat`, and `to_nat` over `U32.sub`, all over `Word.to_nat`/`Word.inc` (a
+`Word`-value/carry theory not yet developed). Filed as the sharpened §5.3
+`G-scale-2` item (3); the bit-test core (the genuinely hard part) is proven.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 104/104 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS.

@@ -21,6 +21,7 @@ import ../src/cw.bend as Cw
 import ../src/winset.bend as Winset
 import ../src/window.bend as Window
 import ../src/winshell.bend as Winshell
+import ../src/maskword.bend as Maskword
 import ../scenarios/fixtures.bend as Fixtures
 import ../view/voxel.bend as Vox
 import ../runners/view3d.bend as View3d
@@ -2144,6 +2145,32 @@ def t107_bad() -> U32:
   +b1 = inc_if_false(Bool.not(U32.is_eq(shell, box)), b0)
   inc_if_false(U32.is_eq(inside, terr), b1)
 
+# T108-T109 (S1 / G-scale-2 item 3, `src/maskword.bend`): the U32 <-> Word
+# bit-test core. T108: `u32_word_bit` sampled over 32 shift positions on varied
+# U32s -- the live bit test equals `dwin_get` on the word payload. T109: the
+# `mask_word` concatenation places `lo` in bits 0..31 and `hi` in 32..63.
+def t108_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +a = U32.mul(i, 2654435761)
+      +k = U32.to_nat(i)
+      +l = U32.is_ne(U32.and(a, U32.shln(1, k)), 0)
+      +r = Dirtyn.dwin_get(32n, Maskword.u32_word(a), k)
+      t108_go(p, U32.add(i, 1), inc_if_false(Bool.not(Bool.xor(l, r)), bad))
+
+def t108_bad() -> U32:
+  t108_go(32n, 0, 0)
+
+def t109_bad() -> U32:
+  +lo_bit0 = Dirty.or_y(Dirty.zermask(), 0)
+  +hi_bit0 = Dirty.or_y(Dirty.zermask(), 32)
+  +b0 = inc_if_false(Dirtyn.dwin_get(64n, Maskword.mask_word(lo_bit0), 0n), 0)
+  +b1 = inc_if_false(Bool.not(Dirtyn.dwin_get(64n, Maskword.mask_word(lo_bit0), 32n)), b0)
+  +b2 = inc_if_false(Dirtyn.dwin_get(64n, Maskword.mask_word(hi_bit0), 32n), b1)
+  inc_if_false(Bool.not(Dirtyn.dwin_get(64n, Maskword.mask_word(hi_bit0), 0n)), b2)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2249,3 +2276,5 @@ def main() -> IO(Unit):
     report("T104 window relabel range hypothesis necessary (G-scale-7)", t104_bad())
     report("T106 window-edge shell reproduces gen at canonical (G-scale-8)", t106_bad())
     report("T107 moved-window shell is window-local (G-scale-8)", t107_bad())
+    report("T108 U32 bit test == word dwin_get (G-scale-2 core)", t108_bad())
+    report("T109 mask_word places lo/hi halves (G-scale-2 core)", t109_bad())
