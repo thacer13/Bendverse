@@ -20,6 +20,7 @@ import ../src/sim.bend as Sim
 import ../src/cw.bend as Cw
 import ../src/winset.bend as Winset
 import ../src/window.bend as Window
+import ../src/winshell.bend as Winshell
 import ../scenarios/fixtures.bend as Fixtures
 import ../view/voxel.bend as Vox
 import ../runners/view3d.bend as View3d
@@ -2118,6 +2119,31 @@ def t104_bad() -> U32:
   b1 = inc_if_false(U32.is_eq(r, 0), b0)
   inc_if_false(U32.is_ne(l, r), b1)
 
+# T106-T107 (S1 / G-scale-8, window-edge shell, `src/winshell.bend`): the *box*
+# contributes the shell at the window's own edge. T106: the canonical shelled
+# sampler reproduces `Worldgen.gen` at corners, edges, and interior (the
+# `win_gen_canonical` law instance). T107: a *moved* window's shell is
+# window-local -- cell global `x = 16` is the moved window's own `x = 0` face, so
+# it is bedrock even though it is interior to the fixed box (`gen` = terrain).
+def t106_bad() -> U32:
+  +w = Window.canonical()
+  +b0 = inc_if_false(U32.is_eq(Winshell.gen_at(w, 0, 0, 0, 42), Worldgen.gen(0, 0, 0, 42)), 0)
+  +b1 = inc_if_false(U32.is_eq(Winshell.gen_at(w, 63, 30, 10, 42), Worldgen.gen(63, 30, 10, 42)), b0)
+  +b2 = inc_if_false(U32.is_eq(Winshell.gen_at(w, 20, 63, 20, 42), Worldgen.gen(20, 63, 20, 42)), b1)
+  inc_if_false(U32.is_eq(Winshell.gen_at(w, 30, 20, 12, 42), Worldgen.gen(30, 20, 12, 42)), b2)
+
+def t107_bad() -> U32:
+  # window at chunk 1 -> cell origin 16; global x = 16 is its local x = 0 face.
+  +w = Window.at(1, 0, 0)
+  +shell = Winshell.gen_at(w, 16, 30, 30, 42)
+  +inside = Winshell.gen_at(w, 17, 30, 30, 42)
+  +box = Worldgen.gen(16, 30, 30, 42)
+  +terr = Worldgen.gen_terrain(17, 30, 30, 42)
+  +bedrock = Cell.encode(Cell.bedrock(), 63, 0, 0, 0)
+  +b0 = inc_if_false(U32.is_eq(shell, bedrock), 0)
+  +b1 = inc_if_false(Bool.not(U32.is_eq(shell, box)), b0)
+  inc_if_false(U32.is_eq(inside, terr), b1)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2221,3 +2247,5 @@ def main() -> IO(Unit):
     report("T102 window relabel at box corners/edges (G-scale-7)", t102_bad())
     report("T103 window relabel bit facts: sub0 + mask6 (G-scale-7)", t103_bad())
     report("T104 window relabel range hypothesis necessary (G-scale-7)", t104_bad())
+    report("T106 window-edge shell reproduces gen at canonical (G-scale-8)", t106_bad())
+    report("T107 moved-window shell is window-local (G-scale-8)", t107_bad())

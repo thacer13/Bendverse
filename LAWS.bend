@@ -24,6 +24,8 @@ import ./src/cw.bend as Cw
 import ./src/winset.bend as Winset
 import ./src/dirtyn.bend as Dirtyn
 import ./src/window.bend as Window
+import ./src/worldgen.bend as Worldgen
+import ./src/winshell.bend as Winshell
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -974,3 +976,20 @@ law win_canonical_index:
   for hy: {U32.is_lt(y, 64) == True{} : Bool}
   for hz: {U32.is_lt(z, 64) == True{} : Bool}
   {Window.win_index(Window.canonical(), x, y, z) == Grid.index(x, y, z) : U32}
+
+# S1 / PLAN `G-scale-8` (window-edge shell): the *box* contributes the shell at
+# the window's own edge. `win_border_canonical` pins the canonical window to the
+# absolute `gen` border; `win_gen_canonical` pins the shelled sampler to `gen`
+# bit-for-bit, so the fixed-box reference world stands.
+law win_border_canonical:
+  for x: U32
+  for y: U32
+  for z: U32
+  {Winshell.win_border(Window.canonical(), x, y, z) == Winshell.border_of(x, y, z) : Bool}
+
+law win_gen_canonical:
+  for x: U32
+  for y: U32
+  for z: U32
+  for s: U32
+  {Winshell.gen_at(Window.canonical(), x, y, z, s) == Worldgen.gen(x, y, z, s) : U32}

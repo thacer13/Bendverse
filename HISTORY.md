@@ -4158,3 +4158,47 @@ mixed), T103 the two bit facts (`sub 0` over 256 samples, `and 63` over
   `bend test/simtests.bend` native -> 25/25 PASS; `tools/checker-canary.sh` ->
   6 ok / 0 bad.
 - Worker report: `../Bendverse-g7.report.md` (branch `g7`, commit `c8f17b7`).
+
+### A.106 — G-scale-8 (part): the window-edge shell
+
+**Status:** additive on `master`; **+2 laws** (118 → 120). Gate green, fast
+**102/102**, sim **25/25**. No live-path change.
+
+**What landed (`src/winshell.bend`, new).** `SCALE.md`/`G-scale-8`'s open piece is
+that `Worldgen.gen` paints bedrock on the **absolute** planes `x/y/z ∈ {0,63}`, so
+an absolute edge cannot coexist with a moving window. This module makes the
+**box** contribute the shell at the window's own edge:
+
+- `border_of(lx,ly,lz)` — the shell predicate on window-local coordinates (any
+  axis at `0`/`63`), nested exactly like `gen`'s inline border;
+- `win_border w x y z` — its window instance, on the window-local coordinates
+  `win_lx/ly/lz` (a global coordinate outside the window is never `0`/`63`, so
+  only the window's own faces get the shell);
+- `gen_at w x y z s` — bedrock on the window border, shell-free `gen_terrain`
+  inside (via `Worldgen.gen_if`).
+
+**Laws.** `win_border_canonical` (the canonical window's border is the absolute
+`border_of`, via `G7.g7_sub_zero` on all three axes) and `win_gen_canonical`
+(`gen_at canonical` reproduces `Worldgen.gen` bit-for-bit, via the definitional
+`gen_border`). So the fixed-box reference world and its laws stand.
+
+**Witnesses.** T106: `gen_at canonical == gen` at corners, edges, and interior.
+T107: a **moved** window (base chunk `1`, cell origin `16`) has bedrock on its own
+`x=0` face at global `x=16`, even though `gen(16,·,·)` is interior terrain —
+the shell is window-local, not absolute.
+
+**Not done (unchanged G-scale-8 residual).** Wiring the window's load/evict
+policy into the live `Sim` loop. The renderer-facing border predicate
+(`win_border`) is now exposed.
+
+**Also explored (not landed).** The `G-scale-2` item (3) `Dirty.Mask ↔ Word(64)`
+isomorphism has a working **concatenation brick** — `cat(n, lo, hi) : Word(32n) →
+Word(Nat.add(32n, n))` builds the 64-bit word from `lo`/`hi` (and the spike
+`mask_word` typechecks). The remaining work is the U32-bit-test ↔ `Word`-bit-test
+bridge (`is_ne(and(a, 1<<k), 0) == dwin_get(32, aWord, k)`), which needs
+`Word.shl`/`Word.and` single-bit lemmas (a `shlput_zero`/`shlput_bit` tree). Left
+as a sharpened open item rather than half-landed; see §5.3 `G-scale-2`.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 102/102 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS.

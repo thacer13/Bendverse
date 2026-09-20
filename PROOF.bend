@@ -6,6 +6,8 @@ import ./src/grid.bend as Grid
 import ./src/cell.bend as Cell
 import ./src/cw.bend as Cw
 import ./src/window.bend as Window
+import ./src/worldgen.bend as Worldgen
+import ./src/winshell.bend as Winshell
 import ./src/potential.bend as Pot
 import ./src/settle.bend as Settle
 import ./src/parity.bend as Parity
@@ -525,3 +527,12 @@ def Laws.dwin_down_lt(w, y, h):
 # ----------------------------------------------------------------------------
 def Laws.win_canonical_index(x, y, z, hx, hy, hz):
   G7.g7_win_canonical_index(x, y, z, hx, hy, hz)
+
+# winshell (S1 / G-scale-8): the window-edge shell. Proofs are the module lemmas
+# (`src/winshell.bend`); the canonical instances ride on `G7.g7_sub_zero`.
+# ----------------------------------------------------------------------------
+def Laws.win_border_canonical(x, y, z):
+  Winshell.win_border_canonical(x, y, z)
+
+def Laws.win_gen_canonical(x, y, z, s):
+  Winshell.win_gen_canonical(x, y, z, s)
