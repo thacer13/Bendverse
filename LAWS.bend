@@ -29,6 +29,7 @@ import ./src/winshell.bend as Winshell
 import ./src/maskword.bend as Maskword
 import ./src/dirty.bend as Dirty
 import ./src/wgrid.bend as WGrid
+import ./src/wmarg.bend as Wmarg
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -1042,3 +1043,36 @@ law wgrid_canonical_index:
   for hy: {U32.is_lt(y, 64) == True{} : Bool}
   for hz: {U32.is_lt(z, 64) == True{} : Bool}
   {WGrid.wgrid_index(Window.canonical(), x, y, z) == Grid.index(x, y, z) : U32}
+
+# ----------------------------------------------------------------------------
+# S1 endgame (slice W2) -- the window margin / residency (`G-scale-1`).
+#
+# `wgrid_axis_ok` is the engine's per-axis residency test (the window-local
+# coordinate stays in `[0, win_edge)`); `wgrid_step_inside` is the three-axis
+# guard. `wgrid_step_margin` is the direction `G-scale-1` needs: a step whose
+# window-local target coordinate is in-frame is **not** silently inert (the
+# guard is `True`). Under Decision B the driver keeps the active set a chunk
+# inside the frame, so every `Rules.plan`/wake target is in-frame; the driver
+# margin itself is `W5`. The bit proof is `Wmarg.wmarg_mask6_high_zero`
+# (`y < 2^6 => y & ~(2^6-1) = 0`, via `G5.g5_wand_mask_lt`).
+# ----------------------------------------------------------------------------
+law wgrid_step_margin:
+  for w: Window.Window
+  for i: U32
+  for dx: U32
+  for dy: U32
+  for dz: U32
+  for hx: {U32.is_lt(U32.add(Window.win_ix(i), dx), Window.win_edge()) == True{} : Bool}
+  for hy: {U32.is_lt(U32.add(Window.win_iy(i), dy), Window.win_edge()) == True{} : Bool}
+  for hz: {U32.is_lt(U32.add(Window.win_iz(i), dz), Window.win_edge()) == True{} : Bool}
+  {WGrid.wgrid_step_inside(w, i, dx, dy, dz) == True{} : Bool}
+
+# The canonical window's resident set is exactly the box (`x,y,z < 64`): the
+# model-side residency predicate (`wgrid_resident` on a global coordinate)
+# collapses to the in-box test via `G7.g7_sub_zero` on each axis. This is the
+# `G-scale-1` residency bridge on the reference window.
+law wgrid_canonical_resident:
+  for x: U32
+  for y: U32
+  for z: U32
+  {WGrid.wgrid_resident(Window.canonical(), x, y, z) == Wmarg.wmarg_inbox(x, y, z) : Bool}

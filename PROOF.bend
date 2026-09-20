@@ -39,6 +39,7 @@ import ./src/dirtyn.bend as Dirtyn
 import ./src/wordnat.bend as Wordnat
 import ./src/g7.bend as G7
 import ./src/wgrid.bend as WGrid
+import ./src/wmarg.bend as Wmarg
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -537,6 +538,16 @@ def Laws.win_canonical_index(x, y, z, hx, hy, hz):
 # `g7_mask6` route.
 def Laws.wgrid_canonical_index(x, y, z, hx, hy, hz):
   G7.g7_win_canonical_index(x, y, z, hx, hy, hz)
+
+# wmarg (S1 endgame, slice W2): the window margin / residency (`G-scale-1`).
+# `wgrid_step_margin` is the in-frame => guard direction (bit brick
+# `Wmarg.wmarg_mask6_high_zero`); `wgrid_canonical_resident` pins the canonical
+# resident set to the box via `G7.g7_sub_zero`.
+def Laws.wgrid_step_margin(w, i, dx, dy, dz, hx, hy, hz):
+  Wmarg.wgrid_step_margin(w, i, dx, dy, dz, hx, hy, hz)
+
+def Laws.wgrid_canonical_resident(x, y, z):
+  Wmarg.wgrid_canonical_resident(x, y, z)
 
 # winshell (S1 / G-scale-8): the window-edge shell. Proofs are the module lemmas
 # (`src/winshell.bend`); the canonical instances ride on `G7.g7_sub_zero`.

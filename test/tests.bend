@@ -2351,6 +2351,53 @@ def t125_bad() -> U32:
   +b2 = inc_if_false(U32.is_eq(Grid.ix(folded), 8), b1)
   inc_if_false(U32.is_ne(WGrid.wgrid_ix(w, idx), Grid.ix(folded)), b2)
 
+# T126-T127 (S1 endgame, slice W2, `src/wgrid.bend` + `src/wmarg.bend`): the
+# window margin / residency (`G-scale-1`). T126 is an *exhaustive* witness over
+# the guard's whole finite domain: for every window-local coordinate `local` in
+# `0..63` and every rule offset `d` in `{-1,0,1}`, the per-axis guard equals the
+# in-frame test, and an inner coordinate (`1..62`) makes the guard `True` -- so
+# no in-frame rule step is silently inert. T127 witnesses residency on a *moved*
+# window: the model predicate is exact on both faces, a face cell's outward step
+# is inert while its inward step is not, and `wgrid_target_resident` agrees.
+def wgm_go(fuel: Nat, +local: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +inner = Bool.and(U32.is_lt(0, local), U32.is_lt(local, 63))
+      +b0 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_axis_ok(local, 1)), Bool.to_u32(U32.is_lt(U32.add(local, 1), 64))), bad)
+      +b1 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_axis_ok(local, 4294967295)), Bool.to_u32(U32.is_lt(U32.add(local, 4294967295), 64))), b0)
+      +b2 = inc_if_false(Bool.or(Bool.not(inner), WGrid.wgrid_axis_ok(local, 1)), b1)
+      +b3 = inc_if_false(Bool.or(Bool.not(inner), WGrid.wgrid_axis_ok(local, 4294967295)), b2)
+      wgm_go(p, U32.add(local, 1), b3)
+
+def t126_bad() -> U32:
+  b0 = wgm_go(U32.to_nat(64), 0, 0)
+  # the frame edge: outward steps are inert, inward steps are not.
+  b1 = inc_if_false(Bool.not(WGrid.wgrid_axis_ok(0, 4294967295)), b0)
+  b2 = inc_if_false(Bool.not(WGrid.wgrid_axis_ok(63, 1)), b1)
+  b3 = inc_if_false(WGrid.wgrid_axis_ok(0, 1), b2)
+  inc_if_false(WGrid.wgrid_axis_ok(63, 4294967295), b3)
+
+def t127_bad() -> U32:
+  # window at chunk x=1 -> cell origin 16; resident global x in [16, 80).
+  +w = Window.at(1, 0, 0)
+  +b0 = inc_if_false(WGrid.wgrid_resident(w, 16, 30, 30), 0)
+  +b1 = inc_if_false(WGrid.wgrid_resident(w, 79, 30, 30), b0)
+  +b2 = inc_if_false(Bool.not(WGrid.wgrid_resident(w, 15, 30, 30)), b1)
+  +b3 = inc_if_false(Bool.not(WGrid.wgrid_resident(w, 80, 30, 30)), b2)
+  # a face cell (global x=16 -> local x=0): outward inert, inward live.
+  +idx = WGrid.wgrid_index(w, 16, 30, 30)
+  +b4 = inc_if_false(Bool.not(WGrid.wgrid_step_inside(w, idx, 4294967295, 0, 0)), b3)
+  +b5 = inc_if_false(WGrid.wgrid_step_inside(w, idx, 1, 0, 0), b4)
+  # an inner cell (global x=20): both x steps in-frame.
+  +idx2 = WGrid.wgrid_index(w, 20, 30, 30)
+  +b6 = inc_if_false(WGrid.wgrid_step_inside(w, idx2, 4294967295, 0, 0), b5)
+  +b7 = inc_if_false(WGrid.wgrid_step_inside(w, idx2, 1, 0, 0), b6)
+  # the model-side target residency agrees on the face.
+  +b8 = inc_if_false(Bool.not(WGrid.wgrid_target_resident(w, idx, 4294967295, 0, 0)), b7)
+  inc_if_false(WGrid.wgrid_target_resident(w, idx, 1, 0, 0), b8)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2472,3 +2519,5 @@ def main() -> IO(Unit):
     report("T123 wgrid canonical neighbor == Grid.neighbor (W1 seam)", t123_bad())
     report("T124 wgrid canonical step_inside == Grid.step_inside (W1 seam)", t124_bad())
     report("T125 moved window keeps global coord, no torus fold (W1 seam)", t125_bad())
+    report("T126 wgrid margin: in-frame => guard, exhaustive local domain (W2)", t126_bad())
+    report("T127 wgrid moved-window residency + face guard (W2)", t127_bad())

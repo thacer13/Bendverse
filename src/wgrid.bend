@@ -79,10 +79,51 @@ def wgrid_south(w: Window.Window, i: U32) -> U32:
 def wgrid_north(w: Window.Window, i: U32) -> U32:
   wgrid_neighbor(w, i, 0, 0, 1)
 
-# The window-frame closure guard. W1 is canonical-only: the body delegates to
-# `Grid.step_inside`, so the seam is transparent and `Ops.wake`'s existing laws
-# stand. W2 generalises this to "the target is resident (or is explicitly
-# loaded)" against the window's base, which is exactly what makes a step at the
-# moving face inert instead of silently wrapping (`G-scale-1`).
+# The per-axis window-frame guard: does adding `d` to the window-local coordinate
+# `local` keep it in the resident frame `[0, win_edge)`? The high-bit mask test is
+# the same one `Grid.step_inside` uses, so encoding it once here makes the
+# guard's meaning ("the local coordinate stayed in the window") explicit.
+def wgrid_axis_ok(+local: U32, d: U32) -> Bool:
+  U32.is_eq(U32.and(U32.add(local, d), U32.not(U32.sub(Window.win_edge(), 1))), 0)
+
+# The window-frame closure guard over the three axes. The body is exactly
+# `Grid.step_inside` written in `Window` terms (`win_ix = Grid.ix`, `win_edge =
+# Grid.size`), so swapping it in keeps the seam transparent (the `G15` wake
+# guard and every `Rules.plan` target guard reduce to the same term).
+#
+# `G-scale-1` meaning: `wgrid_axis_ok` is the engine's *residency* test. A false
+# axis means the step would leave the resident frame (`Window.win_lx` outer
+# range); under the `Decision B` margin the active set never touches the frame
+# edge, so a valid in-frame target is never silently inert (`wmarg.bend` proves
+# the in-frame -> guard direction; the driver keeps the margin, `W5`).
 def wgrid_step_inside(+w: Window.Window, +i: U32, dx: U32, dy: U32, dz: U32) -> Bool:
-  Grid.step_inside(i, dx, dy, dz)
+  Bool.and(wgrid_axis_ok(Window.win_ix(i), dx),
+    Bool.and(wgrid_axis_ok(Window.win_iy(i), dy), wgrid_axis_ok(Window.win_iz(i), dz)))
+
+# --------------------------------------------------------------- residency model
+# Cell-level residency: is a *global* coordinate `(x,y,z)` inside `win`? Its
+# window-local coordinate (global minus origin) must lie in `[0, win_edge)`. A
+# coordinate below the origin wraps in `U32.sub` to a huge value, so `is_lt` is
+# false there too -- the predicate is total and exact.
+def wgrid_resident_x(+w: Window.Window, x: U32) -> Bool:
+  U32.is_lt(Window.win_lx(w, x), Window.win_edge())
+
+def wgrid_resident_y(+w: Window.Window, y: U32) -> Bool:
+  U32.is_lt(Window.win_ly(w, y), Window.win_edge())
+
+def wgrid_resident_z(+w: Window.Window, z: U32) -> Bool:
+  U32.is_lt(Window.win_lz(w, z), Window.win_edge())
+
+def wgrid_resident(+w: Window.Window, x: U32, y: U32, z: U32) -> Bool:
+  Bool.and(wgrid_resident_x(w, x),
+    Bool.and(wgrid_resident_y(w, y), wgrid_resident_z(w, z)))
+
+# Is the *target* of a rule step (from flat index `i`, by `(dx,dy,dz)`) resident?
+# This is the model-side form of `wgrid_step_inside`: the guard tests the
+# window-local coordinate, residency tests the global coordinate; they agree
+# (`wmarg.bend`).
+def wgrid_target_resident(+w: Window.Window, +i: U32, dx: U32, dy: U32, dz: U32) -> Bool:
+  wgrid_resident(w,
+    U32.add(Window.win_gx(w, i), dx),
+    U32.add(Window.win_gy(w, i), dy),
+    U32.add(Window.win_gz(w, i), dz))
