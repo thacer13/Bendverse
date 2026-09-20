@@ -3946,3 +3946,34 @@ dirty mask).
 
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 81/81 PASS.
+
+### A.100 — genvec + dirtywin integration: shell-free terrain oracle, size-parameterised mask
+
+**Status:** two worker branches (`genvec`, `dirtywin`) landed on `master`, merged
+in order (`genvec` then `dirtywin`, the latter's `test/tests.bend` append conflict
+reconstructed to numeric order T84–T96). **Laws 105 → 114.** Gate green, fast
+**91/91**, sim **25/25**, canary 6/6.
+
+**`genvec` (runners only) — the renderer oracle for decision A.** New additive
+export `bendverse-terrain.bgt`: `magic BGT1`, 16-byte header + 784 × 20-byte
+records `(x,y,z,seed,Worldgen.gen_terrain(x,y,z,seed))`, with a `--terrain PATH`
+flag. The sample spans `x,z ∈ {0,21,42,63,64,80,200}` and `y ∈
+{0,8,20,42,63,64,80,200}` × seeds `{42,43}`, so it contains both **shell planes**
+(where `gen` is bedrock `2017` and `gen_terrain` is not) and **out-of-box**
+coordinates: a renderer cannot pass the port with the absolute shell baked in or
+a `&63` mask. `.bvs`/`.bvg` bytes unchanged. T85–T89.
+
+**`dirtywin` (new `src/` module) — `G-scale-2` groundwork.** `src/dirtyn.bend`
+generalises the `Dirty` row mask to `2^n` rows: `dwin_width`, `dwin_zero`,
+`dwin_is_dirty`/`dwin_get`, `dwin_or_y`, `dwin_mark_if`, `dwin_mark_wake` (with
+`dwin_up`/`dwin_down` as the `mod w` wrap), and the `mark_wake` `y-1`/`y`/`y+1`
+reach **proven** (`dwin_mark_wake_self`/`_up`/`_down`). Nine `dwin_` laws; T90–T94
+(T94: for all `(y,k)`, the `n=6` (`w=64`) instance agrees with `Dirty` row-for-row
+on `or_y` and `mark_wake`). Additive — `src/dirty.bend` and the live 64-row path
+are untouched. `G-scale-2` stays **open (groundwork)**: the live path is not
+rewired, the general wrap-range lemma needs `Nat.mod` range lemmas, and the `n=6`
+agreement is a test, not a law.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 91/91 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS; `bend_canary` -> 6 ok, 0 bad.
