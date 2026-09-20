@@ -818,3 +818,21 @@ law gscale_cw_local_rt:
   for l: U32
   for h: {U32.is_lt(l, 4096) == True{} : Bool}
   {Cw.cw_local(Cw.cw_local_x(l), Cw.cw_local_y(l), Cw.cw_local_z(l)) == l : U32}
+
+# The full three-coordinate forms of the y/z axis roundtrips: the axis field is
+# recovered from an arbitrary packed key/local (any (x, y, z)), rather than from
+# a key whose other slots are zero (`Gscale.gscale_key_y_ext`/`_z_ext`,
+# `Gscale.gscale_local_y_ext`/`_z_ext`). Additive; the bounded laws above stay.
+law gscale_cw_y_rt_full:
+  for x: U32
+  for y: U32
+  for z: U32
+  for h: {U32.is_lt(y, 16384) == True{} : Bool}
+  {Cw.cw_global_y(Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z)), Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))) == y : U32}
+
+law gscale_cw_z_rt_full:
+  for x: U32
+  for y: U32
+  for z: U32
+  for h: {U32.is_lt(z, 16384) == True{} : Bool}
+  {Cw.cw_global_z(Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z)), Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))) == z : U32}

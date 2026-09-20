@@ -940,3 +940,496 @@ def gscale_cw_local_split(+l: U32) ->
         gscale_local_word(gscale_lx(lw), gscale_ly(lw), gscale_lz(lw)),
         Word.and(32n, lw, Bits.mask(32n, 12n)),
         gscale_lmodel_rt(lw))
+
+# ---------------------------------------------------------------------------
+# Full three-coordinate axis roundtrips (S1 groundwork).
+#
+# `gscale_cw_y_rt`/`_z_rt` place the axis in its own slot with zeros elsewhere.
+# The `*_full` laws drop that restriction: the y (resp. z) field must be
+# recovered from an arbitrary packed key/local, i.e. from any (x, y, z). The
+# field extractions below are the `Parity.high6_pack`/`mid6_pack` pattern
+# instantiated at the gscale widths (10-bit key fields, 4-bit local fields).
+# ---------------------------------------------------------------------------
+
+# A shifted field misses a later shift: `(W << k) >> 2k = 0` once `W >> k = 0`.
+def gscale_shr20_shl10_zero(+W: Word(32n), +h: {Bits.shr_n(32n, 10n, W) == Word.zero(32n) : Word(32n)})
+  -> {Bits.shr_n(32n, 20n, Bits.shl_n(32n, W, 10n)) == Word.zero(32n) : Word(32n)}:
+  +inner = Word.and(32n, W, Parity.kmask(10n))
+  +e1 = Parity.shr_shl_kmask(10n, W)
+  +s1 = Equal.cong(Word(32n), Word(32n), v => Bits.shr_n(32n, 10n, v), Bits.shr_n(32n, 10n, Bits.shl_n(32n, W, 10n)), inner, e1)
+  +s2 = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 10n, inner),
+    Word.and(32n, Bits.shr_n(32n, 10n, W), Bits.shr_n(32n, 10n, Parity.kmask(10n))),
+    Word.zero(32n),
+    Bits.shr_n_and(32n, 10n, W, Parity.kmask(10n)),
+    Equal.trans(Word(32n),
+      Word.and(32n, Bits.shr_n(32n, 10n, W), Bits.shr_n(32n, 10n, Parity.kmask(10n))),
+      Word.and(32n, Word.zero(32n), Bits.shr_n(32n, 10n, Parity.kmask(10n))),
+      Word.zero(32n),
+      Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, Bits.shr_n(32n, 10n, Parity.kmask(10n))), Bits.shr_n(32n, 10n, W), Word.zero(32n), h),
+      Bits.w_and_zero(32n, Bits.shr_n(32n, 10n, Parity.kmask(10n)))))
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 20n, Bits.shl_n(32n, W, 10n)),
+    Bits.shr_n(32n, 10n, inner),
+    Word.zero(32n),
+    s1, s2)
+
+def gscale_shr8_shl4_zero(+W: Word(32n), +h: {Bits.shr_n(32n, 4n, W) == Word.zero(32n) : Word(32n)})
+  -> {Bits.shr_n(32n, 8n, Bits.shl_n(32n, W, 4n)) == Word.zero(32n) : Word(32n)}:
+  +inner = Word.and(32n, W, Parity.kmask(4n))
+  +e1 = Parity.shr_shl_kmask(4n, W)
+  +s1 = Equal.cong(Word(32n), Word(32n), v => Bits.shr_n(32n, 4n, v), Bits.shr_n(32n, 4n, Bits.shl_n(32n, W, 4n)), inner, e1)
+  +s2 = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 4n, inner),
+    Word.and(32n, Bits.shr_n(32n, 4n, W), Bits.shr_n(32n, 4n, Parity.kmask(4n))),
+    Word.zero(32n),
+    Bits.shr_n_and(32n, 4n, W, Parity.kmask(4n)),
+    Equal.trans(Word(32n),
+      Word.and(32n, Bits.shr_n(32n, 4n, W), Bits.shr_n(32n, 4n, Parity.kmask(4n))),
+      Word.and(32n, Word.zero(32n), Bits.shr_n(32n, 4n, Parity.kmask(4n))),
+      Word.zero(32n),
+      Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, Bits.shr_n(32n, 4n, Parity.kmask(4n))), Bits.shr_n(32n, 4n, W), Word.zero(32n), h),
+      Bits.w_and_zero(32n, Bits.shr_n(32n, 4n, Parity.kmask(4n)))))
+  Equal.trans(Word(32n),
+    Bits.shr_n(32n, 8n, Bits.shl_n(32n, W, 4n)),
+    Bits.shr_n(32n, 4n, inner),
+    Word.zero(32n),
+    s1, s2)
+
+# The high field of a middle-shifted word clears the lower mask: `((W << 2k) >>
+# k) && mk = 0` -- the `Parity.shr126_low6_zero` pattern at 10/20 and 4/8.
+def gscale_and_shr10_shl20_zero(+W: Word(32n))
+  -> {Word.and(32n, Bits.shr_n(32n, 10n, Bits.shl_n(32n, W, 20n)), gscale_m10()) == Word.zero(32n) : Word(32n)}:
+  +kw = Word.and(32n, Bits.shl_n(32n, W, 10n), Parity.kmask(10n))
+  +e1 = Parity.shr_shl_kmask(10n, Bits.shl_n(32n, W, 10n))
+  +s1 = Equal.cong(Word(32n), Word(32n), v => Bits.shr_n(32n, 10n, v),
+    Bits.shl_n(32n, W, 20n), Bits.shl_n(32n, Bits.shl_n(32n, W, 10n), 10n), {==})
+  +shr = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 10n, Bits.shl_n(32n, W, 20n)),
+    Bits.shr_n(32n, 10n, Bits.shl_n(32n, Bits.shl_n(32n, W, 10n), 10n)),
+    kw,
+    s1, e1)
+  +kcomm = Equal.trans(Word(32n),
+    Word.and(32n, Parity.kmask(10n), gscale_m10()),
+    Word.and(32n, gscale_m10(), Parity.kmask(10n)),
+    gscale_m10(),
+    Bits.w_and_comm(32n, Parity.kmask(10n), gscale_m10()),
+    gscale_kabs10())
+  +ez = gscale_and_shl_zero(32n, 10n, W, gscale_m10(), gscale_shr10_m10())
+  +ezc = Equal.trans(Word(32n),
+    Word.and(32n, Bits.shl_n(32n, W, 10n), gscale_m10()),
+    Word.and(32n, gscale_m10(), Bits.shl_n(32n, W, 10n)),
+    Word.zero(32n),
+    Bits.w_and_comm(32n, Bits.shl_n(32n, W, 10n), gscale_m10()),
+    ez)
+  +s2 = Equal.trans(Word(32n),
+    Word.and(32n, kw, gscale_m10()),
+    Word.and(32n, Bits.shl_n(32n, W, 10n), Word.and(32n, Parity.kmask(10n), gscale_m10())),
+    Word.zero(32n),
+    Bits.w_and_assoc(32n, Bits.shl_n(32n, W, 10n), Parity.kmask(10n), gscale_m10()),
+    Equal.trans(Word(32n),
+      Word.and(32n, Bits.shl_n(32n, W, 10n), Word.and(32n, Parity.kmask(10n), gscale_m10())),
+      Word.and(32n, Bits.shl_n(32n, W, 10n), gscale_m10()),
+      Word.zero(32n),
+      Equal.cong(Word(32n), Word(32n), v => Word.and(32n, Bits.shl_n(32n, W, 10n), v),
+        Word.and(32n, Parity.kmask(10n), gscale_m10()), gscale_m10(), kcomm),
+      ezc))
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 10n, Bits.shl_n(32n, W, 20n)), gscale_m10()),
+    Word.and(32n, kw, gscale_m10()),
+    Word.zero(32n),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m10()),
+      Bits.shr_n(32n, 10n, Bits.shl_n(32n, W, 20n)), kw, shr),
+    s2)
+
+def gscale_and_shr4_shl8_zero(+W: Word(32n))
+  -> {Word.and(32n, Bits.shr_n(32n, 4n, Bits.shl_n(32n, W, 8n)), gscale_m4()) == Word.zero(32n) : Word(32n)}:
+  +kw = Word.and(32n, Bits.shl_n(32n, W, 4n), Parity.kmask(4n))
+  +e1 = Parity.shr_shl_kmask(4n, Bits.shl_n(32n, W, 4n))
+  +s1 = Equal.cong(Word(32n), Word(32n), v => Bits.shr_n(32n, 4n, v),
+    Bits.shl_n(32n, W, 8n), Bits.shl_n(32n, Bits.shl_n(32n, W, 4n), 4n), {==})
+  +shr = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 4n, Bits.shl_n(32n, W, 8n)),
+    Bits.shr_n(32n, 4n, Bits.shl_n(32n, Bits.shl_n(32n, W, 4n), 4n)),
+    kw,
+    s1, e1)
+  +kcomm = Equal.trans(Word(32n),
+    Word.and(32n, Parity.kmask(4n), gscale_m4()),
+    Word.and(32n, gscale_m4(), Parity.kmask(4n)),
+    gscale_m4(),
+    Bits.w_and_comm(32n, Parity.kmask(4n), gscale_m4()),
+    gscale_kabs4())
+  +ez = gscale_and_shl_zero(32n, 4n, W, gscale_m4(), gscale_shr4_m4())
+  +ezc = Equal.trans(Word(32n),
+    Word.and(32n, Bits.shl_n(32n, W, 4n), gscale_m4()),
+    Word.and(32n, gscale_m4(), Bits.shl_n(32n, W, 4n)),
+    Word.zero(32n),
+    Bits.w_and_comm(32n, Bits.shl_n(32n, W, 4n), gscale_m4()),
+    ez)
+  +s2 = Equal.trans(Word(32n),
+    Word.and(32n, kw, gscale_m4()),
+    Word.and(32n, Bits.shl_n(32n, W, 4n), Word.and(32n, Parity.kmask(4n), gscale_m4())),
+    Word.zero(32n),
+    Bits.w_and_assoc(32n, Bits.shl_n(32n, W, 4n), Parity.kmask(4n), gscale_m4()),
+    Equal.trans(Word(32n),
+      Word.and(32n, Bits.shl_n(32n, W, 4n), Word.and(32n, Parity.kmask(4n), gscale_m4())),
+      Word.and(32n, Bits.shl_n(32n, W, 4n), gscale_m4()),
+      Word.zero(32n),
+      Equal.cong(Word(32n), Word(32n), v => Word.and(32n, Bits.shl_n(32n, W, 4n), v),
+        Word.and(32n, Parity.kmask(4n), gscale_m4()), gscale_m4(), kcomm),
+      ezc))
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 4n, Bits.shl_n(32n, W, 8n)), gscale_m4()),
+    Word.and(32n, kw, gscale_m4()),
+    Word.zero(32n),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m4()),
+      Bits.shr_n(32n, 4n, Bits.shl_n(32n, W, 8n)), kw, shr),
+    s2)
+
+# The y field of an arbitrary packed key: `(key >> 20) && 1023 = cy && 1023`.
+def gscale_key_y_ext(+cx: Word(32n), +cy: Word(32n), +cz: Word(32n))
+  -> {Word.and(32n, Bits.shr_n(32n, 20n, gscale_key_word(cx, cy, cz)), gscale_m10()) == Word.and(32n, cy, gscale_m10()) : Word(32n)}:
+  +A = Word.and(32n, cx, gscale_m10())
+  +B = Bits.shl_n(32n, Word.and(32n, cz, gscale_m10()), 10n)
+  +Cc = Bits.shl_n(32n, Word.and(32n, cy, gscale_m10()), 20n)
+  +shA = Bits.shr_n(32n, 20n, A)
+  +shB = Bits.shr_n(32n, 20n, B)
+  +shC = Bits.shr_n(32n, 20n, Cc)
+  +d1 = Bits.shr_n_or(32n, 20n, Word.or(32n, A, B), Cc)
+  +d2 = Bits.shr_n_or(32n, 20n, A, B)
+  +dsh = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 20n, Word.or(32n, Word.or(32n, A, B), Cc)),
+    Word.or(32n, Bits.shr_n(32n, 20n, Word.or(32n, A, B)), shC),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    d1,
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, shC), Bits.shr_n(32n, 20n, Word.or(32n, A, B)), Word.or(32n, shA, shB), d2))
+  +eA = gscale_shr_and_zero(cx, gscale_m10(), 20n, gscale_shr20_m10())
+  +eB = gscale_shr20_shl10_zero(Word.and(32n, cz, gscale_m10()), gscale_shr_and_zero(cz, gscale_m10(), 10n, gscale_shr10_m10()))
+  +eC = gscale_shr20_shl20_m10(cy)
+  +s1 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    Word.or(32n, Word.or(32n, Word.zero(32n), shB), shC),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, cy, gscale_m10())),
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, v, shB), shC), shA, Word.zero(32n), eA),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.zero(32n), shB), shC),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), shC),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, cy, gscale_m10())),
+      Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), v), shC), shB, Word.zero(32n), eB),
+      Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), v), shC, Word.and(32n, cy, gscale_m10()), eC)))
+  +s2 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, cy, gscale_m10())),
+    Word.or(32n, Word.zero(32n), Word.and(32n, cy, gscale_m10())),
+    Word.and(32n, cy, gscale_m10()),
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, cy, gscale_m10())), Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.zero(32n), gscale_or_rzero(Word.zero(32n))),
+    gscale_or_rzero(Word.and(32n, cy, gscale_m10())))
+  +raw = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 20n, gscale_key_word(cx, cy, cz)),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    Word.and(32n, cy, gscale_m10()),
+    dsh, Equal.trans(Word(32n), Word.or(32n, Word.or(32n, shA, shB), shC), Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, cy, gscale_m10())), Word.and(32n, cy, gscale_m10()), s1, s2))
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 20n, gscale_key_word(cx, cy, cz)), gscale_m10()),
+    Word.and(32n, Word.and(32n, cy, gscale_m10()), gscale_m10()),
+    Word.and(32n, cy, gscale_m10()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m10()), Bits.shr_n(32n, 20n, gscale_key_word(cx, cy, cz)), Word.and(32n, cy, gscale_m10()), raw),
+    Bits.w_and_absorb(32n, cy, gscale_m10()))
+
+# The z field of an arbitrary packed key: `(key >> 10) && 1023 = cz && 1023`.
+def gscale_key_z_ext(+cx: Word(32n), +cy: Word(32n), +cz: Word(32n))
+  -> {Word.and(32n, Bits.shr_n(32n, 10n, gscale_key_word(cx, cy, cz)), gscale_m10()) == Word.and(32n, cz, gscale_m10()) : Word(32n)}:
+  +A = Word.and(32n, cx, gscale_m10())
+  +B = Bits.shl_n(32n, Word.and(32n, cz, gscale_m10()), 10n)
+  +Cc = Bits.shl_n(32n, Word.and(32n, cy, gscale_m10()), 20n)
+  +shA = Bits.shr_n(32n, 10n, A)
+  +shB = Bits.shr_n(32n, 10n, B)
+  +shC = Bits.shr_n(32n, 10n, Cc)
+  +d1 = Bits.shr_n_or(32n, 10n, Word.or(32n, A, B), Cc)
+  +d2 = Bits.shr_n_or(32n, 10n, A, B)
+  +dsh = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 10n, Word.or(32n, Word.or(32n, A, B), Cc)),
+    Word.or(32n, Bits.shr_n(32n, 10n, Word.or(32n, A, B)), shC),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    d1,
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, shC), Bits.shr_n(32n, 10n, Word.or(32n, A, B)), Word.or(32n, shA, shB), d2))
+  +eA = gscale_shr_and_zero(cx, gscale_m10(), 10n, gscale_shr10_m10())
+  +eB = gscale_shr10_shl10_m10(cz)
+  +eC = gscale_and_shr10_shl20_zero(Word.and(32n, cy, gscale_m10()))
+  +ea = Equal.trans(Word(32n),
+    Word.and(32n, shA, gscale_m10()),
+    Word.and(32n, Word.zero(32n), gscale_m10()),
+    Word.zero(32n),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m10()), shA, Word.zero(32n), eA),
+    gscale_and_lzero(gscale_m10()))
+  +eb = Equal.trans(Word(32n),
+    Word.and(32n, shB, gscale_m10()),
+    Word.and(32n, Word.and(32n, cz, gscale_m10()), gscale_m10()),
+    Word.and(32n, cz, gscale_m10()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m10()), shB, Word.and(32n, cz, gscale_m10()), eB),
+    Bits.w_and_absorb(32n, cz, gscale_m10()))
+  +d1m = gscale_and_or_z(shA, shB, gscale_m10())
+  +dAll = gscale_and_or_z(Word.or(32n, shA, shB), shC, gscale_m10())
+  +eab_i = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, shB, gscale_m10())), Word.and(32n, shA, gscale_m10()), Word.zero(32n), ea)
+  +eab = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, shC, gscale_m10())), Word.or(32n, Word.and(32n, shA, gscale_m10()), Word.and(32n, shB, gscale_m10())), Word.or(32n, Word.zero(32n), Word.and(32n, shB, gscale_m10())), eab_i)
+  +ebc = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), v), Word.and(32n, shC, gscale_m10())), Word.and(32n, shB, gscale_m10()), Word.and(32n, cz, gscale_m10()), eb)
+  +ecc = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10())), v), Word.and(32n, shC, gscale_m10()), Word.zero(32n), eC)
+  +e2 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m10()), Word.and(32n, shB, gscale_m10())), Word.and(32n, shC, gscale_m10())),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10())), Word.zero(32n)),
+    Word.and(32n, cz, gscale_m10()),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m10()), Word.and(32n, shB, gscale_m10())), Word.and(32n, shC, gscale_m10())),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, shB, gscale_m10())), Word.and(32n, shC, gscale_m10())),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10())), Word.zero(32n)),
+      eab,
+      Equal.trans(Word(32n),
+        Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, shB, gscale_m10())), Word.and(32n, shC, gscale_m10())),
+        Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10())), Word.and(32n, shC, gscale_m10())),
+        Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10())), Word.zero(32n)),
+        ebc, ecc)),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10())), Word.zero(32n)),
+      Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10())),
+      Word.and(32n, cz, gscale_m10()),
+      Bits.w_or_zero(32n, Word.or(32n, Word.zero(32n), Word.and(32n, cz, gscale_m10()))),
+      gscale_or_rzero(Word.and(32n, cz, gscale_m10()))))
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 10n, gscale_key_word(cx, cy, cz)), gscale_m10()),
+    Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), gscale_m10()),
+    Word.and(32n, cz, gscale_m10()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m10()), Bits.shr_n(32n, 10n, gscale_key_word(cx, cy, cz)), Word.or(32n, Word.or(32n, shA, shB), shC), dsh),
+    Equal.trans(Word(32n),
+      Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), gscale_m10()),
+      Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m10()), Word.and(32n, shB, gscale_m10())), Word.and(32n, shC, gscale_m10())),
+      Word.and(32n, cz, gscale_m10()),
+      Equal.trans(Word(32n),
+        Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), gscale_m10()),
+        Word.or(32n, Word.and(32n, Word.or(32n, shA, shB), gscale_m10()), Word.and(32n, shC, gscale_m10())),
+        Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m10()), Word.and(32n, shB, gscale_m10())), Word.and(32n, shC, gscale_m10())),
+        dAll,
+        Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, shC, gscale_m10())), Word.and(32n, Word.or(32n, shA, shB), gscale_m10()), Word.or(32n, Word.and(32n, shA, gscale_m10()), Word.and(32n, shB, gscale_m10())), d1m)),
+      e2))
+
+# The y field of an arbitrary packed local index: `(local >> 8) && 15 = ly && 15`.
+def gscale_local_y_ext(+lx: Word(32n), +ly: Word(32n), +lz: Word(32n))
+  -> {Word.and(32n, Bits.shr_n(32n, 8n, gscale_local_word(lx, ly, lz)), gscale_m4()) == Word.and(32n, ly, gscale_m4()) : Word(32n)}:
+  +A = Word.and(32n, lx, gscale_m4())
+  +B = Bits.shl_n(32n, Word.and(32n, lz, gscale_m4()), 4n)
+  +Cc = Bits.shl_n(32n, Word.and(32n, ly, gscale_m4()), 8n)
+  +shA = Bits.shr_n(32n, 8n, A)
+  +shB = Bits.shr_n(32n, 8n, B)
+  +shC = Bits.shr_n(32n, 8n, Cc)
+  +d1 = Bits.shr_n_or(32n, 8n, Word.or(32n, A, B), Cc)
+  +d2 = Bits.shr_n_or(32n, 8n, A, B)
+  +dsh = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 8n, Word.or(32n, Word.or(32n, A, B), Cc)),
+    Word.or(32n, Bits.shr_n(32n, 8n, Word.or(32n, A, B)), shC),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    d1,
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, shC), Bits.shr_n(32n, 8n, Word.or(32n, A, B)), Word.or(32n, shA, shB), d2))
+  +eA = gscale_shr_and_zero(lx, gscale_m4(), 8n, gscale_shr8_m4())
+  +eB = gscale_shr8_shl4_zero(Word.and(32n, lz, gscale_m4()), gscale_shr_and_zero(lz, gscale_m4(), 4n, gscale_shr4_m4()))
+  +eC = gscale_shr8_shl8_m4(ly)
+  +s1 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    Word.or(32n, Word.or(32n, Word.zero(32n), shB), shC),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, ly, gscale_m4())),
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, v, shB), shC), shA, Word.zero(32n), eA),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.zero(32n), shB), shC),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), shC),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, ly, gscale_m4())),
+      Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), v), shC), shB, Word.zero(32n), eB),
+      Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), v), shC, Word.and(32n, ly, gscale_m4()), eC)))
+  +s2 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, ly, gscale_m4())),
+    Word.or(32n, Word.zero(32n), Word.and(32n, ly, gscale_m4())),
+    Word.and(32n, ly, gscale_m4()),
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, ly, gscale_m4())), Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.zero(32n), gscale_or_rzero(Word.zero(32n))),
+    gscale_or_rzero(Word.and(32n, ly, gscale_m4())))
+  +raw = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 8n, gscale_local_word(lx, ly, lz)),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    Word.and(32n, ly, gscale_m4()),
+    dsh, Equal.trans(Word(32n), Word.or(32n, Word.or(32n, shA, shB), shC), Word.or(32n, Word.or(32n, Word.zero(32n), Word.zero(32n)), Word.and(32n, ly, gscale_m4())), Word.and(32n, ly, gscale_m4()), s1, s2))
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 8n, gscale_local_word(lx, ly, lz)), gscale_m4()),
+    Word.and(32n, Word.and(32n, ly, gscale_m4()), gscale_m4()),
+    Word.and(32n, ly, gscale_m4()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m4()), Bits.shr_n(32n, 8n, gscale_local_word(lx, ly, lz)), Word.and(32n, ly, gscale_m4()), raw),
+    Bits.w_and_absorb(32n, ly, gscale_m4()))
+
+# The z field of an arbitrary packed local index: `(local >> 4) && 15 = lz && 15`.
+def gscale_local_z_ext(+lx: Word(32n), +ly: Word(32n), +lz: Word(32n))
+  -> {Word.and(32n, Bits.shr_n(32n, 4n, gscale_local_word(lx, ly, lz)), gscale_m4()) == Word.and(32n, lz, gscale_m4()) : Word(32n)}:
+  +A = Word.and(32n, lx, gscale_m4())
+  +B = Bits.shl_n(32n, Word.and(32n, lz, gscale_m4()), 4n)
+  +Cc = Bits.shl_n(32n, Word.and(32n, ly, gscale_m4()), 8n)
+  +shA = Bits.shr_n(32n, 4n, A)
+  +shB = Bits.shr_n(32n, 4n, B)
+  +shC = Bits.shr_n(32n, 4n, Cc)
+  +d1 = Bits.shr_n_or(32n, 4n, Word.or(32n, A, B), Cc)
+  +d2 = Bits.shr_n_or(32n, 4n, A, B)
+  +dsh = Equal.trans(Word(32n),
+    Bits.shr_n(32n, 4n, Word.or(32n, Word.or(32n, A, B), Cc)),
+    Word.or(32n, Bits.shr_n(32n, 4n, Word.or(32n, A, B)), shC),
+    Word.or(32n, Word.or(32n, shA, shB), shC),
+    d1,
+    Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, shC), Bits.shr_n(32n, 4n, Word.or(32n, A, B)), Word.or(32n, shA, shB), d2))
+  +eA = gscale_shr_and_zero(lx, gscale_m4(), 4n, gscale_shr4_m4())
+  +eB = gscale_shr4_shl4_m4(lz)
+  +eC = gscale_and_shr4_shl8_zero(Word.and(32n, ly, gscale_m4()))
+  +ea = Equal.trans(Word(32n),
+    Word.and(32n, shA, gscale_m4()),
+    Word.and(32n, Word.zero(32n), gscale_m4()),
+    Word.zero(32n),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m4()), shA, Word.zero(32n), eA),
+    gscale_and_lzero(gscale_m4()))
+  +eb = Equal.trans(Word(32n),
+    Word.and(32n, shB, gscale_m4()),
+    Word.and(32n, Word.and(32n, lz, gscale_m4()), gscale_m4()),
+    Word.and(32n, lz, gscale_m4()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m4()), shB, Word.and(32n, lz, gscale_m4()), eB),
+    Bits.w_and_absorb(32n, lz, gscale_m4()))
+  +d1m = gscale_and_or_z(shA, shB, gscale_m4())
+  +dAll = gscale_and_or_z(Word.or(32n, shA, shB), shC, gscale_m4())
+  +eab_i = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, shB, gscale_m4())), Word.and(32n, shA, gscale_m4()), Word.zero(32n), ea)
+  +eab = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, shC, gscale_m4())), Word.or(32n, Word.and(32n, shA, gscale_m4()), Word.and(32n, shB, gscale_m4())), Word.or(32n, Word.zero(32n), Word.and(32n, shB, gscale_m4())), eab_i)
+  +ebc = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), v), Word.and(32n, shC, gscale_m4())), Word.and(32n, shB, gscale_m4()), Word.and(32n, lz, gscale_m4()), eb)
+  +ecc = Equal.cong(Word(32n), Word(32n), v => Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4())), v), Word.and(32n, shC, gscale_m4()), Word.zero(32n), eC)
+  +e2 = Equal.trans(Word(32n),
+    Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m4()), Word.and(32n, shB, gscale_m4())), Word.and(32n, shC, gscale_m4())),
+    Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4())), Word.zero(32n)),
+    Word.and(32n, lz, gscale_m4()),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m4()), Word.and(32n, shB, gscale_m4())), Word.and(32n, shC, gscale_m4())),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, shB, gscale_m4())), Word.and(32n, shC, gscale_m4())),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4())), Word.zero(32n)),
+      eab,
+      Equal.trans(Word(32n),
+        Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, shB, gscale_m4())), Word.and(32n, shC, gscale_m4())),
+        Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4())), Word.and(32n, shC, gscale_m4())),
+        Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4())), Word.zero(32n)),
+        ebc, ecc)),
+    Equal.trans(Word(32n),
+      Word.or(32n, Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4())), Word.zero(32n)),
+      Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4())),
+      Word.and(32n, lz, gscale_m4()),
+      Bits.w_or_zero(32n, Word.or(32n, Word.zero(32n), Word.and(32n, lz, gscale_m4()))),
+      gscale_or_rzero(Word.and(32n, lz, gscale_m4()))))
+  Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 4n, gscale_local_word(lx, ly, lz)), gscale_m4()),
+    Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), gscale_m4()),
+    Word.and(32n, lz, gscale_m4()),
+    Equal.cong(Word(32n), Word(32n), v => Word.and(32n, v, gscale_m4()), Bits.shr_n(32n, 4n, gscale_local_word(lx, ly, lz)), Word.or(32n, Word.or(32n, shA, shB), shC), dsh),
+    Equal.trans(Word(32n),
+      Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), gscale_m4()),
+      Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m4()), Word.and(32n, shB, gscale_m4())), Word.and(32n, shC, gscale_m4())),
+      Word.and(32n, lz, gscale_m4()),
+      Equal.trans(Word(32n),
+        Word.and(32n, Word.or(32n, Word.or(32n, shA, shB), shC), gscale_m4()),
+        Word.or(32n, Word.and(32n, Word.or(32n, shA, shB), gscale_m4()), Word.and(32n, shC, gscale_m4())),
+        Word.or(32n, Word.or(32n, Word.and(32n, shA, gscale_m4()), Word.and(32n, shB, gscale_m4())), Word.and(32n, shC, gscale_m4())),
+        dAll,
+        Equal.cong(Word(32n), Word(32n), v => Word.or(32n, v, Word.and(32n, shC, gscale_m4())), Word.and(32n, Word.or(32n, shA, shB), gscale_m4()), Word.or(32n, Word.and(32n, shA, gscale_m4()), Word.and(32n, shB, gscale_m4())), d1m)),
+      e2))
+
+# ---------------------------------------------------------------------------
+# The full three-coordinate axis statements, composed through the `U32`
+# wrapper exactly like `gscale_cw_x_word`. `gscale_cw_y_word_full` recovers the
+# y field from a general packed key/local; `gscale_cw_z_word_full` the z field.
+# ---------------------------------------------------------------------------
+
+def gscale_cw_y_word_full(+xw: Word(32n), +yw: Word(32n), +zw: Word(32n)) ->
+  {gscale_global_y_word(gscale_key_word(Bits.shr_n(32n, 4n, xw), Bits.shr_n(32n, 4n, yw), Bits.shr_n(32n, 4n, zw)), gscale_local_word(Word.and(32n, xw, gscale_m4()), Word.and(32n, yw, gscale_m4()), Word.and(32n, zw, gscale_m4()))) == Word.and(32n, yw, Bits.mask(32n, 14n)) : Word(32n)}:
+  +cxw = Bits.shr_n(32n, 4n, xw)
+  +cyw = Bits.shr_n(32n, 4n, yw)
+  +czw = Bits.shr_n(32n, 4n, zw)
+  +lxw = Word.and(32n, xw, gscale_m4())
+  +lyw = Word.and(32n, yw, gscale_m4())
+  +lzw = Word.and(32n, zw, gscale_m4())
+  +kw = gscale_key_word(cxw, cyw, czw)
+  +lw = gscale_local_word(lxw, lyw, lzw)
+  +eA = gscale_key_y_ext(cxw, cyw, czw)
+  +eB0 = gscale_local_y_ext(lxw, lyw, lzw)
+  +eB = Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 8n, lw), gscale_m4()),
+    Word.and(32n, lyw, gscale_m4()),
+    Word.and(32n, yw, gscale_m4()),
+    eB0, Bits.w_and_absorb(32n, yw, gscale_m4()))
+  +eAstep = Equal.cong(Word(32n), Word(32n),
+    x => Word.add(32n, Bits.shl_n(32n, x, 4n), Word.and(32n, Bits.shr_n(32n, 8n, lw), gscale_m4())),
+    Word.and(32n, Bits.shr_n(32n, 20n, kw), gscale_m10()), Word.and(32n, cyw, gscale_m10()), eA)
+  +eBstep = Equal.cong(Word(32n), Word(32n),
+    x => Word.add(32n, Bits.shl_n(32n, Word.and(32n, cyw, gscale_m10()), 4n), x),
+    Word.and(32n, Bits.shr_n(32n, 8n, lw), gscale_m4()), Word.and(32n, yw, gscale_m4()), eB)
+  Equal.trans(Word(32n),
+    gscale_global_y_word(kw, lw),
+    Word.add(32n, Bits.shl_n(32n, Word.and(32n, cyw, gscale_m10()), 4n), Word.and(32n, yw, gscale_m4())),
+    Word.and(32n, yw, Bits.mask(32n, 14n)),
+    Equal.trans(Word(32n),
+      gscale_global_y_word(kw, lw),
+      Word.add(32n, Bits.shl_n(32n, Word.and(32n, cyw, gscale_m10()), 4n), Word.and(32n, Bits.shr_n(32n, 8n, lw), gscale_m4())),
+      Word.add(32n, Bits.shl_n(32n, Word.and(32n, cyw, gscale_m10()), 4n), Word.and(32n, yw, gscale_m4())),
+      eAstep, eBstep),
+    gscale_global_rt(yw))
+
+def gscale_cw_z_word_full(+xw: Word(32n), +yw: Word(32n), +zw: Word(32n)) ->
+  {gscale_global_z_word(gscale_key_word(Bits.shr_n(32n, 4n, xw), Bits.shr_n(32n, 4n, yw), Bits.shr_n(32n, 4n, zw)), gscale_local_word(Word.and(32n, xw, gscale_m4()), Word.and(32n, yw, gscale_m4()), Word.and(32n, zw, gscale_m4()))) == Word.and(32n, zw, Bits.mask(32n, 14n)) : Word(32n)}:
+  +cxw = Bits.shr_n(32n, 4n, xw)
+  +cyw = Bits.shr_n(32n, 4n, yw)
+  +czw = Bits.shr_n(32n, 4n, zw)
+  +lxw = Word.and(32n, xw, gscale_m4())
+  +lyw = Word.and(32n, yw, gscale_m4())
+  +lzw = Word.and(32n, zw, gscale_m4())
+  +kw = gscale_key_word(cxw, cyw, czw)
+  +lw = gscale_local_word(lxw, lyw, lzw)
+  +eA = gscale_key_z_ext(cxw, cyw, czw)
+  +eB0 = gscale_local_z_ext(lxw, lyw, lzw)
+  +eB = Equal.trans(Word(32n),
+    Word.and(32n, Bits.shr_n(32n, 4n, lw), gscale_m4()),
+    Word.and(32n, lzw, gscale_m4()),
+    Word.and(32n, zw, gscale_m4()),
+    eB0, Bits.w_and_absorb(32n, zw, gscale_m4()))
+  +eAstep = Equal.cong(Word(32n), Word(32n),
+    x => Word.add(32n, Bits.shl_n(32n, x, 4n), Word.and(32n, Bits.shr_n(32n, 4n, lw), gscale_m4())),
+    Word.and(32n, Bits.shr_n(32n, 10n, kw), gscale_m10()), Word.and(32n, czw, gscale_m10()), eA)
+  +eBstep = Equal.cong(Word(32n), Word(32n),
+    x => Word.add(32n, Bits.shl_n(32n, Word.and(32n, czw, gscale_m10()), 4n), x),
+    Word.and(32n, Bits.shr_n(32n, 4n, lw), gscale_m4()), Word.and(32n, zw, gscale_m4()), eB)
+  Equal.trans(Word(32n),
+    gscale_global_z_word(kw, lw),
+    Word.add(32n, Bits.shl_n(32n, Word.and(32n, czw, gscale_m10()), 4n), Word.and(32n, zw, gscale_m4())),
+    Word.and(32n, zw, Bits.mask(32n, 14n)),
+    Equal.trans(Word(32n),
+      gscale_global_z_word(kw, lw),
+      Word.add(32n, Bits.shl_n(32n, Word.and(32n, czw, gscale_m10()), 4n), Word.and(32n, Bits.shr_n(32n, 4n, lw), gscale_m4())),
+      Word.add(32n, Bits.shl_n(32n, Word.and(32n, czw, gscale_m10()), 4n), Word.and(32n, zw, gscale_m4())),
+      eAstep, eBstep),
+    gscale_global_rt(zw))
+
+def gscale_cw_y_split_full(+x: U32, +y: U32, +z: U32) ->
+  {Cw.cw_global_y(Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z)), Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))) == U32.and(y, 16383) : U32}:
+  match x:
+    case U32{xw}:
+      match y:
+        case U32{yw}:
+          match z:
+            case U32{zw}:
+              Equal.cong(Word(32n), U32, w => U32{w},
+                gscale_global_y_word(gscale_key_word(Bits.shr_n(32n, 4n, xw), Bits.shr_n(32n, 4n, yw), Bits.shr_n(32n, 4n, zw)), gscale_local_word(Word.and(32n, xw, gscale_m4()), Word.and(32n, yw, gscale_m4()), Word.and(32n, zw, gscale_m4()))),
+                Word.and(32n, yw, Bits.mask(32n, 14n)),
+                gscale_cw_y_word_full(xw, yw, zw))
+
+def gscale_cw_z_split_full(+x: U32, +y: U32, +z: U32) ->
+  {Cw.cw_global_z(Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z)), Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))) == U32.and(z, 16383) : U32}:
+  match x:
+    case U32{xw}:
+      match y:
+        case U32{yw}:
+          match z:
+            case U32{zw}:
+              Equal.cong(Word(32n), U32, w => U32{w},
+                gscale_global_z_word(gscale_key_word(Bits.shr_n(32n, 4n, xw), Bits.shr_n(32n, 4n, yw), Bits.shr_n(32n, 4n, zw)), gscale_local_word(Word.and(32n, xw, gscale_m4()), Word.and(32n, yw, gscale_m4()), Word.and(32n, zw, gscale_m4()))),
+                Word.and(32n, zw, Bits.mask(32n, 14n)),
+                gscale_cw_z_word_full(xw, yw, zw))

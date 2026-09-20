@@ -405,3 +405,39 @@ def Laws.gscale_cw_local_rt(l, h):
         U32.and(U32{l2}, 4095),
         U32{l2},
         s, g)
+
+def Laws.gscale_cw_y_rt_full(x, y, z, h):
+  match x:
+    case U32{xw}:
+      match y:
+        case U32{yw}:
+          match z:
+            case U32{zw}:
+              +x2 = xw
+              +y2 = yw
+              +z2 = zw
+              +s = Gscale.gscale_cw_y_split_full(U32{x2}, U32{y2}, U32{z2})
+              +g = G5.g5_and_mask_id(Commit.v3c_full(14n), U32{y2}, h)
+              Equal.trans(U32,
+                Cw.cw_global_y(Cw.cw_key(Cw.cw_chunk_of(U32{x2}), Cw.cw_chunk_of(U32{y2}), Cw.cw_chunk_of(U32{z2})), Cw.cw_local(Cw.cw_local_of(U32{x2}), Cw.cw_local_of(U32{y2}), Cw.cw_local_of(U32{z2}))),
+                U32.and(U32{y2}, 16383),
+                U32{y2},
+                s, g)
+
+def Laws.gscale_cw_z_rt_full(x, y, z, h):
+  match x:
+    case U32{xw}:
+      match y:
+        case U32{yw}:
+          match z:
+            case U32{zw}:
+              +x2 = xw
+              +y2 = yw
+              +z2 = zw
+              +s = Gscale.gscale_cw_z_split_full(U32{x2}, U32{y2}, U32{z2})
+              +g = G5.g5_and_mask_id(Commit.v3c_full(14n), U32{z2}, h)
+              Equal.trans(U32,
+                Cw.cw_global_z(Cw.cw_key(Cw.cw_chunk_of(U32{x2}), Cw.cw_chunk_of(U32{y2}), Cw.cw_chunk_of(U32{z2})), Cw.cw_local(Cw.cw_local_of(U32{x2}), Cw.cw_local_of(U32{y2}), Cw.cw_local_of(U32{z2}))),
+                U32.and(U32{z2}, 16383),
+                U32{z2},
+                s, g)

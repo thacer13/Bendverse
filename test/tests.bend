@@ -1450,6 +1450,39 @@ def gscale_local_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
 def t70_bad() -> U32:
   gscale_local_go(U32.to_nat(4096), 0, 0)
 
+# T71-T72 (track `gscale2`): the full three-coordinate y/z roundtrips
+# (`gscale_cw_y_rt_full` / `gscale_cw_z_rt_full`). Unlike T67/T68 these pack all
+# three chunk slots, so the axis field has to be recovered from a general key.
+def gscale_y_full_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +x = U32.and(U32.add(U32.mul(i, 7919), 1), 16383)
+      +y = U32.and(U32.add(U32.mul(i, 13), 3), 16383)
+      +z = U32.and(U32.add(U32.mul(i, 29), 2), 16383)
+      +k = Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z))
+      +l = Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))
+      ok = U32.is_eq(Cw.cw_global_y(k, l), y)
+      gscale_y_full_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t71_bad() -> U32:
+  gscale_y_full_go(U32.to_nat(4096), 0, 0)
+
+def gscale_z_full_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +x = U32.and(U32.add(U32.mul(i, 7919), 5), 16383)
+      +y = U32.and(U32.add(U32.mul(i, 13), 7), 16383)
+      +z = U32.and(U32.add(U32.mul(i, 29), 11), 16383)
+      +k = Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z))
+      +l = Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))
+      ok = U32.is_eq(Cw.cw_global_z(k, l), z)
+      gscale_z_full_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t72_bad() -> U32:
+  gscale_z_full_go(U32.to_nat(4096), 0, 0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1518,3 +1551,5 @@ def main() -> IO(Unit):
     report("T68 gscale cw z roundtrip (in range)", t68_bad())
     report("T69 gscale cw key masked roundtrip", t69_bad())
     report("T70 gscale cw local masked roundtrip", t70_bad())
+    report("T71 gscale cw y roundtrip (full 3-coord)", t71_bad())
+    report("T72 gscale cw z roundtrip (full 3-coord)", t72_bad())
