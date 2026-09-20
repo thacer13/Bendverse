@@ -28,6 +28,7 @@ import ./src/worldgen.bend as Worldgen
 import ./src/winshell.bend as Winshell
 import ./src/maskword.bend as Maskword
 import ./src/dirty.bend as Dirty
+import ./src/wgrid.bend as WGrid
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -1021,3 +1022,23 @@ law mask_word_get:
   for y: U32
   for h: {U32.is_lt(y, 64) == True{} : Bool}
   {Dirty.is_dirty_y(m, y) == Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)) : Bool}
+# ----------------------------------------------------------------------------
+# S1 endgame (slice W1) -- the `src/wgrid.bend` coordinate seam.
+#
+# The live rules migrate off the fixed `Grid` torus onto a `Window`; `wgrid_index`
+# is the window-local flat index (`Window.win_index`) that all address sites route
+# through. On the canonical window it must reproduce `Grid.index` exactly, so the
+# canonical engine is unchanged and every existing law/`Witness` stands. The
+# proof is `G7.g7_win_canonical_index` verbatim -- `wgrid_index` is a transparent
+# wrapper over `Window.win_index` -- so this law is the canonical-relabelling
+# evidence for the *seam*, not a new arithmetic claim (the neighbour/guard bodies
+# are still the torus frame in W1; W2 replaces them under `G-scale-1`).
+# ----------------------------------------------------------------------------
+law wgrid_canonical_index:
+  for x: U32
+  for y: U32
+  for z: U32
+  for hx: {U32.is_lt(x, 64) == True{} : Bool}
+  for hy: {U32.is_lt(y, 64) == True{} : Bool}
+  for hz: {U32.is_lt(z, 64) == True{} : Bool}
+  {WGrid.wgrid_index(Window.canonical(), x, y, z) == Grid.index(x, y, z) : U32}

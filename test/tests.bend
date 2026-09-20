@@ -29,6 +29,7 @@ import ../runners/serve.bend as Serve
 import ../runners/export.bend as Export
 import ../src/dirty.bend as Dirty
 import ../src/dirtyn.bend as Dirtyn
+import ../src/wgrid.bend as WGrid
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -2281,6 +2282,75 @@ def t117_go(fuel: Nat, +y: U32, bad: U32) -> U32:
 def t117_bad() -> U32:
   t117_go(64n, 0, 0)
 
+# T122-T125 (S1 endgame, slice W1, `src/wgrid.bend`): the window-local coordinate
+# seam. T122: `wgrid_index` on the canonical window equals `Grid.index` (the seam
+# is a canonical relabelling). T123: `wgrid_neighbor` on the canonical window
+# equals `Grid.neighbor` over a swept index set and eight directions (including
+# the face folds). T124: `wgrid_step_inside` equals `Grid.step_inside`, including
+# the inert face steps that keep the box closed. T125: a *moved* window keeps its
+# global coordinates -- `wgrid_index`/`wgrid_ix` do not torus-fold, so they
+# genuinely differ from `Grid` off the canonical box (this is what W2 builds on).
+def t122_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +w = Window.canonical()
+      +x = U32.and(i, 63)
+      +y = U32.and(U32.mul(i, 7), 63)
+      +z = U32.and(U32.mul(i, 13), 63)
+      t122_go(p, U32.add(i, 1), inc_if_false(U32.is_eq(WGrid.wgrid_index(w, x, y, z), Grid.index(x, y, z)), bad))
+
+def t122_bad() -> U32:
+  t122_go(U32.to_nat(256), 0, 0)
+
+def wgn_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +w = Window.canonical()
+      +b0 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 1, 0, 0), Grid.neighbor(i, 1, 0, 0)), bad)
+      +b1 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 4294967295, 0, 0), Grid.neighbor(i, 4294967295, 0, 0)), b0)
+      +b2 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 0, 1, 0), Grid.neighbor(i, 0, 1, 0)), b1)
+      +b3 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 0, 4294967295, 0), Grid.neighbor(i, 0, 4294967295, 0)), b2)
+      +b4 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 0, 0, 1), Grid.neighbor(i, 0, 0, 1)), b3)
+      +b5 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 0, 0, 4294967295), Grid.neighbor(i, 0, 0, 4294967295)), b4)
+      +b6 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 4294967295, 4294967295, 0), Grid.neighbor(i, 4294967295, 4294967295, 0)), b5)
+      +b7 = inc_if_false(U32.is_eq(WGrid.wgrid_neighbor(w, i, 1, 4294967295, 1), Grid.neighbor(i, 1, 4294967295, 1)), b6)
+      wgn_go(p, U32.add(i, 1), b7)
+
+def t123_bad() -> U32:
+  b0 = wgn_go(U32.to_nat(300), 0, 0)
+  wgn_go(U32.to_nat(300), U32.sub(262144, 300), b0)
+
+def wgs_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +w = Window.canonical()
+      +b0 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_step_inside(w, i, 0, 4294967295, 0)), Bool.to_u32(Grid.step_inside(i, 0, 4294967295, 0))), bad)
+      +b1 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_step_inside(w, i, 0, 1, 0)), Bool.to_u32(Grid.step_inside(i, 0, 1, 0))), b0)
+      +b2 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_step_inside(w, i, 4294967295, 0, 0)), Bool.to_u32(Grid.step_inside(i, 4294967295, 0, 0))), b1)
+      +b3 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_step_inside(w, i, 0, 0, 1)), Bool.to_u32(Grid.step_inside(i, 0, 0, 1))), b2)
+      +b4 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_step_inside(w, i, 0, 0, 4294967295)), Bool.to_u32(Grid.step_inside(i, 0, 0, 4294967295))), b3)
+      +b5 = inc_if_false(U32.is_eq(Bool.to_u32(WGrid.wgrid_step_inside(w, i, 1000, 0, 0)), Bool.to_u32(Grid.step_inside(i, 1000, 0, 0))), b4)
+      wgs_go(p, U32.add(i, 1), b5)
+
+def t124_bad() -> U32:
+  b0 = wgs_go(U32.to_nat(300), 0, 0)
+  wgs_go(U32.to_nat(300), U32.sub(262144, 300), b0)
+
+def t125_bad() -> U32:
+  # window at chunk x=12 -> cell origin 192; global x=200 is its local x=8.
+  +w = Window.at(12, 0, 0)
+  +idx = WGrid.wgrid_index(w, 200, 5, 7)
+  +exp = (8 .|. (7 << 6n) .|. (5 << 12n) : U32)
+  +folded = Grid.index(200, 5, 7)
+  +b0 = inc_if_false(U32.is_eq(idx, exp), 0)
+  # the window inverse recovers the *global* x = 200; `Grid` would report 8.
+  +b1 = inc_if_false(U32.is_eq(WGrid.wgrid_ix(w, idx), 200), b0)
+  +b2 = inc_if_false(U32.is_eq(Grid.ix(folded), 8), b1)
+  inc_if_false(U32.is_ne(WGrid.wgrid_ix(w, idx), Grid.ix(folded)), b2)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2398,3 +2468,7 @@ def main() -> IO(Unit):
     report("T115 mask_word_get over all 64 rows, edge mask (G-scale-2)", t115_bad())
     report("T116 from_nat(to_nat a) = a (G-scale-2 index bridge)", t116_bad())
     report("T117 64-bound + and(31)/and(63) ranges (G-scale-2)", t117_bad())
+    report("T122 wgrid canonical index == Grid.index (W1 seam)", t122_bad())
+    report("T123 wgrid canonical neighbor == Grid.neighbor (W1 seam)", t123_bad())
+    report("T124 wgrid canonical step_inside == Grid.step_inside (W1 seam)", t124_bad())
+    report("T125 moved window keeps global coord, no torus fold (W1 seam)", t125_bad())

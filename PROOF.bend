@@ -38,6 +38,7 @@ import ./src/winset.bend as Winset
 import ./src/dirtyn.bend as Dirtyn
 import ./src/wordnat.bend as Wordnat
 import ./src/g7.bend as G7
+import ./src/wgrid.bend as WGrid
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -528,6 +529,13 @@ def Laws.dwin_down_lt(w, y, h):
 # width 2^6) rewrite both sides to the same nested-`or` term.
 # ----------------------------------------------------------------------------
 def Laws.win_canonical_index(x, y, z, hx, hy, hz):
+  G7.g7_win_canonical_index(x, y, z, hx, hy, hz)
+
+# wgrid (S1 endgame, slice W1): the `src/wgrid.bend` coordinate seam. `wgrid_index`
+# is a transparent wrapper over `Window.win_index`, so the canonical-relabelling
+# proof is `G7.g7_win_canonical_index` verbatim -- the same `g7_sub_zero` +
+# `g7_mask6` route.
+def Laws.wgrid_canonical_index(x, y, z, hx, hy, hz):
   G7.g7_win_canonical_index(x, y, z, hx, hy, hz)
 
 # winshell (S1 / G-scale-8): the window-edge shell. Proofs are the module lemmas
