@@ -10,9 +10,11 @@ import ../src/sim.bend as Sim
 # that Bendview reads. This file is IO (it is a runner), so it owns no engine
 # semantics: it only reads the pure engine's `Array<U32>` and serialises it.
 #
-# Two files are written:
-#   * a chunk-oriented world snapshot (dense over the 64^3 world), and
-#   * gen reference vectors sampled from `Worldgen.gen`.
+# Three files are written:
+#   * a chunk-oriented world snapshot (dense over the 64^3 world),
+#   * gen reference vectors sampled from `Worldgen.gen`, and
+#   * shell-free terrain vectors sampled from `Worldgen.gen_terrain` (the
+#     oracle a renderer port needs when the shell is window-relative).
 #
 # Everything is little-endian. Records are u32 unless stated. The snapshot's
 # unit is a *chunk record keyed by `Chunk.key`* — never a flat 64^3 blob.
@@ -73,6 +75,41 @@ import ../src/sim.bend as Sim
 #   point. Ordering is x-major over the counters, seed slowest.
 #
 #   Total size: 16 + 128 * 20 = 2576 bytes.
+#
+# ----------------------------------------------------------------------------
+# TERRAIN REFERENCE FILE  (default `bendverse-terrain.bgt`)
+# ----------------------------------------------------------------------------
+#   The shell-free companion of the gen vectors: the SAME header/record shape,
+#   but each word is `Worldgen.gen_terrain(x,y,z,seed)` -- `gen` with the
+#   bedrock shell on the ABSOLUTE planes x/y/z in {0,63} removed. Bendview's
+#   WGSL `gen` is bit-exact but has no oracle for the shell-free sampler; this
+#   file is it, and it must reject a port that bakes the shell in or masks
+#   coordinates to the 64 box.
+#
+#   offset  size          field
+#   0       4             magic, ASCII "BGT1" = 66 71 84 49
+#   4       4             version        = 1
+#   8       4             seed (header)  = 42
+#   12      4             vector_count   = 784
+#   16      ...           vector_count records, each 20 bytes:
+#                           +0  u32 x
+#                           +4  u32 y
+#                           +8  u32 z
+#                           +12 u32 seed
+#                           +16 u32 word   (Worldgen.gen_terrain(x,y,z,seed))
+#
+#   The sample is the 7x8x7 cross product
+#     x,z in {0, 21, 42, 63, 64, 80, 200}   (shell, interior, out-of-box)
+#     y   in {0, 8, 20, 42, 63, 64, 80, 200}
+#   crossed with seeds {42, 43}, ordered x-major with seed slowest. It holds a
+#   coordinate on every shell plane, coordinates OUTSIDE the 64 box on every
+#   axis (a `&63`-masking port folds 64->0, 80->16, 200->8 and lands on a
+#   shell), and interiors covering the Empty/Sand/Rock words. Together with the
+#   shell planes -- where `gen` paints bedrock but `gen_terrain` does not -- the
+#   sample spans all four material classes 0/1/2/3, yet no `gen_terrain` word is
+#   ever bedrock. That is the shell-free property a port must reproduce.
+#
+#   Total size: 16 + 784 * 20 = 15696 bytes.
 # ============================================================================
 
 def bxe_seed() -> U32:
@@ -241,6 +278,111 @@ def bxe_gen_bytes() -> List<&2, U32>:
 def bxe_gen_size() -> U32:
   U32.add(16, U32.mul(bxe_gen_count(), 20))
 
+# ------------------------------------------------------------- terrain vectors
+# Coordinate tables: both shell planes ({0,63}), two interiors ({21,42}), and
+# three coordinates OUTSIDE the fixed 64 box ({64,80,200}). The out-of-box
+# values are the ones a torus/masked port cannot reproduce: `gen_terrain` is a
+# pure function of the absolute coordinate and must not fold `x & 63`.
+def genvec_xv(j: U32) -> U32:
+  match j:
+    case 0:
+      0
+    case 1:
+      21
+    case 2:
+      42
+    case 3:
+      63
+    case 4:
+      64
+    case 5:
+      80
+    case _:
+      200
+
+def genvec_zv(j: U32) -> U32:
+  genvec_xv(j)
+
+# y adds 8 (rock) and 20 (sand) interiors; 0/63 are shell planes.
+def genvec_yv(j: U32) -> U32:
+  match j:
+    case 0:
+      0
+    case 1:
+      8
+    case 2:
+      20
+    case 3:
+      42
+    case 4:
+      63
+    case 5:
+      64
+    case 6:
+      80
+    case _:
+      200
+
+def genvec_nx() -> U32:
+  7
+
+def genvec_ny() -> U32:
+  8
+
+def genvec_nz() -> U32:
+  7
+
+def genvec_seed_levels() -> U32:
+  2
+
+# One (seed) plane: nx*ny*nz = 392.
+def genvec_plane() -> U32:
+  U32.mul(U32.mul(genvec_nx(), genvec_ny()), genvec_nz())
+
+def genvec_terrain_count() -> U32:
+  U32.mul(genvec_plane(), genvec_seed_levels())
+
+# Record `c` (ascending) reads x-major: x slowest, then y, then z, seed slowest.
+def genvec_rec_x(+c: U32) -> U32:
+  genvec_xv(U32.div(U32.mod(c, genvec_plane()), U32.mul(genvec_ny(), genvec_nz())))
+
+def genvec_rec_y(+c: U32) -> U32:
+  genvec_yv(U32.mod(U32.div(c, genvec_nz()), genvec_ny()))
+
+def genvec_rec_z(+c: U32) -> U32:
+  genvec_zv(U32.mod(c, genvec_nz()))
+
+def genvec_rec_seed(+c: U32) -> U32:
+  U32.add(bxe_seed(), U32.div(c, genvec_plane()))
+
+# `fuel` counts vectors (784 down to 0); `c` descends so records come out
+# ascending. Each record is (x, y, z, seed, gen_terrain word), little-endian.
+def genvec_terrain_records(fuel: Nat, +c: U32, tail: List<&2, U32>) -> List<&2, U32>:
+  match fuel:
+    case 0n:
+      tail
+    case 1n+p:
+      +x = genvec_rec_x(c)
+      +y = genvec_rec_y(c)
+      +z = genvec_rec_z(c)
+      +s = genvec_rec_seed(c)
+      w = Worldgen.gen_terrain(x, y, z, s)
+      rec = bxe_u32_le(x, bxe_u32_le(y, bxe_u32_le(z, bxe_u32_le(s, bxe_u32_le(w, tail)))))
+      genvec_terrain_records(p, U32.sub(c, 1), rec)
+
+def genvec_magic_bgt(tail: List<&2, U32>) -> List<&2, U32>:
+  66 <> (71 <> (84 <> (49 <> tail)))
+
+def genvec_terrain_bytes() -> List<&2, U32>:
+  genvec_magic_bgt(
+    bxe_u32_le(bxe_version(),
+      bxe_u32_le(bxe_seed(),
+        bxe_u32_le(genvec_terrain_count(),
+          genvec_terrain_records(U32.to_nat(genvec_terrain_count()), U32.sub(genvec_terrain_count(), 1), Nil{})))))
+
+def genvec_terrain_size() -> U32:
+  U32.add(16, U32.mul(genvec_terrain_count(), 20))
+
 # ---------------------------------------------------------------------- IO
 # `File.write_bytes` hands the affine handle back beside its `Result`; drain it
 # (IO.pass exits on failure) and close.
@@ -259,10 +401,10 @@ def bxe_write(path: String, data: List<&2, U32>) -> IO(Unit):
 
 # ------------------------------------------------------------- config / args
 type BxeCfg is Data:
-  BxeCfg{ticks: U32, snap: String, gen: String}
+  BxeCfg{ticks: U32, snap: String, gen: String, terrain: String}
 
 def bxe_default_cfg() -> BxeCfg:
-  BxeCfg{0, "bendverse-snapshot.bvs", "bendverse-gen.bvg"}
+  BxeCfg{0, "bendverse-snapshot.bvs", "bendverse-gen.bvg", "bendverse-terrain.bgt"}
 
 def bxe_num_m(m: Maybe<&2, U32>, d: U32) -> U32:
   match m:
@@ -276,20 +418,25 @@ def bxe_num(s: String, d: U32) -> U32:
 
 def bxe_set_ticks(cfg: BxeCfg, +v: U32) -> BxeCfg:
   match cfg:
-    case BxeCfg{ticks, snap, gen}:
-      BxeCfg{v, snap, gen}
+    case BxeCfg{ticks, snap, gen, terrain}:
+      BxeCfg{v, snap, gen, terrain}
 
 def bxe_set_snap(cfg: BxeCfg, +v: String) -> BxeCfg:
   match cfg:
-    case BxeCfg{ticks, snap, gen}:
-      BxeCfg{ticks, v, gen}
+    case BxeCfg{ticks, snap, gen, terrain}:
+      BxeCfg{ticks, v, gen, terrain}
 
 def bxe_set_gen(cfg: BxeCfg, +v: String) -> BxeCfg:
   match cfg:
-    case BxeCfg{ticks, snap, gen}:
-      BxeCfg{ticks, snap, v}
+    case BxeCfg{ticks, snap, gen, terrain}:
+      BxeCfg{ticks, snap, v, terrain}
 
-# Parse `--ticks N`, `--snapshot PATH`, `--gen PATH`; anything else is ignored.
+def genvec_set_terrain(cfg: BxeCfg, +v: String) -> BxeCfg:
+  match cfg:
+    case BxeCfg{ticks, snap, gen, terrain}:
+      BxeCfg{ticks, snap, gen, v}
+
+# Parse `--ticks N`, `--snapshot PATH`, `--gen PATH`, `--terrain PATH`; anything else is ignored.
 def bxe_parse(xs: List<&1, String>, cfg: BxeCfg) -> BxeCfg:
   match xs:
     case Nil{}:
@@ -314,23 +461,31 @@ def bxe_parse(xs: List<&1, String>, cfg: BxeCfg) -> BxeCfg:
               cfg
             case Con{head2, tail2}:
               bxe_parse(tail2, bxe_set_gen(cfg, head2))
+        case "--terrain":
+          match tail:
+            case Nil{}:
+              cfg
+            case Con{head2, tail2}:
+              bxe_parse(tail2, genvec_set_terrain(cfg, head2))
         case _:
           bxe_parse(tail, cfg)
 
-def bxe_summary(+ticks: U32, +snap: String, +gen: String) -> String:
+def bxe_summary(+ticks: U32, +snap: String, +gen: String, +terrain: String) -> String:
   "export: ticks=" ++ U32.show(ticks)
   ++ " snapshot=" ++ snap ++ " (" ++ U32.show(bxe_snapshot_size()) ++ "B)"
   ++ " gen=" ++ gen ++ " (" ++ U32.show(bxe_gen_size()) ++ "B)"
+  ++ " terrain=" ++ terrain ++ " (" ++ U32.show(genvec_terrain_size()) ++ "B)"
 
 def bxe_run(cfg: BxeCfg) -> IO(Unit):
   match cfg:
-    case BxeCfg{+ticks, +snap, +gen}:
+    case BxeCfg{+ticks, +snap, +gen, +terrain}:
       do IO<Unit>:
         base : Array<U32> = Sim.build()
         world : Array<U32> = Sim.ticks(U32.to_nat(ticks), base)
         bxe_write(snap, bxe_snapshot_bytes(world, ticks))
         bxe_write(gen, bxe_gen_bytes())
-        IO.print(bxe_summary(ticks, snap, gen))
+        bxe_write(terrain, genvec_terrain_bytes())
+        IO.print(bxe_summary(ticks, snap, gen, terrain))
 
 def main() -> IO(Unit):
   do IO<Unit>:

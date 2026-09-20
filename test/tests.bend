@@ -1696,6 +1696,123 @@ def t84_pair(r: Array<U32> & List<&2, U32>) -> U32:
 def t84_bad() -> U32:
   t84_pair(Export.bxe_chunk_cells(Worldgen.build(), Chunk.key(0, 0, 0)))
 
+# T85-T89 (track `genvec`, G-scale-8 / Bendview M3-M4): the shell-free terrain
+# reference `bendverse-terrain.bgt`. T85 pins the format size; T86 the golden
+# words; T87/T88 the exact split (`gen_terrain != gen` on a shell plane,
+# `gen_terrain == gen` off it, out-of-box included); T89 that the sample spans
+# every shell plane and an out-of-box coordinate and never emits bedrock.
+# `gen` paints the ABSOLUTE planes x/y/z in {0,63}; `gen_terrain` never does.
+
+def genvec_b2u(z: Bool) -> U32:
+  Bool.pick(U32, z, 1, 0)
+
+def genvec_shell(+x: U32, +y: U32, +z: U32) -> Bool:
+  +b0 = U32.is_eq(x, 0)
+  +b1 = U32.is_eq(x, 63)
+  +b2 = U32.is_eq(y, 0)
+  +b3 = U32.is_eq(y, 63)
+  +b4 = U32.is_eq(z, 0)
+  +b5 = U32.is_eq(z, 63)
+  Bool.or(Bool.or(b0, b1), Bool.or(Bool.or(b2, b3), Bool.or(b4, b5)))
+
+# T85: the terrain file is 16-byte header + 784 records * 20 bytes = 15696.
+def t85_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Export.genvec_terrain_count(), 784), 0)
+  b1 = inc_if_false(U32.is_eq(Export.genvec_terrain_size(), 15696), b0)
+  b2 = inc_if_false(U32.is_eq(Export.genvec_terrain_size(), U32.add(16, U32.mul(784, 20))), b1)
+  b2
+
+# T86: golden `gen_terrain` words -- the three interior materials (Empty 0,
+# Sand 2, Rock 1539 = encode(3,48,0,0,0)), a shell plane that `gen` would make
+# bedrock (0,63,0 -> 0, not 2017), two out-of-box points, and a seed bump.
+def t86_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Worldgen.gen_terrain(21, 20, 21, 42), 2), 0)
+  b1 = inc_if_false(U32.is_eq(Worldgen.gen_terrain(21, 42, 21, 42), 0), b0)
+  b2 = inc_if_false(U32.is_eq(Worldgen.gen_terrain(21, 3, 21, 42), 1539), b1)
+  b3 = inc_if_false(U32.is_eq(Worldgen.gen_terrain(0, 63, 0, 42), 0), b2)
+  b4 = inc_if_false(U32.is_eq(Worldgen.gen_terrain(200, 20, 200, 42), 0), b3)
+  b5 = inc_if_false(U32.is_eq(Worldgen.gen_terrain(80, 8, 80, 42), 1539), b4)
+  b6 = inc_if_false(U32.is_eq(Worldgen.gen_terrain(21, 20, 21, 43), 0), b5)
+  b6
+
+# T87: on every sample coordinate that lies on a shell plane, `gen` must differ
+# from `gen_terrain` (the shell is exactly what `gen` adds).
+def genvec_shell_ne_go(fuel: Nat, +c: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +x = Export.genvec_rec_x(c)
+      +y = Export.genvec_rec_y(c)
+      +z = Export.genvec_rec_z(c)
+      +s = Export.genvec_rec_seed(c)
+      +g = Worldgen.gen(x, y, z, s)
+      +gt = Worldgen.gen_terrain(x, y, z, s)
+      ne = Bool.not(U32.is_eq(g, gt))
+      bad2 = Bool.pick(U32, genvec_shell(x, y, z), inc_if_false(ne, bad), bad)
+      genvec_shell_ne_go(p, U32.sub(c, 1), bad2)
+
+def t87_bad() -> U32:
+  genvec_shell_ne_go(U32.to_nat(Export.genvec_terrain_count()), U32.sub(Export.genvec_terrain_count(), 1), 0)
+
+# T88: off the shell (including the out-of-box coordinates) `gen_terrain` must
+# equal `gen` exactly -- the two samplers differ only on the shell planes.
+def genvec_free_eq_go(fuel: Nat, +c: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +x = Export.genvec_rec_x(c)
+      +y = Export.genvec_rec_y(c)
+      +z = Export.genvec_rec_z(c)
+      +s = Export.genvec_rec_seed(c)
+      +g = Worldgen.gen(x, y, z, s)
+      +gt = Worldgen.gen_terrain(x, y, z, s)
+      eq = U32.is_eq(g, gt)
+      free = Bool.not(genvec_shell(x, y, z))
+      bad2 = Bool.pick(U32, free, inc_if_false(eq, bad), bad)
+      genvec_free_eq_go(p, U32.sub(c, 1), bad2)
+
+def t88_bad() -> U32:
+  genvec_free_eq_go(U32.to_nat(Export.genvec_terrain_count()), U32.sub(Export.genvec_terrain_count(), 1), 0)
+
+# T89: sample coverage, accumulated as a bitmask -- low 6 bits: gen_terrain
+# materials seen (must be 0,2,3 = 13, never bedrock bit 1); bits 8..13: `gen`
+# materials seen (must be all four = 15, via the shell); bit 16: an out-of-box
+# axis; bit 17: a shell plane. A port that bakes the shell in or masks to 64
+# cannot reproduce this sample.
+def genvec_cov_go(fuel: Nat, +c: U32, +acc: U32) -> U32:
+  match fuel:
+    case 0n:
+      acc
+    case 1n+p:
+      +x = Export.genvec_rec_x(c)
+      +y = Export.genvec_rec_y(c)
+      +z = Export.genvec_rec_z(c)
+      +s = Export.genvec_rec_seed(c)
+      +mgt = Cell.material(Worldgen.gen_terrain(x, y, z, s))
+      +mg = Cell.material(Worldgen.gen(x, y, z, s))
+      +xt = genvec_b2u(U32.is_ge(x, 64))
+      +yt = genvec_b2u(U32.is_ge(y, 64))
+      +zt = genvec_b2u(U32.is_ge(z, 64))
+      +outv = U32.or(xt, U32.or(yt, zt))
+      +shv = genvec_b2u(genvec_shell(x, y, z))
+      +bt = U32.shln(1, U32.to_nat(mgt))
+      +bg = U32.shln(U32.shln(1, U32.to_nat(mg)), 8n)
+      +acc2 = U32.or(acc, U32.or(bt, U32.or(bg, U32.or(U32.shln(outv, 16n), U32.shln(shv, 17n)))))
+      genvec_cov_go(p, U32.sub(c, 1), acc2)
+
+def t89_bad() -> U32:
+  +acc = genvec_cov_go(U32.to_nat(Export.genvec_terrain_count()), U32.sub(Export.genvec_terrain_count(), 1), 0)
+  +tmask = U32.and(acc, 63)
+  +gmask = U32.and(U32.shrn(acc, 8n), 63)
+  +outv = U32.and(U32.shrn(acc, 16n), 1)
+  +shv = U32.and(U32.shrn(acc, 17n), 1)
+  b0 = inc_if_false(U32.is_eq(tmask, 13), 0)
+  b1 = inc_if_false(U32.is_eq(gmask, 15), b0)
+  b2 = inc_if_false(U32.is_eq(outv, 1), b1)
+  b3 = inc_if_false(U32.is_eq(shv, 1), b2)
+  b3
 # T95-T96 (S1 step 3): assembly over an *explicit* resident set. T95: for the
 # canonical window, `Store.assemble_keys (Window.resident_keys canonical)` is the
 # same world as the implicit `Store.assemble` (the loop-bound set == the key
@@ -1794,5 +1911,10 @@ def main() -> IO(Unit):
     report("T82 window no torus mask (global 80 not folded)", t82_bad())
     report("T83 dense record offset maps to true chunk cell (G-bridge-2)", t83_bad())
     report("T84 dense record order == Store.chunk_list (G-bridge-2 s10)", t84_bad())
+    report("T85 terrain .bgt size + count", t85_bad())
+    report("T86 golden terrain vectors (interior/shell/out-of-box)", t86_bad())
+    report("T87 gen != gen_terrain on shell planes", t87_bad())
+    report("T88 gen == gen_terrain shell-free (incl. out-of-box)", t88_bad())
+    report("T89 terrain sample coverage (no bedrock, out-of-box, shell)", t89_bad())
     report("T95 explicit resident set == implicit assemble (S1 step 3)", t95_bad())
     report("T96 explicit resident set reconstructs worldgen (S1 step 3)", t96_bad())
