@@ -246,3 +246,272 @@ def swap_m_comm(
             set_m_if(B, n, i, v, zi),
             Equal.cong(R.PT, R.PT, x => R.swap_m(x, n, i, v), R.swap_m(t, n, j, w), B, e2),
             eB)))))
+
+# ------------------------------------------------------------------ V3c-1b
+# Schedule invariance, the list/region layer: folding a `List` of point writes
+# equals folding under any region split, provided the writes target distinct
+# leaves. This lifts the single-write kernel `swap_m_comm` (V3c-1) to the shape
+# the engine actually produces.
+#
+# A `V3cWrite` is one point write `(index, value)`. `v3c_fold(ws, t, n)` applies
+# the writes of `ws` in order to the `2^n`-leaf tree `t`, each by the engine-facing
+# `Refine.swap_m` (the `Refine.PT` presentation of `Array.set`). The two facts
+# proved here are:
+#
+#   v3c_write_past_fold:  one write commutes past an entire fold of writes that
+#                         all target leaves distinct from its own;
+#   v3c_fold_commutes:    an append/permutation of pairwise-distinct writes
+#                         yields the same tree as the sequential fold.
+#
+# `v3c_fold_commutes` is the region-split equality: two regions may fold their
+# write lists independently onto the same starting tree and the merged result is
+# the same tree, so the scheduler is free to choose the region order.
+#
+# Distinctness is `v3c_all_ne(ws, t, n, i)` (every write of `ws` avoids leaf `i`)
+# and `v3c_pair_ne(xs, ys, t, n)` (every write of `xs` avoids every write of
+# `ys`); both are built from `ne_idx`. Because `ne_idx` reads only the tree's
+# constructor shape, it is invariant under a write (`v3c_ne_idx_swap`), which is
+# what lets the distinctness hypotheses survive the changing accumulator tree.
+# The fold itself is a structural recursion on the write list, so it stays in the
+# well-founded fragment.
+
+
+# ---------------- fold over a list of point writes ----------------
+
+type V3cWrite is Data:
+  MkWrite{index: U32, value: U32}
+
+def v3c_fold(+ws: +List<V3cWrite>, t: R.PT, +n: U32) -> R.PT:
+  match ws:
+    case Nil{}:
+      t
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          v3c_fold(tl, R.swap_m(t, n, index, value), n)
+
+def v3c_band(+a: Bool, +b: Bool) -> Bool:
+  Bool.pick(Bool, a, b, False{})
+
+def v3c_band_cong2(+a1: Bool, +a2: Bool, +b1: Bool, +b2: Bool,
+  +ha: {a1 == a2 : Bool}, +hb: {b1 == b2 : Bool})
+  -> {v3c_band(a1, b1) == v3c_band(a2, b2) : Bool}:
+  Equal.trans(Bool,
+    v3c_band(a1, b1),
+    v3c_band(a1, b2),
+    v3c_band(a2, b2),
+    Equal.cong(Bool, Bool, x => v3c_band(a1, x), b1, b2, hb),
+    Equal.cong(Bool, Bool, x => v3c_band(x, b2), a1, a2, ha))
+
+def v3c_and_true_l(+a: Bool, +b: Bool, +h: {v3c_band(a, b) == True{} : Bool})
+  -> {a == True{} : Bool}:
+  match a:
+    case True{}: {==}
+    case False{}: h
+
+def v3c_and_true_r(+a: Bool, +b: Bool, +h: {v3c_band(a, b) == True{} : Bool})
+  -> {b == True{} : Bool}:
+  match a:
+    case True{}: h
+    case False{}:
+      Equal.cong(Bool, Bool, x => Bool.pick(Bool, x, True{}, b), False{}, True{}, h)
+
+# ---------------- distinctness predicates ----------------
+
+def v3c_all_ne(+ws: +List<V3cWrite>, +t: R.PT, +n: U32, +i: U32) -> Bool:
+  match ws:
+    case Nil{}:
+      True{}
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          v3c_band(ne_idx(t, n, i, index), v3c_all_ne(tl, t, n, i))
+
+def v3c_pair_ne(+xs: +List<V3cWrite>, +ys: +List<V3cWrite>, +t: R.PT, +n: U32) -> Bool:
+  match xs:
+    case Nil{}:
+      True{}
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          v3c_band(v3c_all_ne(ys, t, n, index), v3c_pair_ne(tl, ys, t, n))
+
+# ---------------- tree-shape invariance of ne_idx ----------------
+
+def v3c_ne_idx_pick(A: R.PT, B: R.PT, +n: U32, +i: U32, +j: U32, +z: Bool)
+  -> {ne_idx(Bool.pick(R.PT, z, A, B), n, i, j) == Bool.pick(Bool, z, ne_idx(A, n, i, j), ne_idx(B, n, i, j)) : Bool}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
+def v3c_bool_pick_same(+z: Bool, +b: Bool) -> {Bool.pick(Bool, z, b, b) == b : Bool}:
+  match z:
+    case True{}: {==}
+    case False{}: {==}
+
+def v3c_pick_cong2(+z: Bool, +a1: Bool, +a2: Bool, +b1: Bool, +b2: Bool,
+  +ha: {a1 == a2 : Bool}, +hb: {b1 == b2 : Bool})
+  -> {Bool.pick(Bool, z, a1, b1) == Bool.pick(Bool, z, a2, b2) : Bool}:
+  Equal.trans(Bool,
+    Bool.pick(Bool, z, a1, b1),
+    Bool.pick(Bool, z, a2, b1),
+    Bool.pick(Bool, z, a2, b2),
+    Equal.cong(Bool, Bool, x => Bool.pick(Bool, z, x, b1), a1, a2, ha),
+    Equal.cong(Bool, Bool, x => Bool.pick(Bool, z, a2, x), b1, b2, hb))
+
+def v3c_mkt(+A: R.PT, +B: R.PT) -> R.PT:
+  R.PN{A, B}
+
+def v3c_ne_idx_swap(+t: R.PT, +n: U32, +ii: U32, +v: U32, +i: U32, +j: U32)
+  -> {ne_idx(R.swap_m(t, n, ii, v), n, i, j) == ne_idx(t, n, i, j) : Bool}:
+  match t:
+    case R.PL{x}:
+      {==}
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      +zi = U32.is_lt(ii, h)
+      +zj = U32.is_lt(j, h)
+      +zii = U32.is_lt(i, h)
+      +A = v3c_mkt(R.swap_m(xs, h, ii, v), ys)
+      +B = v3c_mkt(xs, R.swap_m(ys, h, U32.sub(ii, h), v))
+      +ihx = v3c_ne_idx_swap(xs, h, ii, v, i, j)
+      +ihy = v3c_ne_idx_swap(ys, h, U32.sub(ii, h), v, U32.sub(i, h), U32.sub(j, h))
+      +Xsp = ne_idx(R.swap_m(xs, h, ii, v), h, i, j)
+      +Xs = ne_idx(xs, h, i, j)
+      +Ysp = ne_idx(R.swap_m(ys, h, U32.sub(ii, h), v), h, U32.sub(i, h), U32.sub(j, h))
+      +Ys = ne_idx(ys, h, U32.sub(i, h), U32.sub(j, h))
+      +W = ne_idx_if(Xs, Ys, zj, zii)
+      +eA = Equal.cong(Bool, Bool, x => ne_idx_if(x, Ys, zj, zii), Xsp, Xs, ihx)
+      +eB = Equal.cong(Bool, Bool, x => ne_idx_if(Xs, x, zj, zii), Ysp, Ys, ihy)
+      +ep = Equal.trans(Bool,
+        Bool.pick(Bool, zi, ne_idx(A, n, i, j), ne_idx(B, n, i, j)),
+        Bool.pick(Bool, zi, W, W),
+        W,
+        v3c_pick_cong2(zi, ne_idx(A, n, i, j), W, ne_idx(B, n, i, j), W, eA, eB),
+        v3c_bool_pick_same(zi, W))
+      Equal.trans(Bool,
+        ne_idx(Bool.pick(R.PT, zi, A, B), n, i, j),
+        Bool.pick(Bool, zi, ne_idx(A, n, i, j), ne_idx(B, n, i, j)),
+        ne_idx(R.PN{xs, ys}, n, i, j),
+        v3c_ne_idx_pick(A, B, n, i, j, zi),
+        ep)
+
+# ---------------- predicate transport ----------------
+
+def v3c_all_ne_swap(+ws: +List<V3cWrite>, +t: R.PT, +n: U32, +ii: U32, +v: U32, +i: U32)
+  -> {v3c_all_ne(ws, R.swap_m(t, n, ii, v), n, i) == v3c_all_ne(ws, t, n, i) : Bool}:
+  match ws:
+    case Nil{}:
+      {==}
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          v3c_band_cong2(
+            ne_idx(R.swap_m(t, n, ii, v), n, i, index),
+            ne_idx(t, n, i, index),
+            v3c_all_ne(tl, R.swap_m(t, n, ii, v), n, i),
+            v3c_all_ne(tl, t, n, i),
+            v3c_ne_idx_swap(t, n, ii, v, i, index),
+            v3c_all_ne_swap(tl, t, n, ii, v, i))
+
+def v3c_pair_ne_swap(+xs: +List<V3cWrite>, +ys: +List<V3cWrite>, +t: R.PT, +n: U32, +ii: U32, +v: U32)
+  -> {v3c_pair_ne(xs, ys, R.swap_m(t, n, ii, v), n) == v3c_pair_ne(xs, ys, t, n) : Bool}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          v3c_band_cong2(
+            v3c_all_ne(ys, R.swap_m(t, n, ii, v), n, index),
+            v3c_all_ne(ys, t, n, index),
+            v3c_pair_ne(tl, ys, R.swap_m(t, n, ii, v), n),
+            v3c_pair_ne(tl, ys, t, n),
+            v3c_all_ne_swap(ys, t, n, ii, v, index),
+            v3c_pair_ne_swap(tl, ys, t, n, ii, v))
+
+# ---------------- the two algebraic lemmas ----------------
+
+def v3c_append_split(+xs: +List<V3cWrite>, +ys: +List<V3cWrite>, t: R.PT, +n: U32)
+  -> {v3c_fold(List.append(&2, V3cWrite, xs, ys), t, n) == v3c_fold(ys, v3c_fold(xs, t, n), n) : R.PT}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          v3c_append_split(tl, ys, R.swap_m(t, n, index, value), n)
+
+def v3c_write_past_fold(+ws: +List<V3cWrite>, +t: R.PT, +n: U32, +i: U32, +v: U32,
+  +hne: {v3c_all_ne(ws, t, n, i) == True{} : Bool})
+  -> {v3c_fold(ws, R.swap_m(t, n, i, v), n) == R.swap_m(v3c_fold(ws, t, n), n, i, v) : R.PT}:
+  match ws:
+    case Nil{}:
+      {==}
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          +hh = v3c_and_true_l(ne_idx(t, n, i, index), v3c_all_ne(tl, t, n, i), hne)
+          +ht = v3c_and_true_r(ne_idx(t, n, i, index), v3c_all_ne(tl, t, n, i), hne)
+          +ecomm = swap_m_comm(t, n, i, index, v, value, hh)
+          +htp = Equal.trans(Bool,
+            v3c_all_ne(tl, R.swap_m(t, n, index, value), n, i),
+            v3c_all_ne(tl, t, n, i),
+            True{},
+            v3c_all_ne_swap(tl, t, n, index, value, i),
+            ht)
+          Equal.trans(R.PT,
+            v3c_fold(tl, R.swap_m(R.swap_m(t, n, i, v), n, index, value), n),
+            v3c_fold(tl, R.swap_m(R.swap_m(t, n, index, value), n, i, v), n),
+            R.swap_m(v3c_fold(tl, R.swap_m(t, n, index, value), n), n, i, v),
+            Equal.cong(R.PT, R.PT, x => v3c_fold(tl, x, n),
+              R.swap_m(R.swap_m(t, n, i, v), n, index, value),
+              R.swap_m(R.swap_m(t, n, index, value), n, i, v),
+              ecomm),
+            v3c_write_past_fold(tl, R.swap_m(t, n, index, value), n, i, v, htp))
+
+def v3c_fold_region(+xs: +List<V3cWrite>, +ys: +List<V3cWrite>, +t: R.PT, +n: U32,
+  +hpn: {v3c_pair_ne(xs, ys, t, n) == True{} : Bool})
+  -> {v3c_fold(ys, v3c_fold(xs, t, n), n) == v3c_fold(xs, v3c_fold(ys, t, n), n) : R.PT}:
+  match xs:
+    case Nil{}:
+      {==}
+    case Con{+h, +tl}:
+      match h:
+        case MkWrite{index, value}:
+          +hne_ys = v3c_and_true_l(v3c_all_ne(ys, t, n, index), v3c_pair_ne(tl, ys, t, n), hpn)
+          +hpn_tl = v3c_and_true_r(v3c_all_ne(ys, t, n, index), v3c_pair_ne(tl, ys, t, n), hpn)
+          +hpn_tlp = Equal.trans(Bool,
+            v3c_pair_ne(tl, ys, R.swap_m(t, n, index, value), n),
+            v3c_pair_ne(tl, ys, t, n),
+            True{},
+            v3c_pair_ne_swap(tl, ys, t, n, index, value),
+            hpn_tl)
+          +ewp = v3c_write_past_fold(ys, t, n, index, value, hne_ys)
+          Equal.trans(R.PT,
+            v3c_fold(ys, v3c_fold(tl, R.swap_m(t, n, index, value), n), n),
+            v3c_fold(tl, v3c_fold(ys, R.swap_m(t, n, index, value), n), n),
+            v3c_fold(tl, R.swap_m(v3c_fold(ys, t, n), n, index, value), n),
+            v3c_fold_region(tl, ys, R.swap_m(t, n, index, value), n, hpn_tlp),
+            Equal.cong(R.PT, R.PT, x => v3c_fold(tl, x, n),
+              v3c_fold(ys, R.swap_m(t, n, index, value), n),
+              R.swap_m(v3c_fold(ys, t, n), n, index, value),
+              ewp))
+
+def v3c_fold_commutes(+xs: +List<V3cWrite>, +ys: +List<V3cWrite>, +t: R.PT, +n: U32,
+  +hpn: {v3c_pair_ne(xs, ys, t, n) == True{} : Bool})
+  -> {v3c_fold(List.append(&2, V3cWrite, xs, ys), t, n) == v3c_fold(List.append(&2, V3cWrite, ys, xs), t, n) : R.PT}:
+  Equal.trans(R.PT,
+    v3c_fold(List.append(&2, V3cWrite, xs, ys), t, n),
+    v3c_fold(ys, v3c_fold(xs, t, n), n),
+    v3c_fold(List.append(&2, V3cWrite, ys, xs), t, n),
+    v3c_append_split(xs, ys, t, n),
+    Equal.trans(R.PT,
+      v3c_fold(ys, v3c_fold(xs, t, n), n),
+      v3c_fold(xs, v3c_fold(ys, t, n), n),
+      v3c_fold(List.append(&2, V3cWrite, ys, xs), t, n),
+      v3c_fold_region(xs, ys, t, n, hpn),
+      Equal.sym(R.PT,
+        v3c_fold(List.append(&2, V3cWrite, ys, xs), t, n),
+        v3c_fold(xs, v3c_fold(ys, t, n), n),
+        v3c_append_split(ys, xs, t, n))))

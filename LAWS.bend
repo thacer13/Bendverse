@@ -601,3 +601,29 @@ law g5_tget_swap:
   for +i: U32
   for +v: U32
   {Tick.tget(Refine.swap_m(t, n, i, v), n, i) == v : U32}
+
+# V3c-1b — the schedule-invariance list/region layer (rule 10, the fold step).
+#
+# `Commit.v3c_fold` applies a `List` of point writes in order through the
+# engine-facing `Refine.swap_m`. The first law lifts the V3c-1 kernel to a whole
+# fold: a write at a leaf no write of the list touches commutes past the fold.
+# The second is the region-split equality the scheduler needs: the writes of two
+# regions, pairwise at distinct leaves, may be applied in either order and give
+# the same tree as the sequential fold. Distinctness is `Commit.v3c_all_ne` /
+# `Commit.v3c_pair_ne`, built from `Commit.ne_idx`.
+law v3c_write_past_fold:
+  for +ws: +List<Commit.V3cWrite>
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +v: U32
+  for +hne: {Commit.v3c_all_ne(ws, t, n, i) == True{} : Bool}
+  {Commit.v3c_fold(ws, Refine.swap_m(t, n, i, v), n) == Refine.swap_m(Commit.v3c_fold(ws, t, n), n, i, v) : Refine.PT}
+
+law v3c_fold_commutes:
+  for +xs: +List<Commit.V3cWrite>
+  for +ys: +List<Commit.V3cWrite>
+  for +t: Refine.PT
+  for +n: U32
+  for +hpn: {Commit.v3c_pair_ne(xs, ys, t, n) == True{} : Bool}
+  {Commit.v3c_fold(List.append(&2, Commit.V3cWrite, xs, ys), t, n) == Commit.v3c_fold(List.append(&2, Commit.V3cWrite, ys, xs), t, n) : Refine.PT}

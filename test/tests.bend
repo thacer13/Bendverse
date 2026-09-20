@@ -599,6 +599,48 @@ def t31_bad() -> U32:
   b7 = inc_if_false(U32.is_eq(Tick.tget(Refine.swap_m(Refine.swap_m(t31_tree(), 4, 2, 100), 4, 2, 200), 4, 2), 200), b6)
   b7
 
+# T32 (V3c-1b): folding a `List` of point writes is invariant under the
+# region-split/append reordering, witnessed on a 4-leaf `Refine.PT`. `xs` and
+# `ys` target pairwise distinct leaves, so `xs <> ys` and `ys <> xs` agree, and
+# the fold writes the expected values. The distinctness predicates are sharp: a
+# colliding pair is rejected (`False`).
+def t32_tree() -> Refine.PT:
+  Refine.PN{Refine.PN{Refine.PL{10}, Refine.PL{20}}, Refine.PN{Refine.PL{30}, Refine.PL{40}}}
+
+def t32_xs() -> +List<Commit.V3cWrite>:
+  Commit.MkWrite{0, 100} <> Commit.MkWrite{2, 200} <> Nil{}
+
+def t32_ys() -> +List<Commit.V3cWrite>:
+  Commit.MkWrite{1, 300} <> Commit.MkWrite{3, 400} <> Nil{}
+
+def t32_collide() -> +List<Commit.V3cWrite>:
+  Commit.MkWrite{0, 999} <> Nil{}
+
+def t32_check(+lhs: Refine.PT, +rhs: Refine.PT, bad: U32) -> U32:
+  b0 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 0), Tick.tget(rhs, 4, 0)), bad)
+  b1 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 1), Tick.tget(rhs, 4, 1)), b0)
+  b2 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 2), Tick.tget(rhs, 4, 2)), b1)
+  b3 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 3), Tick.tget(rhs, 4, 3)), b2)
+  b3
+
+def t32_bad() -> U32:
+  +t = t32_tree()
+  +xs = t32_xs()
+  +ys = t32_ys()
+  +xc = t32_collide()
+  +p1 = Commit.v3c_fold(List.append(&2, Commit.V3cWrite, xs, ys), t, 4)
+  +p2 = Commit.v3c_fold(List.append(&2, Commit.V3cWrite, ys, xs), t, 4)
+  b0 = t32_check(p1, p2, 0)
+  b1 = inc_if_false(U32.is_eq(Tick.tget(p1, 4, 0), 100), b0)
+  b2 = inc_if_false(U32.is_eq(Tick.tget(p1, 4, 1), 300), b1)
+  b3 = inc_if_false(U32.is_eq(Tick.tget(p1, 4, 2), 200), b2)
+  b4 = inc_if_false(U32.is_eq(Tick.tget(p1, 4, 3), 400), b3)
+  b5 = inc_if_false(Commit.v3c_pair_ne(xs, ys, t, 4), b4)
+  b6 = inc_if_false(Commit.v3c_all_ne(ys, t, 4, 2), b5)
+  b7 = inc_if_false(Bool.not(Commit.v3c_pair_ne(xs, xc, t, 4)), b6)
+  b8 = inc_if_false(Bool.not(Commit.v3c_pair_ne(xs, xs, t, 4)), b7)
+  b8
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -627,3 +669,4 @@ def main() -> IO(Unit):
     report("T29 Dir4 == U32 direction table (all 4)", dir4_bad())
     report("T30 direction parity classification", dir_par_bad())
     report("T31 point writes commute at distinct leaves", t31_bad())
+    report("T32 fold commutes under region split", t32_bad())

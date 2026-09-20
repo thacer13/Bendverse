@@ -282,3 +282,9 @@ def Laws.g5_read_get(t, i):
 
 def Laws.g5_tget_swap(t, n, i, v):
   G5.g5_tget_swap(t, n, i, v)
+
+def Laws.v3c_write_past_fold(ws, t, n, i, v, hne):
+  Commit.v3c_write_past_fold(ws, t, n, i, v, hne)
+
+def Laws.v3c_fold_commutes(xs, ys, t, n, hpn):
+  Commit.v3c_fold_commutes(xs, ys, t, n, hpn)
