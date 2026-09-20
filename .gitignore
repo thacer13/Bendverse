@@ -4,3 +4,7 @@
 # project directory (currently ../THEBIGISSUE.md). Listed so a stray copy cannot
 # be re-added by accident. See HISTORY.md A.78/A.79.
 /THEBIGISSUE.md
+
+# Bridge (P0) exporter default outputs; regenerate with runners/export.bend.
+/bendverse-snapshot.bvs
+/bendverse-gen.bvg

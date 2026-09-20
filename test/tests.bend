@@ -1122,6 +1122,36 @@ def t51_bad() -> U32:
   b9
 
 
+# T52-T55 (track `bridge`, P0b): the golden engine-contract fixture Bendview
+# reads. These pin the exact integers of the boundary (cell word, index, chunk
+# key, gen vector); a future engine change that breaks the renderer fails here
+# instead of silently drifting. See `runners/export.bend` for the byte layout.
+
+def t52_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Cell.encode(1, 63, 0, 0, 0), 2017), 0)
+  b1 = inc_if_false(U32.is_eq(Cell.encode(3, 48, 0, 0, 0), 1539), b0)
+  b2 = inc_if_false(U32.is_eq(Cell.encode(2, 0, 0, 0, 0), 2), b1)
+  b2
+
+def t53_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Grid.index(32, 3, 32), 14368), 0)
+  b1 = inc_if_false(U32.is_eq(Grid.index(63, 63, 63), 262143), b0)
+  b2 = inc_if_false(U32.is_eq(Grid.index(1, 2, 3), 8385), b1)
+  b2
+
+def t54_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Chunk.key(0, 0, 0), 0), 0)
+  b1 = inc_if_false(U32.is_eq(Chunk.key(1, 2, 3), 2100225), b0)
+  b2 = inc_if_false(U32.is_eq(Chunk.key(3, 3, 3), 3148803), b1)
+  b2
+
+def t55_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Worldgen.gen(0, 63, 0, 42), 2017), 0)
+  b1 = inc_if_false(U32.is_eq(Worldgen.gen(32, 3, 32, 42), 1539), b0)
+  b2 = inc_if_false(U32.is_eq(Worldgen.gen(21, 20, 21, 42), 2), b1)
+  b3 = inc_if_false(U32.is_eq(Worldgen.gen(21, 42, 21, 42), 0), b2)
+  b3
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -1170,3 +1200,7 @@ def main() -> IO(Unit):
     report("T49 view3d DDA shell hits", t49_bad())
     report("T50 view3d input both key conventions", t50_bad())
     report("T51 view3d viewport mapping", t51_bad())
+    report("T52 golden cell word (encode)", t52_bad())
+    report("T53 golden grid index", t53_bad())
+    report("T54 golden chunk key", t54_bad())
+    report("T55 golden worldgen vector", t55_bad())
