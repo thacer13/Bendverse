@@ -120,9 +120,15 @@ internally layer multiple scalar fields (e.g., macro-scale for base terrain
 shape, higher-frequency for material selection, sparse fields for isolated
 features) — but externally it must behave as a single pure lookup: same
 coordinate, same seed, same result, regardless of when or in what order it is
-called. The box's shell (contract 2) is part of generation: it is material the
-seeding function returns, and it stays closed because the shell material is
-static, not because the grid wraps.
+called. The **terrain** function is shell-free: it says what material a
+coordinate holds, everywhere, with no absolute world edge. The box's shell
+(contract 2) is a property of the **box or window**, not of the coordinate — the
+bounded reference box adds the shell at its own edges (`x/y/z ∈ {0,63}` for the
+canonical 64³ box, or the window edge for a moving window), and an unbounded
+world samples the shell-free terrain alone. The canonical box reproduces the
+current absolute shell bit-for-bit, so the fixed-box worlds and laws stand;
+closure holds because the shell material is static (and, at the grid level,
+because rule targets are guarded — contract 2), not because the grid wraps.
 
 Where the code stands (do not confuse this with the target)
 

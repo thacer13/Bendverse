@@ -122,3 +122,27 @@ def win_key(w: Window) -> U32:
   match w:
     case Window{bx, by, bz}:
       Cw.cw_key(bx, by, bz)
+
+# ------------------------------------------------------------------ residency
+# The window's resident chunk keys, in chunk-ordinal order -- the same order
+# `Store.assemble_go` enumerates its 64 chunks (`ci = 0..63`, `cx` fastest, then
+# `cy`, then `cz`). Step 3 of the `S1` migration makes this set explicit: the
+# store assembles over a key list instead of a loop bound. The canonical window
+# yields exactly `Chunk.key(ci&3, (ci>>2)&3, (ci>>4)&3)` for `ci = 0..63`.
+def resident_go(
+  fuel: Nat, +ci: U32, +bx: U32, +by: U32, +bz: U32, acc: List<U32>
+) -> List<U32>:
+  match fuel:
+    case 0n:
+      acc
+    case 1n+p:
+      +cx = U32.add(bx, U32.and(ci, 3))
+      +cy = U32.add(by, U32.and(U32.shrn(ci, 2n), 3))
+      +cz = U32.add(bz, U32.and(U32.shrn(ci, 4n), 3))
+      # walk `ci` descending and cons, so the list comes out ascending.
+      resident_go(p, U32.min(U32.sub(ci, 1), ci), bx, by, bz, Cw.cw_key(cx, cy, cz) <> acc)
+
+def resident_keys(w: Window) -> List<U32>:
+  match w:
+    case Window{bx, by, bz}:
+      resident_go(64n, 63, bx, by, bz, Nil{})

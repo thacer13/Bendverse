@@ -1696,6 +1696,22 @@ def t84_pair(r: Array<U32> & List<&2, U32>) -> U32:
 def t84_bad() -> U32:
   t84_pair(Export.bxe_chunk_cells(Worldgen.build(), Chunk.key(0, 0, 0)))
 
+# T95-T96 (S1 step 3): assembly over an *explicit* resident set. T95: for the
+# canonical window, `Store.assemble_keys (Window.resident_keys canonical)` is the
+# same world as the implicit `Store.assemble` (the loop-bound set == the key
+# list). T96: over the pure-gen store it reconstructs `Worldgen.build()` -- T18's
+# property, now via the explicit key set, so the window's residency is exact.
+def t95_bad() -> U32:
+  +s1 = Store.build_all()
+  +s2 = Store.build_all()
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(Store.assemble(s1)),
+    Grid.to_list(Store.assemble_keys(Window.resident_keys(Window.canonical()), s2)), 0)
+
+def t96_bad() -> U32:
+  +s = Store.build_all()
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(Worldgen.build()),
+    Grid.to_list(Store.assemble_keys(Window.resident_keys(Window.canonical()), s)), 0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1778,3 +1794,5 @@ def main() -> IO(Unit):
     report("T82 window no torus mask (global 80 not folded)", t82_bad())
     report("T83 dense record offset maps to true chunk cell (G-bridge-2)", t83_bad())
     report("T84 dense record order == Store.chunk_list (G-bridge-2 s10)", t84_bad())
+    report("T95 explicit resident set == implicit assemble (S1 step 3)", t95_bad())
+    report("T96 explicit resident set reconstructs worldgen (S1 step 3)", t96_bad())

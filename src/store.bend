@@ -126,6 +126,24 @@ def assemble_go(fuel: Nat, +ci: U32, +s: Store, world: Array<U32>) -> Array<U32>
 def assemble(s: Store) -> Array<U32>:
   assemble_go(64n, 0, s, [0 : U32^18n])
 
+# S1 step 3: assemble over an *explicit* resident key list (a window's set)
+# instead of the implicit `assemble_go` loop bounds. Chunks are disjoint, so the
+# order of `keys` does not affect the result; `assemble s` is the canonical
+# instance (`Window.resident_keys canonical()`), which T95 checks.
+def assemble_keys_go(fuel: Nat, keys: List<U32>, +s: Store, world: Array<U32>) -> Array<U32>:
+  match fuel:
+    case 0n:
+      world
+    case 1n+p:
+      match keys:
+        case Nil{}:
+          world
+        case Con{+h, t}:
+          assemble_keys_go(p, t, s, assemble_cells(get(s, h), h, world))
+
+def assemble_keys(keys: List<U32>, s: Store) -> Array<U32>:
+  assemble_keys_go(64n, keys, s, [0 : U32^18n])
+
 def put_all_go(fuel: Nat, +ci: U32, store: Store) -> Store:
   match fuel:
     case 0n:

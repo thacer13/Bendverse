@@ -3908,3 +3908,41 @@ track.
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 79/79 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS; `runners/export.bend` and
   `runners/serve.bend` `--check-only` -> `All terms check.`
+
+### A.99 — S1 step 3 (explicit resident set) + rule 11 adapted to decision A
+
+**Status:** additive step on `master`; **no law-count change** (105 laws).
+Gate green, fast **81/81**. Live path behaviour unchanged.
+
+**Why.** `S1` (`SCALE.md`) migrates the fixed box to a moving window. Steps 2–3
+are the model + residency; step 4 (motion) then needs a set it can load/evict
+through.
+
+**S1 step 3 (`src/window.bend`, `src/store.bend`).** `Window.resident_keys(w)`
+returns the window's 64 chunk keys in the order `Store.assemble_go` enumerates
+(`ci` ascending = `cx` fastest, then `cy`, then `cz`); `Store.assemble_keys` is
+the same assembly folded over an explicit key list instead of the loop bounds.
+Additive: `assemble`/`assemble_go` are unchanged, and the canonical window's set
+is exactly the loop-bound set. **T95** checks `assemble_keys(resident_keys
+canonical) == assemble`; **T96** checks it reconstructs `Worldgen.build()` (T18's
+property, now via the explicit set).
+
+**Decision A for `G-scale-8` (the absolute `gen` shell).** Bendview's
+`engine-report-gen-shell-and-window.md` found that `Worldgen.gen` paints bedrock
+on the absolute planes `x/y/z ∈ {0,63}`, which an absolute world edge cannot
+coexist with a moving window or an infinite horizon. Chosen direction (the
+report's "cleanest semantically" option): **two modes** — the closed 64³ box is
+the **reference mode** (`gen`, shell, every existing law/world/test untouched),
+and the window / infinite mode samples the shell-free `Worldgen.gen_terrain`.
+`coreidea` rule 11 and `PLAN.md` §4/§4.1 `R11` were adapted accordingly: the
+*terrain* function is shell-free; the *shell* is a property of the box or
+window, not of a coordinate. Not yet implemented (window motion / `gen_terrain`
+wiring is step 4); a shell-free `.bgt` reference-vector export is delegated
+(`genvec`) so the renderer can verify its infinite-terrain port.
+
+**Also.** Two parallel tracks dispatched for the `S1`/renderer path: `genvec`
+(shell-free terrain vectors) and `dirtywin` (`G-scale-2`, a size-parameterised
+dirty mask).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 81/81 PASS.

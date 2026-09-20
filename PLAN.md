@@ -485,7 +485,7 @@ an oversight to hide.
 | `R8` | Impact is a threshold event | `rock_crumbles_lighter` `sand_sinks_in_water` | T9 | rules |
 | `R9` | Activity is explicit; wake effects land next tick | `budget_exhausts` `potential_additive` `strict_events_bounded` `settling_budget` `fall_lowers_potential` `crumble_lowers_potential` `swap_refines_array` `array_swap_pots` `swap_lowers_phi` `support_write_preserves_pot` `fall_write_preserves_pot` `mov_preserves_pot` `wake_preserves_pot` `deactivate_preserves_pot` `point_write_lowers` `array_support_write_preserves_phi` `array_fall_write_preserves_phi` `array_mov_write_preserves_phi` `array_activate_write_preserves_phi` `array_deactivate_write_preserves_phi` `write_selector_preserves_phi` `write_effect_phi_balance` `sup_mirror_preserves_phi` | T4 T4b T19 T38 T39 | sim potential settle refine writepot tick selector |
 | `R10` | Determinism as a corollary of phase purity | `point_writes_commute` | T1 T31 | sim commit |
-| `R11` | Worldgen is a pure seeding function (shell included) | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
+| `R11` | Worldgen is a pure terrain seeding function (the shell is a box/window property) | — (purity by construction) | T6 T7 T8 T16 T18 | worldgen chunk store |
 | `R0` | Encoding and arithmetic substrate | `sanity` `grid_volume` `cell_full_mask` `cell_reserved_bits` `index_roundtrip` `cell_roundtrip` `material_encode` `word_cmp_eq_reflect` `u32_cmp_eq_reflect` `n_add_sub_le` | T5 spike bit31 spike mul wrap | bits grid cell nat word |
 
 Reading the `—` rows: R7 is test-witnessed only (recorded as `G6`); R2 now has
@@ -516,7 +516,7 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
 | `R9` | Activity effects land next tick | conforming | `V0-4a` (A.71) defers each phase's wakes to tick end (T33); `V0-4b-1` (A.72) made a move **clear** the mover's active bit so it is not re-evaluated by a later colour phase (T34); `V0-4b-2` (A.74) defers the support pass's crush wake too (T36). Every wake now lands at tick end |
 | `R10` | Determinism under any schedule | conforming | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The composition step now has laws — point writes at `ne_idx`-distinct leaves commute (`point_writes_commute`, V3c-1, A.68); the fold lifts to the list/region equality (`v3c_write_past_fold`/`v3c_fold_commutes`, V3c-1b, A.84) and `ne_idx`'s soundness half is proven (`v3c_ne_idx_sound`, V3c-2, A.84: `U32.is_eq(i, j) == True` forces `ne_idx == False`). V3c is **complete and reaches the engine**: `v3c_ne_idx_exact` (A.89: `ne_idx == Bool.not ∘ U32.is_eq` on full in-range trees) plus the engine wire (A.90: `v3cw_commit_fold`/`v3cw_commit_commutes` prove `Rules.commit_sets` on the projected write list equals `v3c_fold`, lifting the region-split equality to the engine's actual write set) |
-| `R11` | Worldgen is a pure seeding function | conforming | purity by construction; shell permanence unproven (`V0-2`) |
+| `R11` | Worldgen is a pure terrain seeding function | conforming | purity by construction; the **shell is a box/window property, not an absolute coordinate** (decision A, A.98): `Worldgen.gen_terrain` is shell-free, the canonical 64³ box adds its shell at the edges bit-for-bit (so `gen_terrain`+edge == `gen`), and the moving window / infinite mode samples the shell-free terrain. Window-edge shell permanence is `G-scale-8` |
 | `R0` | Encoding and arithmetic substrate | conforming | `bits`/`grid`/`cell`/`nat`/`word` laws |
 
 `C3` is *conforming*: `V0-4b-3b` (A.77) replaced the two world scans
@@ -649,6 +649,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `bridge2` (transport) | `runners/serve.bend` real sidecar: length-framed `[len][kind][payload]` (HELLO/SNAPSHOT/DELTA/PING/BYE out, CREDIT/REQUEST/STOP in), the sparse snapshot (`Store.evict` regenerability + `assemble`), and the **B2 decision** (DELTA = render-visible fields, `(idx, Cell.deactivate word)`, global `Grid.index`, no `WWake`); T61–T65. IO only, `src/` untouched. Residual: credit/coalescing (`G-bridge-1`) | A.94 |
 | `gscale` (G-scale-3) | `src/gscale.bend` proves the `cw` split/rejoin in `Bits`/`Word`: `(w>>4)<<4 + (w&15) == w & 16383` (`gscale_global_rt`) plus the key/local model roundtrips, five laws `gscale_cw_{x,y,z,key,local}_rt`; T66–T70. Closes `G-scale-3`; mentions no `Grid.index`, so not in the torus retirement set | A.94 |
 | `window` (S1 step 2) | `src/window.bend`: the `Window` model (base chunk + cell origin) and the torus-free window-local index map (`win_lx/ly/lz`, `win_index`, inverses `win_gx/gy/gz`, `win_key`), with the canonical window pinned to the 64³ box. Additive — the live path still uses `Grid`, and no `&63` appears in the map, so a global coordinate above the box keeps its chunk index. T81 (canonical `win_index == Grid.index`) / T82 (global 80 not folded). The relabelling *law* is filed as `G-scale-7` | A.95 |
+| `window` (S1 step 3) | explicit resident set: `Window.resident_keys` (the window's 64 chunk keys, chunk-ordinal) and `Store.assemble_keys` (assemble over a key list instead of `assemble_go`'s loop bounds; additive, `assemble` unchanged); T95 (explicit set == implicit set) / T96 (reconstructs `Worldgen.build`). Also adapts `coreidea` rule 11 / `R11`: the shell is a box/window property, the terrain (`gen_terrain`) is shell-free — decision A for `G-scale-8` | A.99 |
 | `gscale2` (full cw + winset) | `src/gscale.bend` lifts the `cw` y/z roundtrips to arbitrary `(x,y,z)` (`gscale_cw_y_rt_full`/`_z_rt_full`; field-extraction lemmas), and new `src/winset.bend` is a pure finite-set model of the resident chunk keys (`winset_mem`/`insert`/`remove`/`all`, `winset_evict`, `winset_gen_cell`) with laws `winset_mem_insert_self`/`_other`/`winset_remove_insert`; T71–T75. `G-scale-4` groundwork (the assemble/evict roundtrip law remains open) | A.96 |
 | `bridge3` (sidecar flow control) | `runners/serve.bend` realises `SERVE.md` §5–§6: bounded queue, credit window (`bridge3_credit`/`bridge3_emit`, no overrun), drop-and-keyframe delta coalescing, idle PING, and a **forked** stdin reader (`Chan` + `IO.spawn`) so control is read continuously; T76–T80. `G-bridge-1` partially closed (engine/writer split + read reassembly remain) | A.96 |
 | `bridge2` (snapshot framing fix) | `runners/export.bend`'s dense record encoder gathered by a flat `Grid.index` slice (`gi/4096 = y`), so each "chunk" record was a **64×64 `y`-plane** labelled with a `Chunk.key` — 130835/262144 cells misplaced, and mutually inconsistent with the (correct) sparse body. Fixed: one shared `bxe_cell_index`/`bxe_chunk_cells` gather in the `Store.chunk_list` order, reused by the dense and sparse paths (`serve.bend` drops its private copy); `G-bridge-2` closed. T47 (native, full body dense == sparse) + T83 (fast, address mapping). IO only | A.97 |
@@ -703,9 +704,14 @@ index).
 - [ ] **S1** Chunk-window migration · **in progress** · deps: `scale` P3 · serves: scale
   — `SCALE.md` steps 2–6. **Step 2 landed (A.95):** `src/window.bend` (the
   `Window` model + torus-free index map, canonical = the 64³ box; T81/T82).
-  Remaining: step 3 explicit resident set, step 4 window motion, step 5
-  window-sized dirty set, step 6 torus-law retirement. Each step gate-green; gap
-  candidates `G-scale-1`..`G-scale-7` (`G-scale-3` closed).
+  **Step 3 landed (A.99):** an explicit resident set — `Window.resident_keys`
+  (the 64 chunk keys) and `Store.assemble_keys` (assemble over the key list);
+  T95 (explicit == implicit set) / T96 (reconstructs `worldgen`). Remaining:
+  step 4 window motion, step 5 window-sized dirty set, step 6 torus-law
+  retirement. Each step gate-green; gap candidates `G-scale-1`..`G-scale-8`
+  (`G-scale-3` closed). Decision A (`G-scale-8`): the window / infinite mode
+  samples shell-free `Worldgen.gen_terrain`, the closed box keeps its shell as a
+  **reference mode** (`R11` adapted, A.99).
 
 #### Optional track — droppable, does not gate the frontier
 
