@@ -3283,3 +3283,70 @@ runs the native sim suite, once, at integration.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.` (77 laws).
 - `tools/parallel.sh list` -> one worktree (master).
+
+### A.83 — `G5` (read half): the support mirror's reads are the engine's array reads
+
+**Status:** verification only; no engine, law-meaning, or test change. New
+`src/g5.bend` + four laws. Gate green, fast 26/26, sim 21/21 (native, integration
+run). `PLAN.md` §5.1/§5.3 updated.
+
+**Why.** `G5` is the standing caveat that the laws constrain the `PT`/`Word`/`Nat`
+models, not the imperative `Array` engine. `G10`/`G14` had closed the *write-site*
+enumeration (the last by typing the effect in `Rules.Write`, A.79), leaving the
+*read/selector threading* from `Rules.plan`/`Support.sup` to their `PT` mirrors as
+inspection. This lands the read half for the live support selector machine.
+
+**What.** `src/g5.bend` proves `Array.get.go(U32, pack t, n, i) == (pack t,
+Tick.tget t n i)` — the same `n/2`/`is_lt` walk as `Refine.swap_ref`, G1's write
+bridge — plus the `Array.get` size wrapper (`g5_size_pack`), the composed read
+(`g5_read_get`), and read-after-write at the selector's index (`g5_tget_swap`).
+Together these cover every read the live `sup_m` performs — S5's `below` read,
+S3/S4/S6's self read and read-back, S11's advance read — at the same index as the
+engine's `Array.get(world, i)`. `step_m` (retired, A.63) is referenced only as
+retired. Laws: `g5_read_get_go`, `g5_size_pack`, `g5_read_get`, `g5_tget_swap`.
+
+**Residuals (recorded in §5.3).** (i) The bare-index form needs the `U32` mask
+identity `i < 2^k → U32.and(i, U32.sub(2^k, 1)) == i` plus `g5_twidth(t) = 2^depth`;
+no current Base/project lemma covers `U32.and`/`U32.is_lt` bit arithmetic. (ii) The
+`SupSel` → numeric `sel` branch table is a hand transcription of `Support.sup`;
+since `sup_m` *is* the mirror it cannot be discharged against itself — a
+methodological residual.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (branch and merged master).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` native -> 21/21 PASS.
+
+### A.84 — `V3c-1b` + `V3c-2` (soundness): the schedule-invariance fold
+
+**Status:** verification only; no engine or law-meaning change. `src/commit.bend`
+extended; three laws; T32/T33. Gate green, fast 28/28, sim 21/21, canaries 6 ok.
+`PLAN.md` §4.1 (R10), §5.1/§5.2/§5.3 updated.
+
+**Why.** `V3c` is the composition half of rule 10: `V0-1` made each phase a pure
+function of the pre-phase state, so a cell's decision is scan-order-independent;
+what remained is that *applying* the merged write set is order-independent. `V3c-1`
+(A.68) proved the single-write kernel (`point_writes_commute`); this lands the
+list/region layer and the soundness half of the `ne_idx`↔`U32.is_eq` refinement.
+
+**What.** `Commit.v3c_fold` applies a `List` of point writes through
+`Refine.swap_m`. `v3c_write_past_fold` lifts the kernel past a whole fold (a write
+at a leaf no list write touches commutes), and `v3c_fold_commutes` is the
+region-split equality — `fold(xs++ys) == fold(ys++xs)` for pairwise-distinct writes
+— by induction with `swap_m_comm` per step. `v3c_ne_idx_sound` proves
+`U32.is_eq(i, j) == True` forces `ne_idx == False`, so any proven `ne_idx` implies
+the engine's distinctness (the soundness direction; no range/fullness hypothesis
+needed). T32 witnesses the fold/region equality and `pair_ne`/`all_ne` sharpness;
+T33 witnesses the soundness law.
+
+**Residual (recorded in §5.3, `G3`).** V3c-2 *completeness*: for a full `Refine.PT`
+and in-range `i, j`, `ne_idx(t, n, i, j) == (U32.is_eq(i, j) == False)`. Closes with
+a canonical `full(k)`/`pow(k)` plus `U32` lemmas (`shr(pow(k+1)) = pow(k)`, the
+`is_lt` top-bit split, subtraction clearing the top bit, `is_eq` decomposition) and
+shape-invariance of `ne_idx` across equal-shape trees. Also outstanding: the fold is
+stated over the abstract `Commit.V3cWrite` list, not the engine's `Rules.Write`
+output — part of the broader `G5` threading.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (branch and merged master).
+- `bend test/tests.bend` -> 28/28 PASS; `bend test/simtests.bend` native -> 21/21 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
