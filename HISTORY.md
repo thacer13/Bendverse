@@ -3378,3 +3378,70 @@ closes the pane (unless `BENDVERSE_KEEP_PANES=1`). Outside Herdr it is the previ
 - Herdr path: syntax/help-checked against `herdr agent start|prompt|wait|read` and
   `herdr pane split` (pi is a supported kind); **not executed** — it requires the
   supervisor to run inside Herdr.
+
+### A.86 — `G5` mask residual closed: the bare-index read
+
+**Status:** verification only; no engine or law-meaning change. `src/g5.bend` +352,
+three laws, T37–T39. Gate green, fast 31/31 (branch), canaries 6 ok; sim 21/21 at
+integration. `PLAN.md` §5.1/§5.3 updated.
+
+**Why.** A.83 closed the read half of `G5` modulo a recorded residual: `g5_read_get`
+states the engine read with the masked index `i & (g5_twidth t - 1)`, and no Base
+or project lemma covered `U32.and`/`U32.is_lt` bit arithmetic. This closes it.
+
+**What.** `src/g5.bend` gains a self-contained `Word`-level bit-arithmetic
+development (all `g5_`-prefixed): `g5_mpow n d = 2^d` peeling `n`/`d` together so the
+tail of `g5_mpow (1+p) (1+q)` is definitionally `g5_mpow p q`;
+`g5_pow_shl`/`g5_shl_eq_put`/`g5_shlput_*` linking `Word.shl`/`U32.shl` to it;
+`g5_sub_pow2`/`g5_add_pow_ones`/`g5_mask_inc`/`g5_sub_one_ones`/`g5_adc_zero_ones`
+bridging `2^d - 1` to `Bits.mask`; and `g5_wand_mask_lt` (the mask identity) with the
+`Cmp` helpers `g5_cmp_zero_not_lt`/`g5_lt_one`/`g5_lt_cons_false`/`g5_cmp_fin_not_lt`/
+`g5_absurd` discharging the impossible branches. Laws: `g5_twidth_pow`
+(`g5_twidth t == 2^g5_depth t`), `g5_and_mask_id` (`i < g5_twidth t` ⇒
+`U32.and(i, U32.sub(g5_twidth t, 1)) == i`), and `g5_read_get_bare` (the bare-index
+read, chaining `g5_read_get` with the mask identity). T37–T39 witness them.
+
+**Residual / observation.** The only remaining `G5` caveat is the `SupSel`
+branch-table transcription (methodological — `sup_m` is the mirror, so it cannot be
+proved against itself). Non-gating: `Refine.pack`/`Array.size`/`Array.get`
+fail-stop at runtime on non-perfect packed trees (hence T39 uses a balanced tree);
+the engine only packs full power-of-two worlds, so the laws are unaffected.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (branch and merged master).
+- `bend test/tests.bend` -> 33/33 PASS on merged master; `bend test/simtests.bend` native -> 21/21 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
+
+### A.87 — `V3c-2` completeness (structural half) + the `add ∘ sub` roundtrip
+
+**Status:** verification only; no engine or law-meaning change. `src/commit.bend`
++217, three laws, T34/T35. Gate green, fast 33/33 (merged), sim 21/21. `PLAN.md`
+§4.1 (R10), §5.1/§5.2/§5.3 updated.
+
+**Why.** `V3c-2` (the `ne_idx`↔`U32.is_eq` refinement) had its soundness half (A.84);
+completeness — for a full `2^k`-leaf tree and in-range `i, j`,
+`ne_idx(t, n, i, j) == (U32.is_eq(i, j) == False)` — remained. This lands its
+structural skeleton and one of the two arithmetic residuals.
+
+**What.** `src/commit.bend` gains `v3c_two(k) = U32.shln(1, k)` and the canonical
+`v3c_full(k)`; `v3c_is_eq_refl` (`U32.is_eq(a, a) == True`, via `Word.cmp`
+reflexivity `v3c_w_cmp_refl`), `v3c_shr_shl` (via `Bits.shr_shl_one`), `v3c_sub_zero`;
+the three node-recursion cases as laws — `v3c_ne_idx_sep` (opposite children ⇒
+`True`), `v3c_ne_idx_same_l`/`_same_r` (both-left/both-right reduce to the child's
+`ne_idx`), discharged by congruence helpers `v3c_pick_lr`/`_ll`/`_rr`; and
+`v3c_add_sub`: `Word.add(n, Word.sub(n, a, b), b) == a` unconditionally (per-bit
+two's-complement identity through `Word.adc`, so no borrow/no-overflow reasoning is
+needed). T34/T35 witness exactness of `ne_idx == Bool.not(U32.is_eq(i, j))` on the
+canonical 8- and 16-leaf trees.
+
+**Residual (recorded in §5.3, `G3`).** Completeness is now purely arithmetic:
+(i) `is_lt` base reflection `i < 1 ⇒ i == 0` (needs `Word.cmp == LT` reflection;
+`w_cmp_eq` only reflects `EQ` today); (ii) range preservation under the right shift
+(`is_lt(i, two(k+1))` ∧ ¬`is_lt(i, two(k))` ⇒ `is_lt(sub(i, two(k)), two(k))`);
+(iii) `shr(two(k+1)) == two(k)` (bounded `k < 31`). With those, the main induction
+follows from the three landed case laws. Also outstanding: wiring the engine's
+`Rules.Write` list into `Commit.v3c_fold` (the broader `G5` threading).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (branch and merged master).
+- `bend test/tests.bend` -> 33/33 PASS; `bend test/simtests.bend` native -> 21/21 PASS.
