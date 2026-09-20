@@ -3638,3 +3638,52 @@ slower). `bend runners/view3d.bend -o /tmp/view3d` builds and the window ran for
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 46/46 PASS.
 - `bend runners/view3d.bend --check-only` -> `All terms check.`; native build ok.
+
+### A.93 — engine→renderer surfaces: export format, trace deltas, chunk-window design
+
+**Status:** two parallel tracks landed; **no law-count change** (95 laws, PLAN
+agrees), no `src/` semantics change. `bridge` (P0/P2) and `scale` (P1/P3) landed,
+merged in order, `test/tests.bend` append conflict resolved. Gate green, fast
+**55/55**, sim **24/24**, canary 6/6. `PLAN.md` §2.11/§5.1/§5.2/§5.3 updated.
+
+**Why.** The sibling renderer `../Bendview/` (SPEC) consumes the engine's world.
+That needs four surfaces: a serialization, a per-tick delta, a pure-gen reference
+for its port conformance test, and a coordinate model that is not the fixed 64³
+torus. This entry lands the first two, designs the transport, and starts the
+third — without touching the rule system.
+
+**`bridge` (track A, `runners/` only).** `runners/export.bend` is the format
+contract: a chunk-oriented snapshot (`.bvs`; magic `BVS1`, v1, all 64 `Chunk.key`
+records of 4096 cells in `Store.chunk_list` local order) and `Worldgen.gen`
+reference vectors (`.bvg`; 128 samples spanning all four gen material classes).
+The byte layout is documented at the top of the file. `runners/serve.bend` +
+`runners/SERVE.md` are the headless sidecar transport design (length-framed
+`[len][kind][payload]`, credit/backpressure, delta coalescing) and a skeleton
+whose first snapshot is byte-identical to the exporter's. T52–T55 pin the golden
+contract (cell word, `Grid.index`, `Chunk.key`, gen vector), so an engine change
+that would break the renderer fails here instead of drifting.
+
+**`scale` (track B, `src/` + proofs).** `Sim.tick_trace` returns
+`(world, List<Delta>)`, a `Delta` carrying a changed cell's **global coordinate**
+and **new word** (`Rules.apply_op(src, op)`), so the renderer never re-implements
+an op. The write list is threaded out of `phases` before `commit_sets`; `WWake`
+is ignored (activity, not a world change). `tick` is unchanged
+(`tick = tick_world(tick_trace(world))`) and the carried-mask hot path
+`ticks`/`tick_m` stays non-trace. T56 witnesses trace/non-trace path agreement and
+delta replay on the render-visible fields. `src/cw.bend` is a new **additive**
+torus-free global-coordinate module (global `(x,y,z)` ↔ `(chunk_key, local)`,
+matching `Chunk`'s 16³/10-bit layout), unused by the live path; T57–T60 witness
+the roundtrips and that a coordinate above the 64 box is preserved. `SCALE.md` is
+the migration design (window, resident set, window motion, dirty set, `Array`
+reuse) and its gap candidates are now `PLAN.md` §5.3 `G-scale-1`..`G-scale-6`.
+`PROOF.bend` now imports `src/sim.bend` and `src/cw.bend` (coverage root).
+
+**Open (filed §5.2).** `B1` transport implementation (sidecar or in-process C
+FFI) + sparse snapshot; `B2` delta contract (render-visible fields vs full-word,
+including wake activations); `S1` the `SCALE.md` steps 2–6 migration.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 55/55 PASS;
+  `bend test/simtests.bend` native -> 24/24 PASS; `bend_canary` -> 6 ok, 0 bad.
+- `bend runners/export.bend --check-only` and `bend runners/serve.bend
+  --check-only` -> `All terms check.`; both build natively.

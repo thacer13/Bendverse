@@ -320,6 +320,17 @@ the world by calling it per cell (`build`; `build_at` is the parallel variant).
   sub-image the window shows (1920×1080: depth 7 → 120×68 cells at 16×, depth 8
   → 240×135 at 8×). Not part of the engine; ~50 ms/frame at depth 7, ~14 ms at
   depth 6, ~200 ms at depth 8 (native, 1920×1080).
+- `runners/export.bend` (track `bridge`, P0): the binary format contract the
+  renderer (`../Bendview/`) reads — a chunk-oriented snapshot (`.bvs`, all 64
+  `Chunk.key` records) plus `Worldgen.gen` reference vectors (`.bvg`). IO only
+  (it is a runner); the byte layout is documented at the top of the file.
+  `runners/serve.bend` + `runners/SERVE.md`: the headless sidecar transport
+  design (length-framed snapshots/deltas) and a skeleton.
+- `src/cw.bend` (track `scale`, P3, additive): a torus-free global-coordinate
+  module (global `(x,y,z)` ↔ `(chunk_key, local)`); unused by the live path.
+  `SCALE.md` is the migration design. `Sim.tick_trace` (track `scale`, P1)
+  returns `(world, deltas)` — the render-visible change set — leaving `tick`
+  unchanged.
 - `test/tests.bend`, `test/simtests.bend`: golden tests, see §3.5.
 - `scenarios/fixtures.bend`: shared setup (`spawn`, `pull`), so `src/sim.bend`
   stays only the tick pipeline.
@@ -632,6 +643,8 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V3c` (engine wire) | `G3` closed: `src/v3cw.bend` proves the engine's `Rules.commit_sets` on the projected write list equals `Commit.v3c_fold` (`v3cw_commit_fold`; `WSet` via `apply_op`, `WWake` neutral) and lifts the region-split equality to the engine write set (`v3cw_commit_commutes`), keyed by `Commit.v3c_pair_ne` on the projection. T46–T48. Methodological caveat: `v3cw_lin` is the multiplicity-erased copy needed because `commit_sets` is linear | A.90 |
 | `view3d` | interactive 3D viewer (presentation only): `view/voxel.bend` is a pure Amanatides–Woo DDA voxel raycaster + camera; `runners/view3d.bend` is the `App.run` shell (fly camera W/A/S/D + Q/E + arrows + mouse-drag, `speed` = sim ticks per frame, pause). T49 witnesses the DDA; `src/` untouched; ~94 ms/frame native at 128×128 | A.91 |
 | `view3d` (frontend pass) | first-version frontend fixed and scaled: keyboard bug fixed (`bit_of` accepts both backend key conventions; T50), DDA rewritten to two calls/cell with a correct ray range (`dda_steps` = 256 cells; T49 still green), aspect-correct integer-scaled 1920×1080 rendering via the backend's top-bits mapping (`view_image` + `clog2`/`scale_bits`/`vis_dim`; T51), runtime render-depth control (`, `/`.`, 5–8), and both key conventions in the runner. Presentation only, `src/` untouched | A.92 |
+| `bridge` (engine→renderer) | P0 export surface: `runners/export.bend` writes a chunk-oriented snapshot (`.bvs`) + `Worldgen.gen` reference vectors (`.bvg`); `runners/SERVE.md` + `runners/serve.bend` are the sidecar transport design/skeleton; T52–T55 pin the golden contract (cell word, index, chunk key, gen vector). IO only, `src/` untouched | A.93 |
+| `scale` (trace + coordinates) | P1: `Sim.tick_trace` returns `(world, deltas)` (global coord + new word), `tick` unchanged, T56 witnesses replay == tick on the render-visible fields. P3: additive `src/cw.bend` global-coordinate module (T57–T60) + `SCALE.md` migration design; live `Grid`/`Sim` untouched, gate green | A.93 |
 | `V0` | semantics rewrite complete: phase purity (`V0-1`), closure (`V0-2`), direction/colour batching (`V0-3`), cost via the carried dirty-row work set (`V0-4b`), and the neighbourhood support seed (`V0-5`) — every `C1`/`C2`/`C3` and `R1`–`R11` row in §4.1 now conforms | A.63–A.81 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
@@ -664,6 +677,22 @@ index).
   (b) a coarse occupancy pyramid built once per tick to skip empty regions;
   (c) the blocked GPU path (`G4`); (d) accept a lower internal resolution with
   a deliberately crisp upscale. deps: — · serves: —.
+
+#### Engine↔renderer bridge (Bendview)
+
+- [ ] **B1** Transport implementation · open · deps: `bridge` P0 · serves: —
+  — `runners/serve.bend` is a skeleton; `runners/SERVE.md` specifies the framing,
+  credit/backpressure, and delta coalescing. Land the real sidecar (or decide on
+  in-process C FFI) plus a sparse snapshot (omit gen-equal chunks).
+- [ ] **B2** Delta contract decision · open · deps: `scale` P1 · serves: —
+  — T56 witnesses replay on the *render-visible* fields; `WWake` activations are
+  not in the delta (the active bit differs). Decide whether the renderer needs
+  full-word replay (then carry wake activations) or the visible fields are the
+  contract; one line in §4.1 either way.
+- [ ] **S1** Chunk-window migration · open · deps: `scale` P3 · serves: scale
+  — `SCALE.md` steps 2–6: window-relative addressing, explicit resident set,
+  window motion, window-sized dirty set, torus-law retirement. Each step
+  gate-green; gap candidates `G-scale-1`..`G-scale-6`.
 
 #### Optional track — droppable, does not gate the frontier
 
@@ -885,6 +914,12 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G15` | accepted | `Ops.wake` still marks wrapped neighbours from a boundary cell (the opposite face) when the shell is painted away; no material moves, so `C2` holds, but activity leaks across the box | **closed** | — | **closed (A.88):** `Ops.wake` is bounded by `Grid.step_inside` (a wrapped step is inert), the `PT` wake mirror carries the same guard, and law `g15_wake_step_inert` states it; T43–T45 + sim T44–T46 |
 | `G16` | unproven | the support pass still applies wake within the pass (`Support.sup` case 6 wakes after a crush), so a cell it wakes is evaluated by the same tick's phases — the rule-9 residual after `V0-4a` | closed | — | **closed (A.74, V0-4b-2):** a crush accumulates the crushed cell into a pending wake list; `Sim.tick` applies the support and phase wakes together at tick end (`Support.pass_gated` returns `(world, wakes, todo)`, `Rules.wake_writes` converts them). T36 witnesses it: an active rock with an empty below is crushed and its neighbour stays put this tick, active afterwards. `sup_m` updated to the crush-only shape (deferred wakes are Φ-neutral) |
 | `G17` | unproven | a move wrote the target with the mover's active bit set (`Rules.mov`, and the slide write of `w`), so a later colour phase re-evaluated the mover in the same tick — the evaluated set was not fixed and a grain could fall more than one cell per tick | closed | — | **closed (A.72, V0-4b-1):** `Rules.mov` and the slide write now clear the active bit (`Cell.deactivate`); the move's already-emitted `WWake` re-activates the target at tick end (V0-4a). T34 witnesses one cell per tick. `mov_preserves_pot`/`nempty_mov` proof terms updated (material is unchanged, so the laws still hold) |
+| `G-scale-1` | unproven | `Grid.step_inside` conflates "off the window" with "off the world" | open | S1 | a moving window needs a margin/load rule so a rule target just outside the resident set is not silently inert; closes by a window-margin invariant plus a test/law that every `Rules.plan` target of a resident cell is resident or loaded (`SCALE.md` §6) |
+| `G-scale-2` | unproven | `Dirty.Mask` is exactly 64 `y` rows | open | S1 | a window needs a window-sized mask or per-chunk dirty set; closes by a size-parameterised mask plus the `mark_wake` reach invariant |
+| `G-scale-3` | unproven | the `cw` split/rejoin identity `(x>>4)<<4 + (x&15) == x` is test-witnessed (T57–T60), not proven | open | S1 | gates coordinate soundness of the migrated engine; closes by a bit lemma over `Bits`/`Word`, analogous to `Bits.model_index_rt` |
+| `G-scale-4` | unproven | the resident set is implicit in `assemble_go`'s loop bounds | open | S1 | a window needs an explicit set plus a load/evict policy; closes by a set model and `assemble`/`evict` roundtrip laws |
+| `G-scale-5` | performance | the phase fold's cost scales with the active set, not the window | open | S1 | gates the scale target; closes by measurement on a real window, not a proof |
+| `G-scale-6` | retirement | every law mentioning `Grid.index`/`Grid.ix` is a torus law; migrating the live path orphans them | open | S1 | follow the `AGENTS.md` retirement protocol (keep, mark retired, update §4.1); never delete or silently weaken |
 
 ### 5.4 Deferred — publishing a proven slice to BendHub
 
