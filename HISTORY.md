@@ -4528,3 +4528,84 @@ directions — `G-scale-1`'s proof residual is discharged (the remaining
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 125/125 PASS;
   `bend test/simtests.bend` native -> 30/30 PASS; `tools/checker-canary.sh` ->
   6 ok / 0 bad.
+
+### A.114 — lossless window move (parallel track `evict`, G-scale-4 correctness)
+
+**Status:** integrated on `master` (worker branch `evict`, commit `7e62a03`; merge
+`9eb4e9e`). **+0 laws.** Gate green, fast **130/130**, sim **35/35**, checker
+canaries **6 ok / 0 bad**.
+
+**The hole.** `Store.window_store` rebuilds from `STip{}` over only the new
+resident keys, so a chunk that merely *leaves* the window is dropped
+unconditionally — including a **modified** one (a settled pile). W5's `w5_move`
+called it, so a move could destroy state at the leaving boundary. `Store.evict`
+was already the lossless operation (drops only sleeping ∧ gen-equal).
+
+**What landed (`src/store.bend`, `src/sim.bend`, tests).**
+
+- `Store.move_store w1 w2 s`: keeps the overlap, loads `w2`'s residents from
+  `gen`, and drops a chunk only when it is *leaving* (`Window.in_resident w1` and
+  not `w2`) **and** regenerable (`sleeping_cells ∧ gen_eq_cells`). A
+  non-gen-equal chunk is never dropped. `window_store` is left intact (it is the
+  pure load policy).
+- `Sim.w5_move` now uses `move_store`; the step checkpoint folds onto the moved
+  store (`w5_ck_store_on`) so the seam does not re-drop survivors.
+- Fast T140–T144: a modified leaving chunk survives the move; a gen-equal leaving
+  chunk is dropped (T121-style); the entering slab is loaded; the moved window's
+  assembled array is unchanged on the overlap; an out-and-back `w5_step`
+  preserves the pile.
+
+**Honest residual.** The `G-scale-4` roundtrip **law** (`assemble(evict s) ==
+assemble s`, and the move twin) is not proven: it needs an `Array` update-identity
+under the `G5` boundary plus store-level `get`/`set` refinement lemmas, none of
+which exist (and a proof-relevant `is_eq` eliminator). Losslessness is
+test-witnessed (T140/T144), not law-backed. Recorded in `PLAN.md` §5.3 under
+`G-scale-4`. Worker report: `../Bendverse-evict.report.md`.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 130/130 PASS;
+  `bend test/simtests.bend` native -> 35/35 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+
+### A.115 — fixed-window live engine link (parallel track `serve`, Bendview M5)
+
+**Status:** integrated on `master` (worker branch `serve`, commit `a8c9412`; merge
+`f6371fa`). **+0 laws.** Gate green, fast **130/130**, sim **35/35**, checker
+canaries **6 ok / 0 bad**.
+
+**What landed (`runners/serve.bend`, `test/simtests.bend`).** The sidecar goes
+from a one-tick demo to a continuous link on the **fixed canonical window**
+(deliberately *not* the W5 motion driver — a moving window is a separate decision):
+
+- HELLO → dense `SNAPSHOT` of `Fixtures.spawn(Sim.build())` at tick 0 → a
+  per-tick `DELTA` loop (`Sim.tick_trace`, global coordinates) gated by the
+  existing `bridge3` credit flow → sparse checkpoint `SNAPSHOT` + `PING` + `BYE`
+  on STOP/EOF.
+- `Bridge3Flow` gains a sticky `stop` flag (`bridge3_is_stopped`/`bridge3_stop`,
+  granting an 8-frame flush window); the reader treats a read failure as EOF and
+  closes the control channel instead of dying, so closed stdin becomes an
+  observable STOP. Pure accounting threads `stop` through, so T76–T80 still hold.
+- `bridge2_emit` (single-tick demo) is replaced by `bridge3_serve_bounded` reusing
+  the loop with pre-seeded credit; the dead `bridge2_checkpoint*` path is removed.
+  IO only — `src/` untouched, transport design unchanged.
+- Native T145–T149: a six-tick served-delta replay reconstructs the ticked world
+  (the T56 relation), the DELTA frame shape, served indices decode to global
+  coordinates, the kind ordering is HELLO/SNAPSHOT/DELTA…/SNAPSHOT/PING/BYE, and
+  STOP/credit accounting. Worker report: `../Bendverse-serve.report.md`.
+
+**Honest residual.** `G-bridge-1`'s engine/writer split and the reader's
+one-frame-per-read decode remain; STOP is observed only when the credit window
+next blocks (inherent to the credit design), and a post-STOP checkpoint may
+supersede one unbroadcast tick (documented in code). The world is
+`Fixtures.spawn(Sim.build())` because bare `Sim.build()` is a fixed point and
+would make the DELTA loop vacuous.
+
+**Renderer status.** With A.114 + A.115 the renderer has a live engine link on a
+**fixed** simulated window (Bendview M5 can light up). The **moving** window needs
+the focus protocol (a renderer-supplied focus → `w5_trace_step`); `G-scale-5`
+still closes by measurement.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 130/130 PASS;
+  `bend test/simtests.bend` native -> 35/35 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.

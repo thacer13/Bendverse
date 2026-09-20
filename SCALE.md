@@ -161,7 +161,7 @@ moving the live tick pipeline off the fixed `Grid` torus onto a window. §7 stay
 binding — it is a coordinate + residency change, not a semantics change.
 
 **State (verify with `bend_status` / `bend_audit` first).** Gate green, 126 laws,
-fast 125/125, sim 30/30, gaps 6 open / 13 closed. Relevant landed API:
+fast 130/130, sim 35/35, gaps 6 open / 13 closed. Relevant landed API:
 `src/window.bend` (`Window`, `win_index`, `win_lx/ly/lz`, `win_gx/gy/gz`,
 `shift`, `entering`/`leaving`), `src/store.bend` (`assemble_w`, `window_store`),
 `src/winshell.bend` (`win_border`/`gen_at`), `src/maskword.bend` + `src/wordnat.bend`
@@ -244,9 +244,11 @@ gathering resident chunks in `Chunk.local` order via `Window.win_index`),
 overlap state across a move), and `w5_trace_step` (same + accumulated
 `List<Sim.Delta>` with global coordinates). Fast T130–T134 (tick-free) and
 native T135–T139 (moved-window tick vs canonical, global deltas, state across a
-move). **Residual:** wire the driver into `runners/serve.bend` (the renderer's
-live link), and `G-scale-5` closes only when the phase-fold cost is *measured*
-on a real window — not yet done.
+move). **Residual:** the fixed-window live link is landed (`runners/serve.bend`,
+A.115) but the **moving-window focus protocol** (renderer-supplied focus →
+`w5_trace_step`) is not, and `G-scale-5` closes only when the phase-fold cost is
+*measured* on a real window — not yet done. The move is now **lossless** (A.114,
+`Store.move_store`).
 
 ### W6 — retirement (`step 6`, `G-scale-6`)
 Once the live path no longer mentions `Grid.index`/`Grid.ix` (W1–W5), those laws
