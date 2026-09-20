@@ -145,8 +145,15 @@ is the failure mode this design exists to avoid:
 Defaults: `N = 1`, `M = 0` (no periodic checkpoint), `W = 4`, `MS = 1000`.
 Diagnostics go to **stderr**, never stdout.
 
-`runners/serve.bend` is a minimal skeleton of the writer side: it emits
-`HELLO`, three length-framed `SNAPSHOT`s at ticks 0, 1, 2, and a final `BYE`,
-reusing `runners/export.bend`'s encoders so there is exactly one snapshot
-format. The delta stream, credit handling, and the engine/writer split land
-with the `scale` track.
+`runners/serve.bend` now realises §5-§6 on the writer side (track `bridge3`):
+`HELLO`; a dense genesis `SNAPSHOT`; a tick's `DELTA`; a sparse checkpoint
+`SNAPSHOT`; an idle `PING`; and a final `BYE`, reusing `runners/export.bend`'s
+encoders so there is exactly one snapshot format. The outbound side is a
+bounded queue (`bridge3_flow_new`, default cap 8) under a credit window
+(`bridge3_credit`/`bridge3_emit`), with drop-and-keyframe coalescing
+(`bridge3_push_delta`/`bridge3_take_keyframe`) and an idle PING
+(`bridge3_next`); `bridge3_reader` drains stdin continuously into a `Chan` and
+`bridge3_write_frame` blocks the writer, not the engine, on an empty window.
+The accounting is pure and witnessed by T76-T80; the engine/writer thread split
+remains co-resident because Bend's `Chan.recv` parks rather than polls (no
+non-blocking `try_recv`), which is recorded as a gap candidate.
