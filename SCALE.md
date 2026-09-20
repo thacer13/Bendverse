@@ -215,6 +215,20 @@ exactly the bridge, and the `mark_wake` wrap range is `nat_mod_lt`/`dwin_up_lt`
 `src/dirty.bend`, `src/sim.bend`. *Evidence:* fast/sim unchanged; transparency by
 `mask_word_get`.
 
+**Implementation note (A.111 — the blocker to plan around).** The rewire is not
+purely local: `src/maskword.bend` imports `src/dirty.bend` (it is *about*
+`Dirty.Mask`), so `dirty.bend` cannot call `Maskword.mask_word` — a cycle. The
+rewire therefore needs the `Word(64)` constructor (`cat`, `u32_word`, and the
+`mask_word` split) moved *below* `dirty` (into `src/dirtyn.bend`, which imports
+only `nat.bend`), with `maskword.bend` re-exporting/using it. Once `Dirty`'s
+`is_dirty_y`/`or_y`/`mark_wake` delegate to `Dirtyn` on that word, the
+`u32_word_bit`/`mask_word_get` laws become *transparent* (likely `{==}`): the two
+representations are the same, so A.107/A.109's development is superseded, not
+re-proved. That is a **retirement-style simplification** and must be logged per
+`AGENTS.md` (keep the laws, mark them transparent/superseded, update §4.1) — and
+the `wordnat` proofs that pattern-match `Dirty.Mask{lo, hi}` must move with the
+representation. Land it as its own slice; do not fold it into W4/W5.
+
 ### W4 — power-of-two window sizing
 A window of edge `2^m` cells is a `2^{3m}` array; the `PT`/`Refine` machinery
 (`swap_ref`, `g5_twidth`) is size-agnostic, so the write algebra needs nothing.
