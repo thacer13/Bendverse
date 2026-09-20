@@ -3861,3 +3861,50 @@ the old flat slice `ci*4096 + i`. The old T63 remains a size contract.
   `runners/serve.bend` `--check-only` -> `All terms check.`
 - Regenerated `.bvs`: record `(0,0,0)` offset 273 now holds `0x1f603` (rock at
   `(1,1,1)`), as documented.
+
+### A.98 — G-bridge-3: dense record cells were reversed; `gen` shell finding filed
+
+**Status:** follow-up to A.97 from the sibling renderer's updated report
+(`../Bendview/docs/engine-report-bvs-snapshot-framing.md` §10). **No engine/law
+change** (105 laws). Gate green, fast **79/79**, sim **25/25**.
+
+**The residual.** A.97 fixed the record *address* (`bxe_cell_index`), but its
+`bxe_chunk_cells_go` walked `i = 0..4095` and **consed** (`v <> acc`), so the
+list head was the last word: each record's cells were emitted in **reverse**
+`Chunk.local` order (file offset `i` held local `4095-i`). Verified on the A.97
+fixture: record `(0,0,0)` offset 0 held `0x1f603` (interior rock) instead of the
+`(0,0,0)` bedrock shell `2017`, which sat at offset 4095. T47 (dense == sparse)
+was blind — both encoders ran the same reversed gather — and T83 pinned only the
+address; the A.97 spot-check was ambiguous because `(1,1,1)` and `(14,14,14)` are
+both rock with `support 0` (`Chunk.local` mirrors map `i` to the 15-complements).
+
+**The fix (`runners/export.bend`).** `bxe_chunk_cells_go` now walks `i`
+**descending** (`U32.min(U32.sub(i,1), i)`, clamped) and conses, so the head is
+local index 0 and the record is forward `Chunk.local` order. The sparse path
+shares the gather, so it is corrected too. Regenerated `.bvs`: record `(0,0,0)`
+offset 0 is `2017` (the shell), offset 4095 is interior.
+
+**Witness (`t84`, fast).** For a chunk `k`, `bxe_chunk_cells` must equal
+`Store.chunk_list(k)` element-by-element — the ground truth `Store.assemble_chunk`
+expects. This fails under the address *or* the order defect, and unlike T47 it
+compares to an external fact rather than to the other encoder. T47 remains the
+closure/eviction witness (dense body == sparse body for a full store).
+
+**Doc correction.** Records are **chunk-ordinal** (`ci` ascending = `kx` fastest,
+then `ky`, then `kz`), **not** monotonic in the packed `Chunk.key`; `export.bend`
+and `serve.bend` comments (and the header) were corrected.
+
+**Also filed.** The renderer's second report
+(`../Bendview/docs/engine-report-gen-shell-and-window.md`) finds that
+`Worldgen.gen` paints bedrock on the **absolute** planes `x/y/z ∈ {0,63}`, which
+an absolute world edge cannot coexist with a moving window or an infinite render
+horizon. `Worldgen.gen_terrain` is already shell-free, so the direction is to let
+the *box* own the shell (window-local `0`/`63`, canonical reproducing today's
+`gen` bit-for-bit). Filed as `G-scale-8` (open, gates `S1` / Bendview M3/M4); not
+implemented here — it is a `coreidea.md` rule-11 semantics decision for the `S1`
+track.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 79/79 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS; `runners/export.bend` and
+  `runners/serve.bend` `--check-only` -> `All terms check.`

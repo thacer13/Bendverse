@@ -1683,6 +1683,19 @@ def t83_bad() -> U32:
     Grid.index(Chunk.global_x(k2, 1000), Chunk.global_y(k2, 1000), Chunk.global_z(k2, 1000))), b1)
   b2
 
+# T84 (G-bridge-2 section 10): the record *order*. For a chunk `k`, the gathered
+# cells must equal `Store.chunk_list(k)` element-by-element -- offset `i` holds
+# local index `i` (forward `Chunk.local` order), not the reverse. T47 (dense ==
+# sparse) cannot see an order both encoders share; this compares to the store's
+# ground truth instead (`chunk_list` is what `assemble_chunk` expects).
+def t84_pair(r: Array<U32> & List<&2, U32>) -> U32:
+  match r:
+    case (world, cells):
+      inc_if_false(dlist_eq(cells, Store.chunk_list(Chunk.key(0, 0, 0))), 0)
+
+def t84_bad() -> U32:
+  t84_pair(Export.bxe_chunk_cells(Worldgen.build(), Chunk.key(0, 0, 0)))
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1764,3 +1777,4 @@ def main() -> IO(Unit):
     report("T81 window canonical index == Grid.index", t81_bad())
     report("T82 window no torus mask (global 80 not folded)", t82_bad())
     report("T83 dense record offset maps to true chunk cell (G-bridge-2)", t83_bad())
+    report("T84 dense record order == Store.chunk_list (G-bridge-2 s10)", t84_bad())

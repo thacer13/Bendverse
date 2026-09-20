@@ -29,11 +29,16 @@ import ../src/sim.bend as Sim
 #   20      4             seed           = 42   (Worldgen.seed)
 #   24      4             ticks          = N    (Sim ticks applied)
 #   28      4             chunk_count    = 64   (= chunks_per_axis^3)
-#   32      ...           chunk_count chunk records, key-ascending
+#   32      ...           chunk_count chunk records, chunk-ordinal
 #
 #   Chunk record (16388 bytes):
 #     +0    4             key            (`Chunk.key(kx, ky, kz)`, 10/10/10 bits)
 #     +4    16384         cell words     `Chunk.cells` = 4096 x u32
+#
+#   Record order is chunk-ordinal: `ci = 0..63` with `kx` fastest, then `ky`,
+#   then `kz` (`Chunk.key(ci&3, (ci>>2)&3, (ci>>4)&3)`). This is NOT monotonic
+#   in the packed key value — a key-indexed parser must map by key, not assume
+#   sorted records.
 #
 #   Cell order inside a record is the chunk-local index order that
 #   `Store.chunk_list` uses (ascending `Grid.index` restricted to the chunk):
@@ -116,16 +121,19 @@ def bxe_snap_header(ticks: U32, tail: List<&2, U32>) -> List<&2, U32>:
 # `Grid.index` array every 4096 words is NOT a chunk (`Grid.index = x + z*64 +
 # y*4096`, so `gi / 4096 = y` is a `y`-plane) — that was the G-bridge-2 defect.
 #
-# `k` and `i` are `+` so the three axis projections may each consume them; `q`
-# is the `(world, value)` pair from `Array.get`, matched as a parameter (`Array`
-# is affine and a local let cannot be a scrutinee). The final (fuel-0) read is
-# discarded; its index is clamped so it cannot underflow.
 # The world word a chunk record's local offset `i` addresses: the inverse of
 # `Chunk.local` composed with `Grid.index` (what `Store.assemble_chunk` writes).
 # The G-bridge-2 defect read `Grid.index`-slice offset `ci*4096 + i` instead.
 def bxe_cell_index(+k: U32, +i: U32) -> U32:
   Grid.index(Chunk.global_x(k, i), Chunk.global_y(k, i), Chunk.global_z(k, i))
 
+# `k` and `i` are `+` so the three axis projections may each consume them; `q`
+# is the `(world, value)` pair from `Array.get`, matched as a parameter (`Array`
+# is affine and a local let cannot be a scrutinee). The walk is DESCENDING (`i`
+# down to 0) and conses, so the head is local index 0 and the record comes out in
+# forward `Chunk.local` order — walking ascending and consing reverses it (the
+# G-bridge-2 order residual, §10). The fuel-0 read is discarded; its index is
+# clamped so it cannot underflow.
 def bxe_chunk_cells_go(
   fuel: Nat, +k: U32, +i: U32, q: Array<U32> & U32, acc: List<&2, U32>
 ) -> Array<U32> & List<&2, U32>:
@@ -137,11 +145,12 @@ def bxe_chunk_cells_go(
     case 1n+p:
       match q:
         case (world, v):
-          +ni = U32.add(i, 1)
+          +ni = U32.min(U32.sub(i, 1), i)
           bxe_chunk_cells_go(p, k, ni, Array.get(U32, world, bxe_cell_index(k, ni)), v <> acc)
 
 def bxe_chunk_cells(world: Array<U32>, +k: U32) -> Array<U32> & List<&2, U32>:
-  bxe_chunk_cells_go(U32.to_nat(Chunk.cells()), k, 0, Array.get(U32, world, bxe_cell_index(k, 0)), Nil{})
+  +last = U32.sub(Chunk.cells(), 1)
+  bxe_chunk_cells_go(U32.to_nat(Chunk.cells()), k, last, Array.get(U32, world, bxe_cell_index(k, last)), Nil{})
 
 # Cons the little-endian bytes of each cell in front of `tail` (forward order).
 def bxe_cell_words(cells: List<&2, U32>, tail: List<&2, U32>) -> List<&2, U32>:
@@ -160,7 +169,8 @@ def bxe_rec_if(
     case (world, cells):
       (world, bxe_u32_le(k, bxe_cell_words(cells, acc)))
 
-# Walk keys DESCENDING so prepending yields an ascending record set — the order
+# Walk keys DESCENDING so prepending yields a chunk-ordinal record set (`ci`
+# ascending = `kx` fastest, then `ky`, then `kz`; not packed-key-monotonic).
 # the header comment specifies and the sparse path (`serve.bend`) emits.
 def bxe_records_go(
   fuel: Nat, +ci: U32, r: Array<U32> & List<&2, U32>

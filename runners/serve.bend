@@ -134,7 +134,8 @@ def bridge2_rec_if(
     case Some{cells}:
       Export.bxe_u32_le(k, Export.bxe_cell_words(cells, tail))
 
-# Walk keys DESCENDING so prepending yields an ascending record set.
+# Walk keys DESCENDING so prepending yields a chunk-ordinal record set (`kx`
+# fastest, then `ky`, then `kz`; not packed-key-monotonic).
 def bridge2_records_go(fuel: Nat, +ci: U32, +s: Store.Store, acc: List<&2, U32>) -> List<&2, U32>:
   match fuel:
     case 0n:
