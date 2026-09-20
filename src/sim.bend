@@ -321,8 +321,9 @@ def ticks(fuel: Nat, world: Array<U32>) -> Array<U32>:
 # wrappers. This section is the driver that moves it. On a chunk step it:
 #
 #   1. shifts the window (`Window.shift`),
-#   2. rebuilds residency (`Store.window_store`: keep overlap, load entering
-#      from worldgen, drop leaving),
+#   2. rebuilds residency (`Store.move_store`: keep overlap, load entering
+#      from worldgen, drop only the LEAVING chunks that are regenerable — so a
+#      modified leaving chunk survives and the world overlay is not erased),
 #   3. assembles the window-local array (`Store.assemble_w`),
 #   4. ticks it k times (`tick_w` / `ticks_w`), and
 #   5. checkpoints the ticked array back into a store (`w5_checkpoint`), so the
@@ -420,23 +421,40 @@ def w5_ck_get(r: Array<U32> & Store.Store) -> Store.Store:
 def w5_ck_store(+w: Window.Window, world: Array<U32>) -> Store.Store:
   w5_ck_get(w5_checkpoint(w, world))
 
+# The checkpoint folded into an existing store instead of a fresh one: the
+# resident keys are overwritten with the gathered (ticked) cells while any
+# non-resident survivor of the preceding lossless move is carried through. The
+# world array is unaffected (only residents are gathered), so this is the same
+# window checkpoint; it is what keeps a whole `w5_step` from discarding a
+# modified leaving chunk at the checkpoint seam.
+def w5_check_store(+w: Window.Window, world: Array<U32>, s: Store.Store) -> Array<U32> & Store.Store:
+  w5_check_go(64n, w, Window.resident_keys(w), (world, s))
+
+def w5_ck_store_on(+w: Window.Window, world: Array<U32>, s: Store.Store) -> Store.Store:
+  w5_ck_get(w5_check_store(w, world, s))
+
 # Shift + residency rebuild (no tick): the window and the store the moved window
 # assembles from. This is the structural half of the driver, testable tick-free.
+# The store comes from `Store.move_store`, the **lossless** load/evict policy: a
+# modified (non-gen-equal) chunk that leaves the window is preserved rather than
+# dropped by an unconditional resident-set rebuild, so moving the window back
+# restores the pile (`Store.window_store` would regenerate it from `gen`).
 def w5_move(
-  w: Window.Window, dcx: U32, dcy: U32, dcz: U32, s: Store.Store
+  +w: Window.Window, dcx: U32, dcy: U32, dcz: U32, s: Store.Store
 ) -> Window.Window & Store.Store:
   +w2 = Window.shift(w, dcx, dcy, dcz)
-  (w2, Store.window_store(w2, s))
+  (w2, Store.move_store(w, w2, s))
 
-# One chunk step: move, assemble the moved window, tick `fuel` times, checkpoint.
-# The `(window, store)` pair is threaded through a parameter because a computed
-# pair is not a scrutinee.
+# One chunk step: move, assemble the moved window, tick `fuel` times, checkpoint
+# *onto the moved store* (`w5_ck_store_on`) so the lossless move's non-resident
+# survivors are not dropped at the seam. The `(window, store)` pair is threaded
+# through a parameter because a computed pair is not a scrutinee.
 def w5_step_r(r: Window.Window & Store.Store, fuel: Nat) -> Window.Window & Store.Store:
   match r:
     case (+w2, +s2):
       world = Store.assemble_w(w2, s2)
       world2 = ticks_w(w2, fuel, world)
-      (w2, w5_ck_store(w2, world2))
+      (w2, w5_ck_store_on(w2, world2, s2))
 
 def w5_step(
   w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store
@@ -465,11 +483,11 @@ def w5_ticks_trace(
 # The trace twin of `w5_step`: same world/move/checkpoint, plus the accumulated
 # deltas for the renderer.
 def w5_trace_fin(
-  +w2: Window.Window, r: Array<U32> & List<Delta>
+  +w2: Window.Window, +s2: Store.Store, r: Array<U32> & List<Delta>
 ) -> Window.Window & Store.Store & List<Delta>:
   match r:
     case (world2, ds):
-      (w2, w5_ck_store(w2, world2), ds)
+      (w2, w5_ck_store_on(w2, world2, s2), ds)
 
 def w5_trace_step_r(
   r: Window.Window & Store.Store, fuel: Nat
@@ -477,7 +495,7 @@ def w5_trace_step_r(
   match r:
     case (+w2, +s2):
       world = Store.assemble_w(w2, s2)
-      w5_trace_fin(w2, w5_ticks_trace(fuel, w2, (world, Nil{}), Nil{}))
+      w5_trace_fin(w2, s2, w5_ticks_trace(fuel, w2, (world, Nil{}), Nil{}))
 
 def w5_trace_step(
   w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store

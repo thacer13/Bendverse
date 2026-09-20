@@ -324,3 +324,48 @@ def window_store_sel(+sel: Bool, w: Window.Window, s: Store) -> Store:
 
 def window_store(w: Window.Window, s: Store) -> Store:
   window_store_sel(Worldgen.box(), w, s)
+
+# ------------------------------------------------------------------ lossless move
+# `window_store` rebuilds from `STip{}` over the new resident keys, so it drops
+# *every* chunk that is not resident in `w2` — including a MODIFIED
+# (non-gen-equal) chunk that is merely leaving the window. That is lossy: a
+# settled pile carried by the leaving chunk is erased, so moving the window back
+# regenerates bare `gen` instead of restoring the pile. The lossless policy
+# instead walks the whole trie (`move_prune_sel`) and drops a chunk only when it
+# is
+#
+#   * *leaving* (`Window.in_resident w1` and not `Window.in_resident w2`), and
+#   * *regenerable*: sleeping (`sleeping_cells`) AND bit-equal to its pure gen
+#     (`gen_eq_cells`),
+#
+# exactly the `Store.evict` criterion but restricted to the leaving slab. Every
+# other chunk is kept, so a non-gen-equal chunk is never dropped. `move_store`
+# then loads/keeps `w2`'s resident keys from the pruned store (`load_keys_go_sel`
+# with the survivors as both source and accumulator): the overlap is preserved,
+# an entering chunk comes from the selected generator, and the survivors that
+# are not resident in `w2` stay in the store (so the world overlay is intact).
+# This is the store-level half of the moving-window driver; `assemble_w` only
+# reads resident keys, so the extra survivors are transparent to the window.
+def leaving_regen_sel(
+  +sel: Bool, +w1: Window.Window, +w2: Window.Window, +k: U32, +cells: List<&2, U32>
+) -> Bool:
+  +leaving = Bool.and(Window.in_resident(w1, k), Bool.not(Window.in_resident(w2, k)))
+  +sleeping = sleeping_cells(U32.to_nat(Chunk.cells()), cells, False{})
+  +gen_eq = gen_eq_cells(U32.to_nat(Chunk.cells()), cells, chunk_list_sel(sel, k), True{})
+  Bool.and(leaving, Bool.and(sleeping, gen_eq))
+
+def move_prune_sel(+sel: Bool, +w1: Window.Window, +w2: Window.Window, s: Store, acc: Store) -> Store:
+  match s:
+    case STip{}:
+      acc
+    case SLeaf{+key, +val}:
+      keep_cells(acc, key, val, leaving_regen_sel(sel, w1, w2, key, val))
+    case SNode{lo, hi}:
+      move_prune_sel(sel, w1, w2, hi, move_prune_sel(sel, w1, w2, lo, acc))
+
+def move_store_sel(+sel: Bool, w1: Window.Window, +w2: Window.Window, s: Store) -> Store:
+  +survivors = move_prune_sel(sel, w1, w2, s, STip{})
+  load_keys_go_sel(sel, 64n, Window.resident_keys(w2), survivors, survivors)
+
+def move_store(w1: Window.Window, w2: Window.Window, s: Store) -> Store:
+  move_store_sel(Worldgen.box(), w1, w2, s)
