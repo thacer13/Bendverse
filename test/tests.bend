@@ -2477,6 +2477,91 @@ def t134_bad() -> U32:
   t134_pair(Sim.w5_checkpoint(w, a))
 
 
+# T140-T144 (S1 / G-scale-4 correctness, lossless move policy): `Store.window_store`
+# rebuilds onto the resident set and so drops *every* non-resident chunk, including a
+# MODIFIED (non-gen-equal) chunk that is merely leaving the window. `Store.move_store
+# w1 w2 s` is the lossless policy: it drops only a LEAVING chunk (resident in `w1`,
+# not in `w2`) that is sleeping AND bit-equal to its gen (`Window.leaving` +
+# `sleeping_cells`/`gen_eq_cells`), and keeps every non-gen-equal chunk. T140: a
+# modified leaving chunk survives (present, still non-gen-equal). T141: a gen-equal
+# leaving chunk is dropped (the T121 statement via `w5_move`). T142: all 16 entering
+# keys of a one-chunk x-move are present. T143: the moved window's assembled array is
+# unchanged on the resident overlap with a modified resident chunk. T144: a full
+# `Sim.w5_step` out and back (fuel 0, tick-free) preserves the modified leaving chunk,
+# so the array->store checkpoint seam does not re-drop it.
+def mod_quiet(+cells: List<&2, U32>) -> List<&2, U32>:
+  match cells:
+    case Nil{}:
+      Nil{}
+    case Con{h, t}:
+      Cell.encode(Cell.sand(), 0, 0, 0, 0) <> t
+
+def t140_cells(m: Maybe<&2, List<&2, U32>>, +k: U32) -> U32:
+  match m:
+    case None{}:
+      1
+    case Some{+cells}:
+      +ge = Store.gen_eq_cells(U32.to_nat(Chunk.cells()), cells, Store.chunk_list(k), True{})
+      inc_if_false(Bool.not(ge), 0)
+
+def t140_bad() -> U32:
+  +w1 = Window.canonical()
+  +w2 = Window.shift(w1, 1, 0, 0)
+  +k = Chunk.key(0, 0, 0)
+  +s = Store.set(Store.build_all(), k, mod_quiet(Store.chunk_list(k)))
+  t140_cells(Store.get(Store.move_store(w1, w2, s), k), k)
+
+def t141_bad() -> U32:
+  +w1 = Window.canonical()
+  +w2 = Window.shift(w1, 1, 0, 0)
+  +s = Store.move_store(w1, w2, Store.build_all())
+  inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(0, 0, 0))), 0), 0)
+
+def t142_go(fuel: Nat, keys: List<&2, U32>, +s: Store.Store, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match keys:
+        case Nil{}:
+          bad
+        case Con{+h, t}:
+          +present = U32.is_eq(is_none_m(Store.get(s, h)), 1)
+          t142_go(p, t, s, inc_if_false(present, bad))
+
+def t142_bad() -> U32:
+  +w1 = Window.canonical()
+  +w2 = Window.shift(w1, 1, 0, 0)
+  +s = Store.move_store(w1, w2, Store.build_all())
+  t142_go(64n, Window.entering(w1, w2), s, 0)
+
+def t143_bad() -> U32:
+  +w1 = Window.canonical()
+  +w2 = Window.shift(w1, 1, 0, 0)
+  +k = Chunk.key(1, 0, 0)
+  +s = Store.set(Store.build_all(), k, mod_first(Store.chunk_list(k)))
+  a = Store.assemble_w(w2, Store.move_store(w1, w2, s))
+  b = Store.assemble_w(w2, Store.window_store(w2, s))
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), 0)
+
+def t144_step2(r: Window.Window & Store.Store, ref: Array<U32>) -> U32:
+  match r:
+    case (w2, s2):
+      got = Store.assemble_w(w2, s2)
+      list_cmp_go(U32.to_nat(262144), Grid.to_list(ref), Grid.to_list(got), 0)
+
+def t144_step(r: Window.Window & Store.Store, ref: Array<U32>) -> U32:
+  match r:
+    case (w2, s1):
+      t144_step2(Sim.w5_step(w2, 4294967295, 0, 0, 0n, s1), ref)
+
+def t144_bad() -> U32:
+  +w1 = Window.canonical()
+  +k = Chunk.key(0, 0, 0)
+  +s0 = Store.set(Store.build_all(), k, mod_quiet(Store.chunk_list(k)))
+  t144_step(Sim.w5_step(w1, 1, 0, 0, 0n, s0), Store.assemble_w(w1, s0))
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -2604,3 +2689,8 @@ def main() -> IO(Unit):
     report("T132 w5_move composes to one move by the summed step (W5)", t132_bad())
     report("T133 w5_checkpoint round-trips a mutated window array (W5)", t133_bad())
     report("T134 w5_checkpoint keys == window resident set (W5)", t134_bad())
+    report("T140 move_store keeps a modified leaving chunk (lossless move)", t140_bad())
+    report("T141 move_store drops a gen-equal leaving chunk", t141_bad())
+    report("T142 move_store loads the entering slab", t142_bad())
+    report("T143 move_store preserves the resident overlap", t143_bad())
+    report("T144 w5_step out-and-back preserves a modified leaving chunk", t144_bad())
