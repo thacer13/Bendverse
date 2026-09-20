@@ -29,6 +29,7 @@ import ./src/color.bend as Color
 import ./src/word.bend as WR
 import ./src/selector.bend as Selector
 import ./src/gscale.bend as Gscale
+import ./src/winset.bend as Winset
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -441,3 +442,29 @@ def Laws.gscale_cw_z_rt_full(x, y, z, h):
                 U32.and(U32{z2}, 16383),
                 U32{z2},
                 s, g)
+
+def Laws.winset_mem_insert_self(k, s):
+  +e = Commit.v3c_is_eq_refl(k)
+  +c = Equal.cong(Bool, Bool, b => Bool.or(b, Winset.winset_mem(k, s)), U32.is_eq(k, k), True{}, e)
+  Equal.trans(Bool, Bool.or(U32.is_eq(k, k), Winset.winset_mem(k, s)), Bool.or(True{}, Winset.winset_mem(k, s)), True{}, c, {==})
+
+def Laws.winset_mem_insert_other(k2, k, s, h):
+  +c = Equal.cong(Bool, Bool, b => Bool.or(b, Winset.winset_mem(k2, s)), U32.is_eq(k2, k), False{}, h)
+  Equal.trans(Bool, Bool.or(U32.is_eq(k2, k), Winset.winset_mem(k2, s)), Bool.or(False{}, Winset.winset_mem(k2, s)), Winset.winset_mem(k2, s), c, {==})
+
+def Laws.winset_remove_insert(k, rest):
+  +k2 = k
+  +rest2 = rest
+  +er = Commit.v3c_is_eq_refl(k2)
+  +pick = Bool.pick(Winset.Winset, U32.is_eq(k2, k2), Winset.winset_remove(k2, rest2), Winset.WinsetCon{k2, Winset.winset_remove(k2, rest2)})
+  Equal.trans(Winset.Winset,
+    Winset.winset_remove(k2, Winset.winset_insert(k2, rest2)),
+    pick,
+    Winset.winset_remove(k2, rest2),
+    {==},
+    Equal.trans(Winset.Winset,
+      pick,
+      Bool.pick(Winset.Winset, True{}, Winset.winset_remove(k2, rest2), Winset.WinsetCon{k2, Winset.winset_remove(k2, rest2)}),
+      Winset.winset_remove(k2, rest2),
+      Equal.cong(Bool, Winset.Winset, b => Bool.pick(Winset.Winset, b, Winset.winset_remove(k2, rest2), Winset.WinsetCon{k2, Winset.winset_remove(k2, rest2)}), U32.is_eq(k2, k2), True{}, er),
+      {==}))
