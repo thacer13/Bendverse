@@ -3350,3 +3350,31 @@ output — part of the broader `G5` threading.
 - `bend PROOF.bend` -> `All terms check.` (branch and merged master).
 - `bend test/tests.bend` -> 28/28 PASS; `bend test/simtests.bend` native -> 21/21 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.85 — parallel dispatch: Herdr backend (watchable workers)
+
+**Status:** workflow/tooling only; no engine/law/test change. Gate green (84 laws).
+Extends A.82. **The Herdr path is unverified from outside Herdr** — it only
+activates when `HERDR_ENV=1`; the headless `pi -p` path is unchanged and was
+smoke-tested.
+
+**Why.** A.82's workers ran headless `pi -p`, which emits only the final report, so
+the human could watch nothing until a worker finished. Herdr (already installed)
+runs each worker as an interactive `pi` in a pane with lifecycle states.
+
+**What.** `tools/parallel.sh dispatch` picks a backend. With `HERDR_ENV=1` it
+splits the caller pane (`herdr pane split --current --cwd <worktree> --env
+BENDVERSE_TRACK=<track>`), starts `herdr agent start <track> --kind pi --pane <id>
+-- --approve --append-system-prompt tools/worker-prompt.md`, submits the task with
+`herdr agent prompt --wait`, captures the pane to `../Bendverse-<track>.log`, and
+closes the pane (unless `BENDVERSE_KEEP_PANES=1`). Outside Herdr it is the previous
+`pi -p` path. `tools/worker-prompt.md` now also has workers write
+`../Bendverse-<track>.report.md`; `AGENTS.md` documents the backend and the
+`BENDVERSE_SPLIT=down` knob for a second concurrent worker.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (84 laws).
+- `bash -n tools/parallel.sh`; `tools/parallel.sh list`; missing-worktree error path.
+- Herdr path: syntax/help-checked against `herdr agent start|prompt|wait|read` and
+  `herdr pane split` (pi is a supported kind); **not executed** — it requires the
+  supervisor to run inside Herdr.

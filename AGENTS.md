@@ -94,6 +94,14 @@ talking to a single session; this protocol is the session's job, not the human's
   `pi -p` in the worktree, using `tools/worker-prompt.md` as the worker role and
   writing output to `../Bendverse-<track>.log`. Dispatch two in parallel by
   backgrounding them in one `bash` call (`… & … & wait`).
+- **Dispatch backend.** Inside Herdr (`HERDR_ENV=1`) each worker runs as an
+  interactive `pi` in its own pane — watchable, with Herdr's
+  `idle`/`working`/`blocked`/`done` states — and the pane output is captured to
+  the log; outside Herdr it is a headless `pi -p`. The worktree/branch protocol
+  is identical either way. The default split is `right`, so set
+  `BENDVERSE_SPLIT=down` for the second concurrent worker; `BENDVERSE_KEEP_PANES=1`
+  leaves finished panes open. Workers also write their own report to
+  `../Bendverse-<track>.report.md`.
 - **The human adds nothing to their prompt layer.** Ask for the tracks in plain
   language; the supervisor creates the worktrees, dispatches the workers, then
   merges, rebases, gates, and updates `PLAN.md`/`HISTORY.md` itself.

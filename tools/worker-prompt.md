@@ -30,7 +30,12 @@ own git worktree on your own branch. A separate **supervisor** session owns
 
 ## Report
 
-End your run with exactly these sections:
+End your run with exactly these sections, and **also save them to the file
+`../Bendverse-$BENDVERSE_TRACK.report.md`** using the `write` tool
+(`$BENDVERSE_TRACK` is your track id, e.g. `v3c` — run `echo "$BENDVERSE_TRACK"`
+if unsure, and fall back to `../$(basename "$PWD").report.md` if it is unset).
+That file is a sibling of the repo root, outside the repo, and is how the
+supervisor reads your result — the printed report alone may be truncated.
 
 ## Completed
 ## Files changed
