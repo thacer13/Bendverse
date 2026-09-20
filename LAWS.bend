@@ -640,3 +640,30 @@ law v3c_ne_idx_sound:
   for +j: U32
   for +he: {U32.is_eq(i, j) == True{} : Bool}
   {Commit.ne_idx(t, n, i, j) == False{} : Bool}
+
+# ------------------------------------------------------------------ G5 mask
+# The residual after the read-threading laws above: `g5_read_get` states the
+# engine read with the masked index `i & (g5_twidth t - 1)`. The bare-index form
+# needs the standard array-index fact for an in-range `i` on a power-of-two
+# world. `src/g5.bend` carries a small, self-contained `U32`/`Word` bit-arithmetic
+# development for it (no Base or project lemma covered `U32.and`/`U32.is_lt`).
+
+# Law 1: a packed world's width is `2^depth`, at the `Word` level (`g5_mpow`).
+law g5_twidth_pow:
+  for +t: Refine.PT
+  {G5.g5_twidth(t) == U32{G5.g5_mpow(32n, G5.g5_depth(t))} : U32}
+
+# Law 2: for an in-range index the engine's range mask is the identity.
+law g5_and_mask_id:
+  for +t: Refine.PT
+  for +i: U32
+  for +h: {U32.is_lt(i, G5.g5_twidth(t)) == True{} : Bool}
+  {U32.and(i, U32.sub(G5.g5_twidth(t), 1)) == i : U32}
+
+# The bare-index read: combining the mask identity with `g5_read_get` removes the
+# mask from the read-threading law, so the engine read is exactly the mirror read.
+law g5_read_get_bare:
+  for +t: Refine.PT
+  for +i: U32
+  for +h: {U32.is_lt(i, G5.g5_twidth(t)) == True{} : Bool}
+  {Array.get(U32, Refine.pack(t), i) == (Refine.pack(t), Tick.tget(t, G5.g5_twidth(t), i)) : Array<U32> & U32}

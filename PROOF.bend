@@ -291,3 +291,23 @@ def Laws.v3c_fold_commutes(xs, ys, t, n, hpn):
 
 def Laws.v3c_ne_idx_sound(t, n, i, j, he):
   Commit.v3c_ne_idx_sound(t, n, i, j, he)
+
+def Laws.g5_twidth_pow(t):
+  G5.g5_twidth_pow(t)
+
+def Laws.g5_and_mask_id(t, i, h):
+  G5.g5_and_mask_id(t, i, h)
+
+def Laws.g5_read_get_bare(t, i, h):
+  +em = G5.g5_read_get(t, i)
+  +eid = G5.g5_and_mask_id(t, i, h)
+  +eidx = Equal.cong(U32, U32, x => Tick.tget(t, G5.g5_twidth(t), x),
+    U32.and(i, U32.sub(G5.g5_twidth(t), 1)), i, eid)
+  +epair = Equal.cong(U32, Array<U32> & U32, y => (Refine.pack(t), y),
+    Tick.tget(t, G5.g5_twidth(t), U32.and(i, U32.sub(G5.g5_twidth(t), 1))),
+    Tick.tget(t, G5.g5_twidth(t), i), eidx)
+  Equal.trans(Array<U32> & U32,
+    Array.get(U32, Refine.pack(t), i),
+    (Refine.pack(t), Tick.tget(t, G5.g5_twidth(t), U32.and(i, U32.sub(G5.g5_twidth(t), 1)))),
+    (Refine.pack(t), Tick.tget(t, G5.g5_twidth(t), i)),
+    em, epair)

@@ -14,6 +14,7 @@ import ../src/count.bend as Count
 import ../src/refine.bend as Refine
 import ../src/commit.bend as Commit
 import ../src/tick.bend as Tick
+import ../src/g5.bend as G5
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -656,6 +657,67 @@ def t33_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def t33_bad() -> U32:
   t33_go(16n, 0, 0)
 
+# T37: a packed world's width is `2^depth` (law `g5_twidth_pow`).
+def g5_tree(d: Nat) -> Refine.PT:
+  match d:
+    case 0n: Refine.PL{0}
+    case 1n+ +p: Refine.PN{g5_tree(p), Refine.PL{0}}
+
+def g5_pow_go(fuel: Nat, +d: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +t = g5_tree(d)
+      ok = U32.is_eq(G5.g5_twidth(t), U32{G5.g5_mpow(32n, d)})
+      g5_pow_go(p, Nat.add(d, 1n), inc_if_false(ok, bad))
+
+def g5_pow_bad() -> U32:
+  g5_pow_go(20n, 0n, 0)
+
+# T38: the mask identity `i & (w - 1) = i` for in-range `i` (law `g5_and_mask_id`).
+def g5_mask_i_go(fuel: Nat, +i: U32, +w: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      inr = U32.is_lt(i, w)
+      ok = Bool.or(Bool.not(inr), U32.is_eq(U32.and(i, U32.sub(w, 1)), i))
+      g5_mask_i_go(p, U32.add(i, 1), w, inc_if_false(ok, bad))
+
+def g5_mask_d_go(fuel: Nat, +d: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +w = G5.g5_twidth(g5_tree(d))
+      g5_mask_d_go(p, Nat.add(d, 1n), g5_mask_i_go(64n, 0, w, bad))
+
+def g5_mask_bad() -> U32:
+  g5_mask_d_go(21n, 0n, 0)
+
+# T39: the bare-index read (law `g5_read_get_bare`).
+def g5_snd(p: Array<U32> & U32) -> U32:
+  match p:
+    case (a, b):
+      b
+
+def g5_bare_go(fuel: Nat, +i: U32, +t: Refine.PT, +w: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      got = g5_snd(Array.get(U32, Refine.pack(t), i))
+      ok = U32.is_eq(got, Tick.tget(t, w, i))
+      g5_bare_go(p, U32.add(i, 1), t, w, inc_if_false(ok, bad))
+
+# A balanced tree with distinct leaf values: `pack`+`Array.size` are only sound
+# at runtime on full trees, and the values make the read check meaningful.
+def g5_full(d: Nat, +base: U32) -> Refine.PT:
+  match d:
+    case 0n: Refine.PL{base}
+    case 1n+ +p: Refine.PN{g5_full(p, base), g5_full(p, U32.add(base, U32.shln(1, p)))}
+
+def g5_bare_bad() -> U32:
+  +t = g5_full(3n, 0)
+  g5_bare_go(8n, 0, t, G5.g5_twidth(t), 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -686,3 +748,6 @@ def main() -> IO(Unit):
     report("T31 point writes commute at distinct leaves", t31_bad())
     report("T32 fold commutes under region split", t32_bad())
     report("T33 ne_idx sound wrt U32 equality", t33_bad())
+    report("T37 g5_twidth = 2^depth", g5_pow_bad())
+    report("T38 g5 bare-index mask identity", g5_mask_bad())
+    report("T39 g5 bare-index read", g5_bare_bad())
