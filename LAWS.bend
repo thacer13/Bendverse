@@ -13,6 +13,7 @@ import ./src/rules.bend as Rules
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
 import ./src/count.bend as Count
+import ./src/g5.bend as G5
 import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
@@ -559,3 +560,44 @@ law write_effect_count_balance:
   for +i: U32
   for +src: U32
   {Nat.add(Settle.suml(Count.to_counts(Refine.afst(Array.swap.go(U32, Refine.pack(t), n, i, Rules.apply_op(src, op))))), Refine.nfst(Count.cnt_chg_m(t, n, i, Rules.apply_op(src, op)))) == Nat.add(Settle.suml(Count.to_counts(Refine.pack(t))), Refine.nsnd(Count.cnt_chg_m(t, n, i, Rules.apply_op(src, op)))) : Nat}
+
+# ------------------------------------------------------------------ G5 reads
+# The read companion of `swap_ref` (G1's write bridge) and of the `G10`/`G14`
+# write-site closures. `Tick.tget` is the reader the live support mirror `sup_m`
+# uses (the retired `step_m` reads through it too, A.63); `Support.sup`/`Rules.plan`
+# read `Array.get(U32, w, i)`.
+# Base's `Array.get.go` walks with the same `n/2` / `is_lt(i, h)` recursion, so the
+# mirror's reads are the engine's array reads at the selector's index. This is the
+# last thread of the `G5` caveat for the support selector machine.
+
+# The engine's `Array.get.go` primitive reads `tget` at the same level-size.
+law g5_read_get_go:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  {Array.get.go(U32, Refine.pack(t), n, i) == (Refine.pack(t), Tick.tget(t, n, i)) : Array<U32> & U32}
+
+# The size half of the `Array.get`/`Array.swap` wrapper: `Array.size(pack t)` is
+# `(pack t, g5_twidth t)`, so the engine's masking index is `i & (g5_twidth t - 1)`.
+law g5_size_pack:
+  for +t: Refine.PT
+  {Array.size(U32, Refine.pack(t)) == (Refine.pack(t), G5.g5_twidth(t)) : Array<U32> & U32}
+
+# The composed engine read: `Array.get(U32, pack t, i)` reads
+# `tget t (g5_twidth t) (i & (g5_twidth t - 1))`. For the in-range indices the
+# engine uses, the mask is the identity (the standard array-index fact, recorded
+# as the residual of `G5`).
+law g5_read_get:
+  for +t: Refine.PT
+  for +i: U32
+  {Array.get(U32, Refine.pack(t), i) == (Refine.pack(t), Tick.tget(t, G5.g5_twidth(t), U32.and(i, U32.sub(G5.g5_twidth(t), 1)))) : Array<U32> & U32}
+
+# Read-after-write at the selector's index: the engine's `q = Array.get(world, i)`
+# after `world[i] <- v` (`Support.sup` cases 3/4/6; the post-write read-back) is
+# the mirror's `q = tget(swap_m(t, n, i, v), n, i) = v`.
+law g5_tget_swap:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +v: U32
+  {Tick.tget(Refine.swap_m(t, n, i, v), n, i) == v : U32}

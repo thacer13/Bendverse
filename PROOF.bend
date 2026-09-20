@@ -16,6 +16,7 @@ import ./src/dirty.bend as Dirty
 import ./src/writepot.bend as WP
 import ./src/tick.bend as Tick
 import ./src/count.bend as Count
+import ./src/g5.bend as G5
 import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
@@ -269,3 +270,15 @@ def Laws.write_effect_phi_balance(op, t, base, n, i, src):
 
 def Laws.write_effect_count_balance(op, t, n, i, src):
   Selector.array_op_count_balance(op, t, n, i, src)
+
+def Laws.g5_read_get_go(t, n, i):
+  G5.g5_tget_get_go(t, n, i)
+
+def Laws.g5_size_pack(t):
+  G5.g5_size_pack(t)
+
+def Laws.g5_read_get(t, i):
+  G5.g5_read_get(t, i)
+
+def Laws.g5_tget_swap(t, n, i, v):
+  G5.g5_tget_swap(t, n, i, v)
