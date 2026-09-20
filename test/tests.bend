@@ -17,6 +17,7 @@ import ../src/v3cw.bend as V3cw
 import ../src/tick.bend as Tick
 import ../src/g5.bend as G5
 import ../src/sim.bend as Sim
+import ../src/cw.bend as Cw
 import ../scenarios/fixtures.bend as Fixtures
 import ../view/voxel.bend as Vox
 import ../runners/view3d.bend as View3d
@@ -1199,6 +1200,68 @@ def t55_bad() -> U32:
   b2 = inc_if_false(U32.is_eq(Worldgen.gen(21, 20, 21, 42), 2), b1)
   b3 = inc_if_false(U32.is_eq(Worldgen.gen(21, 42, 21, 42), 0), b2)
   b3
+# T57-T60 (P3 cw): the global-coordinate module. `cw` splits a global (x,y,z)
+# into a chunk key + local index and rejoins it with no torus mask, unlike
+# `Grid.index` which folds each axis `&63`. Additive: no live path uses it.
+def cw_key_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +k = U32.and(U32.mul(i, 2654435761), 1073741823)
+      ok = U32.is_eq(Cw.cw_key(Cw.cw_key_x(k), Cw.cw_key_y(k), Cw.cw_key_z(k)), k)
+      cw_key_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t57_bad() -> U32:
+  cw_key_go(U32.to_nat(4096), 0, 0)
+
+def cw_local_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +l = U32.and(i, 4095)
+      ok = U32.is_eq(Cw.cw_local(Cw.cw_local_x(l), Cw.cw_local_y(l), Cw.cw_local_z(l)), l)
+      cw_local_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t58_bad() -> U32:
+  cw_local_go(U32.to_nat(4096), 0, 0)
+
+def cw_round_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +x = U32.and(U32.mul(i, 7), 16383)
+      +y = U32.and(U32.add(U32.mul(i, 13), 1), 16383)
+      +z = U32.and(U32.add(U32.mul(i, 29), 2), 16383)
+      +k = Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z))
+      +l = Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))
+      okx = U32.is_eq(Cw.cw_global_x(k, l), x)
+      oky = U32.is_eq(Cw.cw_global_y(k, l), y)
+      okz = U32.is_eq(Cw.cw_global_z(k, l), z)
+      all = Bool.and(Bool.and(okx, oky), okz)
+      cw_round_go(p, U32.add(i, 1), inc_if_false(all, bad))
+
+def t59_bad() -> U32:
+  cw_round_go(U32.to_nat(4096), 0, 0)
+
+# T60: no torus mask. A global x = 200 lives in chunk 12 (200>>4) at local 8,
+# and `cw` reconstructs 200; the live `Grid.index` folds it to 8. A coordinate
+# above the fixed 64 window is preserved, which is what a moving window needs.
+def t60_bad() -> U32:
+  +x = {200 : U32}
+  +k = Cw.cw_key(Cw.cw_chunk_of(x), 0, 0)
+  +l = Cw.cw_local(Cw.cw_local_of(x), 0, 0)
+  b0 = inc_if_false(U32.is_eq(Cw.cw_global_x(k, l), x), 0)
+  b1 = inc_if_false(U32.is_eq(Cw.cw_key_x(k), 12), b0)
+  b2 = inc_if_false(U32.is_eq(Cw.cw_local_x(l), 8), b1)
+  b3 = inc_if_false(U32.is_eq(Cw.cw_pack_key(Cw.cw_pack(x, 0, 0)), Cw.cw_key(12, 0, 0)), b2)
+  b4 = inc_if_false(U32.is_eq(Cw.cw_pack_local(Cw.cw_pack(x, 0, 0)), Cw.cw_local(8, 0, 0)), b3)
+  +idx = Grid.index(x, 0, 0)
+  b5 = inc_if_false(U32.is_eq(Grid.ix(idx), 8), b4)
+  b5
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1253,3 +1316,7 @@ def main() -> IO(Unit):
     report("T54 golden chunk key", t54_bad())
     report("T55 golden worldgen vector", t55_bad())
     report("T56 tick_trace deltas replay + path agreement", t56_bad())
+    report("T57 cw chunk key roundtrip", t57_bad())
+    report("T58 cw local index roundtrip", t58_bad())
+    report("T59 cw global split/rejoin roundtrip", t59_bad())
+    report("T60 cw no torus mask (global 200 preserved)", t60_bad())
