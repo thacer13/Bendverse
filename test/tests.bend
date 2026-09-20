@@ -13,6 +13,7 @@ import ../src/rules.bend as Rules
 import ../src/count.bend as Count
 import ../src/refine.bend as Refine
 import ../src/commit.bend as Commit
+import ../src/v3cw.bend as V3cw
 import ../src/tick.bend as Tick
 import ../src/g5.bend as G5
 
@@ -909,6 +910,80 @@ def t42_go(fuel: Nat, +i: U32, bad: U32) -> U32:
 def t42_bad() -> U32:
   t42_go(64n, 0, 0)
 
+# T46 (V3c/G3 engine wire): the engine's sequential commit `Rules.commit_sets`
+# equals the abstract fold `Commit.v3c_fold` of the projection `V3cw.v3cw_proj` on
+# a 4-leaf `Refine.PT`. `WSet`s use the identity op (`OPres{OId{}}`) so the write
+# value is `src`; the `WWake` is state-neutral for the set fold and vanishes in
+# the projection. This is the runtime witness for the `v3cw_commit_fold` law.
+def t46_tree() -> Refine.PT:
+  Refine.PN{Refine.PN{Refine.PL{10}, Refine.PL{20}}, Refine.PN{Refine.PL{30}, Refine.PL{40}}}
+
+def t46_ws() -> +List<Rules.Write>:
+  Rules.WSet{0, Rules.OPres{Rules.OId{}}, 100}
+    <> Rules.WWake{2}
+    <> Rules.WSet{3, Rules.OPres{Rules.OId{}}, 400}
+    <> Nil{}
+
+def t46_check(+lhs: Refine.PT, +rhs: Refine.PT, bad: U32) -> U32:
+  b0 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 0), Tick.tget(rhs, 4, 0)), bad)
+  b1 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 1), Tick.tget(rhs, 4, 1)), b0)
+  b2 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 2), Tick.tget(rhs, 4, 2)), b1)
+  b3 = inc_if_false(U32.is_eq(Tick.tget(lhs, 4, 3), Tick.tget(rhs, 4, 3)), b2)
+  b3
+
+def t46_bad() -> U32:
+  +t = t46_tree()
+  +ws = t46_ws()
+  +committed = Refine.unpack(Rules.commit_sets(V3cw.v3cw_lin(ws), Refine.pack(t)))
+  +folded = Commit.v3c_fold(V3cw.v3cw_proj(ws), t, 4)
+  b0 = t46_check(committed, folded, 0)
+  b1 = inc_if_false(U32.is_eq(Tick.tget(folded, 4, 0), 100), b0)
+  b2 = inc_if_false(U32.is_eq(Tick.tget(folded, 4, 1), 20), b1)
+  b3 = inc_if_false(U32.is_eq(Tick.tget(folded, 4, 2), 30), b2)
+  b4 = inc_if_false(U32.is_eq(Tick.tget(folded, 4, 3), 400), b3)
+  b4
+
+# T47 (V3c/G3 projection): the projection applies `Rules.apply_op` (here
+# `OPres{OSupport{31}}` writes support `31`), and `WWake` entries do not change
+# the tree (a wake+write list commits the same as the writes alone).
+def t47_ws() -> +List<Rules.Write>:
+  Rules.WSet{1, Rules.OPres{Rules.OSupport{31}}, 20}
+    <> Rules.WWake{3}
+    <> Nil{}
+
+def t47_bad() -> U32:
+  +t = t46_tree()
+  +ws = t47_ws()
+  +committed = Refine.unpack(Rules.commit_sets(V3cw.v3cw_lin(ws), Refine.pack(t)))
+  +folded = Commit.v3c_fold(V3cw.v3cw_proj(ws), t, 4)
+  b0 = t46_check(committed, folded, 0)
+  b1 = inc_if_false(U32.is_eq(Cell.support(Tick.tget(folded, 4, 1)), 31), b0)
+  b2 = inc_if_false(U32.is_eq(Cell.material(Tick.tget(folded, 4, 1)), Cell.material(20)), b1)
+  b2
+
+# T48 (V3c/G3 region split): two registers of the engine's write list with
+# pairwise-distinct projected targets commit to the same tree in either order.
+def t48_xs() -> +List<Rules.Write>:
+  Rules.WSet{0, Rules.OPres{Rules.OId{}}, 100}
+    <> Rules.WSet{2, Rules.OPres{Rules.OId{}}, 200} <> Nil{}
+
+def t48_ys() -> +List<Rules.Write>:
+  Rules.WSet{1, Rules.OPres{Rules.OId{}}, 300}
+    <> Rules.WSet{3, Rules.OPres{Rules.OId{}}, 400} <> Nil{}
+
+def t48_bad() -> U32:
+  +t = t46_tree()
+  +xs = t48_xs()
+  +ys = t48_ys()
+  xy = V3cw.v3cw_lin(List.append(&2, Rules.Write, xs, ys))
+  yx = V3cw.v3cw_lin(List.append(&2, Rules.Write, ys, xs))
+  +pxy = Refine.unpack(Rules.commit_sets(xy, Refine.pack(t)))
+  +pyx = Refine.unpack(Rules.commit_sets(yx, Refine.pack(t)))
+  b0 = t46_check(pxy, pyx, 0)
+  b1 = inc_if_false(Commit.v3c_pair_ne(V3cw.v3cw_proj(xs), V3cw.v3cw_proj(ys), t, 4), b0)
+  b2 = inc_if_false(U32.is_eq(Tick.tget(pxy, 4, 0), 100), b1)
+  b2
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -952,3 +1027,6 @@ def main() -> IO(Unit):
     report("T40 V3c-2 sub range preservation", t40_bad())
     report("T41 V3c-2 canonical size halves", t41_bad())
     report("T42 V3c-2 lt-one reflection", t42_bad())
+    report("T46 engine commit == projected fold", t46_bad())
+    report("T47 projection applies op + wwake neutral", t47_bad())
+    report("T48 engine region split commutes", t48_bad())

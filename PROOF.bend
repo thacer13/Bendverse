@@ -22,6 +22,7 @@ import ./src/step.bend as Step
 import ./src/phase.bend as Phase
 import ./src/batch.bend as Batch
 import ./src/commit.bend as Commit
+import ./src/v3cw.bend as V3cw
 import ./src/color.bend as Color
 import ./src/word.bend as WR
 import ./src/selector.bend as Selector
@@ -329,3 +330,9 @@ def Laws.v3c_ne_idx_complete(k, i, j, hi, hj, hne):
 
 def Laws.v3c_ne_idx_exact(k, i, j, hi, hj):
   Commit.v3c_ne_idx_exact(k, i, j, hi, hj)
+
+def Laws.v3cw_commit_fold(ws, t, n, hn, hir):
+  V3cw.v3cw_commit_fold(ws, t, n, hn, hir)
+
+def Laws.v3cw_commit_commutes(xs, ys, t, n, hn, hxy, hyx, hpn):
+  V3cw.v3cw_commit_commutes(xs, ys, t, n, hn, hxy, hyx, hpn)

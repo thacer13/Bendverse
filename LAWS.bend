@@ -18,6 +18,7 @@ import ./src/fall.bend as Fall
 import ./src/step.bend as Step
 import ./src/phase.bend as Phase
 import ./src/commit.bend as Commit
+import ./src/v3cw.bend as V3cw
 import ./src/selector.bend as Selector
 
 law sanity:
@@ -746,3 +747,35 @@ law v3c_ne_idx_exact:
   for +hi: {U32.is_lt(i, Commit.v3c_two(k)) == True{} : Bool}
   for +hj: {U32.is_lt(j, Commit.v3c_two(k)) == True{} : Bool}
   {Commit.ne_idx(Commit.v3c_full(k), Commit.v3c_two(k), i, j) == Bool.not(U32.is_eq(i, j)) : Bool}
+
+# V3c/G3 — the engine wire: the engine's sequential write-list commit
+# (`Rules.commit_sets`) equals the abstract schedule-invariance fold
+# (`Commit.v3c_fold`) of the projected write list. The projection `V3cw.v3cw_proj`
+# sends a `WSet{idx, op, src}` to the point write `MkWrite{idx, apply_op(src, op)}`
+# and drops `WWake` (state-neutral for the set fold). `V3cw.v3cw_lin` is the
+# multiplicity-erased copy of the engine's linear write list (see the module
+# header); `hn` pins the fold size to the packed tree's own width (`g5_twidth`)
+# and `hir` keeps every write index in range. With this, `v3c_fold_commutes`
+# applies to the engine's actual write set.
+law v3cw_commit_fold:
+  for +ws: +List<Rules.Write>
+  for +t: Refine.PT
+  for +n: U32
+  for +hn: {n == G5.g5_twidth(t) : U32}
+  for +hir: {V3cw.v3cw_in_range(ws, n) == True{} : Bool}
+  {Refine.unpack(Rules.commit_sets(V3cw.v3cw_lin(ws), Refine.pack(t))) == Commit.v3c_fold(V3cw.v3cw_proj(ws), t, n) : Refine.PT}
+
+# The engine-level region-split equality: two regions of the engine's write set,
+# with pairwise-distinct projected targets, commit to the same packed tree in
+# either order. This is `v3c_fold_commutes` transported through
+# `v3cw_commit_fold` by `V3cw.v3cw_proj_append`.
+law v3cw_commit_commutes:
+  for +xs: +List<Rules.Write>
+  for +ys: +List<Rules.Write>
+  for +t: Refine.PT
+  for +n: U32
+  for +hn: {n == G5.g5_twidth(t) : U32}
+  for +hxy: {V3cw.v3cw_in_range(List.append(&2, Rules.Write, xs, ys), n) == True{} : Bool}
+  for +hyx: {V3cw.v3cw_in_range(List.append(&2, Rules.Write, ys, xs), n) == True{} : Bool}
+  for +hpn: {Commit.v3c_pair_ne(V3cw.v3cw_proj(xs), V3cw.v3cw_proj(ys), t, n) == True{} : Bool}
+  {Refine.unpack(Rules.commit_sets(V3cw.v3cw_lin(List.append(&2, Rules.Write, xs, ys)), Refine.pack(t))) == Refine.unpack(Rules.commit_sets(V3cw.v3cw_lin(List.append(&2, Rules.Write, ys, xs)), Refine.pack(t))) : Refine.PT}
