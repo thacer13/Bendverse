@@ -21,6 +21,8 @@ import ../src/cw.bend as Cw
 import ../scenarios/fixtures.bend as Fixtures
 import ../view/voxel.bend as Vox
 import ../runners/view3d.bend as View3d
+import ../runners/serve.bend as Serve
+import ../runners/export.bend as Export
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -1262,6 +1264,123 @@ def t60_bad() -> U32:
   b5 = inc_if_false(U32.is_eq(Grid.ix(idx), 8), b4)
   b5
 
+# T61-T65 (track `bridge2`, B1/B2): the sidecar transport. T61 witnesses the
+# length-prefixed little-endian framing (encode then decode); T62 HELLO and the
+# inbound control kinds (CREDIT/REQUEST/STOP); T63 the dense first snapshot's
+# frame contract against `runners/export.bend`'s body size; T64 the sparse
+# snapshot (evicted chunks omitted, `assemble` regenerates them); T65 the B2
+# delta contract (render-visible fields only, global `Grid.index` idx).
+
+# Typed byte/word list builders (a local annotation on `List<&2, U32>` is not
+# accepted by the parser, so the element type is fixed by the parameters).
+def bridge2_w4(a: U32, b: U32, c: U32, d: U32) -> List<&2, U32>:
+  a <> (b <> (c <> (d <> Nil{})))
+
+def bridge2_w7(a: U32, b: U32, c: U32, d: U32, e: U32, f: U32, g: U32) -> List<&2, U32>:
+  a <> (b <> (c <> (d <> (e <> (f <> (g <> Nil{}))))))
+
+# Compare two `List<&2, U32>` byte buffers (the `&2` kind, unlike `list_cmp_go`).
+def bridge2_cmp(+xs: List<&2, U32>, +ys: List<&2, U32>, bad: U32) -> U32:
+  inc_if_false(dlist_eq(xs, ys), bad)
+
+# T61: an 8-byte payload (two u32 words) frames as [len=8][kind=2][w0 w1], and
+# decoding the bytes recovers exactly those u32 words.
+def t61_bad() -> U32:
+  payload = Export.bxe_u32_le(10, Export.bxe_u32_le(20, Nil{}))
+  frame = Serve.bridge2_frame(2, payload)
+  words = Serve.bridge2_dec_words(frame)
+  expected = bridge2_w4(8, 2, 10, 20)
+  bridge2_cmp(words, expected, 0)
+
+# T62: HELLO carries (version, world_edge, chunk_edge, seed, tick); the three
+# inbound control kinds decode back to their fields.
+def bridge2_credit_ok(c: Serve.Bridge2Ctrl) -> Bool:
+  match c:
+    case Serve.BCredit{frames}:
+      U32.is_eq(frames, 4)
+    case _:
+      False{}
+
+def bridge2_request_ok(c: Serve.Bridge2Ctrl) -> Bool:
+  match c:
+    case Serve.BRequest{tick, flags}:
+      Bool.and(U32.is_eq(tick, 9), U32.is_eq(flags, 3))
+    case _:
+      False{}
+
+def bridge2_stop_ok(c: Serve.Bridge2Ctrl) -> Bool:
+  match c:
+    case Serve.BStop{}:
+      True{}
+    case _:
+      False{}
+
+def t62_bad() -> U32:
+  hello = Serve.bridge2_dec_words(Serve.bridge2_hello(7))
+  hexp = bridge2_w7(20, 0, 1, 64, 16, 42, 7)
+  b0 = bridge2_cmp(hello, hexp, 0)
+  credit = Serve.bridge2_decode_control(Serve.bridge2_frame(5, Export.bxe_u32_le(4, Nil{})))
+  b1 = inc_if_false(bridge2_credit_ok(credit), b0)
+  request = Serve.bridge2_decode_control(Serve.bridge2_frame(6, Export.bxe_u32_le(9, Export.bxe_u32_le(3, Nil{}))))
+  b2 = inc_if_false(bridge2_request_ok(request), b1)
+  stop = Serve.bridge2_decode_control(Serve.bridge2_frame(7, Nil{}))
+  inc_if_false(bridge2_stop_ok(stop), b2)
+
+# T63: the dense first snapshot is the exporter's body behind a kind-1 header:
+# its declared frame size is 8 + the exporter's fixed body size, and the wrapper
+# is exactly `bridge2_frame(1, body)`. (The body itself is literally
+# `Export.bxe_snapshot_bytes`, so it is byte-identical to `runners/export.bend`;
+# the full 1 MiB body is not materialised here, only its size contract.)
+def t63_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Serve.bridge2_dense_frame_size(), 1048872), 0)
+  b1 = inc_if_false(U32.is_eq(Export.bxe_snapshot_size(), 1048864), b0)
+  body = Export.bxe_u32_le(7, Export.bxe_u32_le(9, Nil{}))
+  words = Serve.bridge2_dec_words(Serve.bridge2_frame(1, body))
+  bridge2_cmp(words, bridge2_w4(8, 1, 7, 9), b1)
+
+# T64: eviction drops sleeping gen-equal chunks; the sparse snapshot reports the
+# reduced resident count, and `assemble` regenerates the world exactly.
+def t64_bad() -> U32:
+  all = Store.build_all()
+  +ev = Store.evict(all)
+  sp = Serve.bridge2_snapshot_sparse(ev, 0)
+  hdr = List.take(&2, U32, List.drop(&2, U32, sp, 8n), 32n)
+  hexp = Serve.bridge2_snap_header(0, 0, Nil{})
+  b0 = bridge2_cmp(hdr, hexp, 0)
+  a = Store.assemble(ev)
+  b = Worldgen.build()
+  b1 = list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), b0)
+  +k = Chunk.key(1, 2, 3)
+  +s2 = Store.set(Store.build_all(), k, mod_first(Store.chunk_list(k)))
+  +ev2 = Store.evict(s2)
+  sp2 = Serve.bridge2_snapshot_sparse(ev2, 0)
+  hexp2 = Serve.bridge2_snap_header(1, 0, Nil{})
+  b2 = bridge2_cmp(List.take(&2, U32, List.drop(&2, U32, sp2, 8n), 32n), hexp2, b1)
+  a2 = Store.assemble(s2)
+  b3 = Store.assemble(ev2)
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(a2), Grid.to_list(b3), b2)
+
+# T65: the B2 delta contract, witnessed on a constructed delta so the exact
+# bytes are known. The frame is kind 2, tick 1, count 1, and the single record
+# is `Grid.index(x, y, z)` (the GLOBAL torus index) followed by
+# `Cell.deactivate(new)` -- render-visible fields only, activity bit cleared.
+def bridge2_mk_delta(x: U32, y: U32, z: U32, val: U32) -> Sim.Delta:
+  Sim.Delta{x, y, z, val}
+
+def bridge2_delta_list(d: Sim.Delta) -> List<Sim.Delta>:
+  d <> Nil{}
+
+def t65_bad() -> U32:
+  d = bridge2_mk_delta(5, 6, 7, 12345)
+  ds = bridge2_delta_list(d)
+  +frame = Serve.bridge2_delta_frame(1, ds)
+  hdr_exp = Export.bxe_u32_le(16, Export.bxe_u32_le(2, Export.bxe_u32_le(1, Export.bxe_u32_le(1, Nil{}))))
+  b0 = bridge2_cmp(List.take(&2, U32, frame, 16n), hdr_exp, 0)
+  rec_exp = Export.bxe_u32_le(Grid.index(5, 6, 7), Export.bxe_u32_le(Cell.deactivate(12345), Nil{}))
+  +got = List.take(&2, U32, List.drop(&2, U32, frame, 16n), 8n)
+  b1 = bridge2_cmp(got, rec_exp, b0)
+  inc_if_false(U32.is_eq(Cell.active(Cell.deactivate(12345)), 0), b1)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1320,3 +1439,8 @@ def main() -> IO(Unit):
     report("T58 cw local index roundtrip", t58_bad())
     report("T59 cw global split/rejoin roundtrip", t59_bad())
     report("T60 cw no torus mask (global 200 preserved)", t60_bad())
+    report("T61 serve framing encode/decode", t61_bad())
+    report("T62 serve HELLO + CREDIT/REQUEST/STOP", t62_bad())
+    report("T63 serve dense first snapshot == export body", t63_bad())
+    report("T64 serve sparse snapshot + assemble recovery", t64_bad())
+    report("T65 serve delta B2 (visible fields, global idx)", t65_bad())
