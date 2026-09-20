@@ -641,6 +641,21 @@ def t32_bad() -> U32:
   b8 = inc_if_false(Bool.not(Commit.v3c_pair_ne(xs, xs, t, 4)), b7)
   b8
 
+# T33 (V3c-2 soundness): `ne_idx` never separates equal indices, so it agrees
+# with the engine's `U32.is_eq` on the equal case over a 4-leaf tree.
+def t33_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +u = U32.add(U32.mul(i, 7), 3)
+      b0 = inc_if_false(bool_eq(Commit.ne_idx(t32_tree(), 4, u, u), False{}), bad)
+      b1 = inc_if_false(U32.is_eq(u, u), b0)
+      t33_go(p, U32.add(i, 1), b1)
+
+def t33_bad() -> U32:
+  t33_go(16n, 0, 0)
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -670,3 +685,4 @@ def main() -> IO(Unit):
     report("T30 direction parity classification", dir_par_bad())
     report("T31 point writes commute at distinct leaves", t31_bad())
     report("T32 fold commutes under region split", t32_bad())
+    report("T33 ne_idx sound wrt U32 equality", t33_bad())

@@ -627,3 +627,16 @@ law v3c_fold_commutes:
   for +n: U32
   for +hpn: {Commit.v3c_pair_ne(xs, ys, t, n) == True{} : Bool}
   {Commit.v3c_fold(List.append(&2, Commit.V3cWrite, xs, ys), t, n) == Commit.v3c_fold(List.append(&2, Commit.V3cWrite, ys, xs), t, n) : Refine.PT}
+
+# V3c-2 (soundness half) — `Commit.ne_idx` agrees with the engine's equality on
+# equal indices: `U32.is_eq(i, j) == True` forces `ne_idx == False`, so a proven
+# `ne_idx == True` implies the engine's `U32.is_eq(i, j) == False`. The converse
+# (completeness: distinct in-range indices on a full tree are separated) needs the
+# `U32` order/subtraction arithmetic and is the remaining V3c-2 residual (`G3`).
+law v3c_ne_idx_sound:
+  for +t: Refine.PT
+  for +n: U32
+  for +i: U32
+  for +j: U32
+  for +he: {U32.is_eq(i, j) == True{} : Bool}
+  {Commit.ne_idx(t, n, i, j) == False{} : Bool}

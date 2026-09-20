@@ -1,5 +1,6 @@
 import Base
 import ./refine.bend as R
+import ./word.bend as WR
 
 # ------------------------------------------------------------------ V3c-1
 # Schedule invariance, the algebraic core: point writes at *distinct* indices
@@ -515,3 +516,51 @@ def v3c_fold_commutes(+xs: +List<V3cWrite>, +ys: +List<V3cWrite>, +t: R.PT, +n: 
         v3c_fold(List.append(&2, V3cWrite, ys, xs), t, n),
         v3c_fold(xs, v3c_fold(ys, t, n), n),
         v3c_append_split(ys, xs, t, n))))
+
+# -------------------------------------------------------- V3c-2 (soundness)
+# The kernel hypothesis `ne_idx(t, n, i, j) == True` must mean the engine's own
+# distinctness `U32.is_eq(i, j) == False`; otherwise the fold/region law (V3c-1b)
+# could separate two writes that collide. This section proves the *sound*
+# direction: equal indices are never separated,
+#
+#   U32.is_eq(i, j) == True  =>  ne_idx(t, n, i, j) == False,
+#
+# equivalently `ne_idx == True => U32.is_eq(i, j) == False`. It needs no tree
+# fullness or range hypothesis: `ne_idx` splits only when `is_lt` differs, and for
+# `i == j` both decisions coincide at every node (`v3c_ne_idx_refl`), leaving the
+# leaf case `False`. The reflected engine equality comes from `Word.u32_cmp_eq`.
+#
+# The converse — for an in-range `i != j` on a full tree, `ne_idx == True`
+# (completeness) — needs the `U32` order/subtraction arithmetic and remains the
+# open residual recorded in `PLAN.md` §5.3 (`G3`, V3c-2).
+def v3c_ne_idx_refl_if(+xs: R.PT, +ys: R.PT, +h: U32, +i: U32, +z: Bool,
+  ihx: {ne_idx(xs, h, i, i) == False{} : Bool},
+  ihy: {ne_idx(ys, h, U32.sub(i, h), U32.sub(i, h)) == False{} : Bool})
+  -> {ne_idx_if(ne_idx(xs, h, i, i), ne_idx(ys, h, U32.sub(i, h), U32.sub(i, h)), z, z) == False{} : Bool}:
+  match z:
+    case True{}:
+      ihx
+    case False{}:
+      ihy
+
+def v3c_ne_idx_refl(+t: R.PT, +n: U32, +i: U32) -> {ne_idx(t, n, i, i) == False{} : Bool}:
+  match t:
+    case R.PL{x}:
+      {==}
+    case R.PN{+xs, +ys}:
+      +h = U32.shr(n)
+      v3c_ne_idx_refl_if(xs, ys, h, i, U32.is_lt(i, h),
+        v3c_ne_idx_refl(xs, h, i),
+        v3c_ne_idx_refl(ys, h, U32.sub(i, h)))
+
+def v3c_ne_idx_sound(+t: R.PT, +n: U32, +i: U32, +j: U32,
+  +he: {U32.is_eq(i, j) == True{} : Bool})
+  -> {ne_idx(t, n, i, j) == False{} : Bool}:
+  +eij = WR.u32_cmp_eq(i, j, he)
+  Equal.trans(Bool,
+    ne_idx(t, n, i, j),
+    ne_idx(t, n, i, i),
+    False{},
+    Equal.sym(Bool, ne_idx(t, n, i, i), ne_idx(t, n, i, j),
+      Equal.cong(U32, Bool, x => ne_idx(t, n, i, x), i, j, eij)),
+    v3c_ne_idx_refl(t, n, i))

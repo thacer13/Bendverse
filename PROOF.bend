@@ -288,3 +288,6 @@ def Laws.v3c_write_past_fold(ws, t, n, i, v, hne):
 
 def Laws.v3c_fold_commutes(xs, ys, t, n, hpn):
   Commit.v3c_fold_commutes(xs, ys, t, n, hpn)
+
+def Laws.v3c_ne_idx_sound(t, n, i, j, he):
+  Commit.v3c_ne_idx_sound(t, n, i, j, he)
