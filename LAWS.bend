@@ -717,3 +717,32 @@ law g15_wake_step_inert:
   for +dz: U32
   for +h: {Grid.step_inside(i, dx, dy, dz) == False{} : Bool}
   {Tick.wake_write_m(Grid.step_inside(i, dx, dy, dz), t, n, Grid.neighbor(i, dx, dy, dz)) == t : Refine.PT}
+# V3c-2 (completeness) — the converse of `v3c_ne_idx_sound`, and with it the
+# exact refinement of `ne_idx` to the engine's `U32.is_eq`. For a full
+# `2^k`-leaf tree and in-range distinct indices, `ne_idx` separates them:
+#
+#   `U32.is_eq(i, j) == False`  =>  `ne_idx(full k, two k, i, j) == True`.
+#
+# The proof is the depth induction over the three structural cases
+# (`v3c_ne_idx_sep`/`_same_l`/`_same_r`), closed by the arithmetic bricks
+# `v3c_lt_one_u32` (`i < 1 ⇒ i = 0`), `v3c_sub_two_lt` (the right child's index
+# stays in `[0, 2^k)`) and `v3c_two_shr_of_lt` (`shr (2^(k+1)) = 2^k`). The
+# second law is the combined exactness: `ne_idx` equals `Bool.not ∘ U32.is_eq`,
+# which is what the schedule-invariance fold needs to key writes by the engine's
+# own equality. This closes the V3c-2 residual (`G3`).
+law v3c_ne_idx_complete:
+  for +k: Nat
+  for +i: U32
+  for +j: U32
+  for +hi: {U32.is_lt(i, Commit.v3c_two(k)) == True{} : Bool}
+  for +hj: {U32.is_lt(j, Commit.v3c_two(k)) == True{} : Bool}
+  for +hne: {U32.is_eq(i, j) == False{} : Bool}
+  {Commit.ne_idx(Commit.v3c_full(k), Commit.v3c_two(k), i, j) == True{} : Bool}
+
+law v3c_ne_idx_exact:
+  for +k: Nat
+  for +i: U32
+  for +j: U32
+  for +hi: {U32.is_lt(i, Commit.v3c_two(k)) == True{} : Bool}
+  for +hj: {U32.is_lt(j, Commit.v3c_two(k)) == True{} : Bool}
+  {Commit.ne_idx(Commit.v3c_full(k), Commit.v3c_two(k), i, j) == Bool.not(U32.is_eq(i, j)) : Bool}

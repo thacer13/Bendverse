@@ -831,6 +831,85 @@ def t45_bad() -> U32:
     Grid.index(29, 40, 4), Grid.index(31, 40, 4), Grid.index(63, 40, 4), Grid.index(0, 40, 4),
     True{}, True{}, False{}, False{}, 0)
 
+# T36 (V3c-2 completeness witness, deeper): the exactness `ne_idx = ¬is_eq` on
+# the 32-leaf full tree (`Commit.v3c_full(5)`), exercising the new arithmetic
+# bricks (subtraction range preservation and the halving size) one level further
+# than T34/T35.
+def t36_inner(fuel: Nat, +i: U32, +j: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      b0 = inc_if_false(bool_eq(Commit.ne_idx(Commit.v3c_full(5n), 32, i, j), Bool.not(U32.is_eq(i, j))), bad)
+      t36_inner(p, i, U32.add(j, 1), b0)
+
+def t36_outer(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      b0 = t36_inner(32n, i, 0, bad)
+      t36_outer(p, U32.add(i, 1), b0)
+
+def t36_bad() -> U32:
+  t36_outer(32n, 0, 0)
+
+# T40 (brick 2 witness): for `i` with `is_lt(i, 2^(d+1))` and `not is_lt(i, 2^d)`,
+# the right child's index `i - 2^d` is still in `[0, 2^d)` — the range
+# preservation `Commit.v3c_sub_two_lt` that the completeness recursion needs.
+def t40_i_go(fuel: Nat, +i: U32, +w: U32, +w2: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      h1 = U32.is_lt(i, w2)
+      h0 = U32.is_lt(i, w)
+      concl = U32.is_lt(U32.sub(i, w), w)
+      ok = Bool.or(Bool.or(Bool.not(h1), h0), concl)
+      t40_i_go(p, U32.add(i, 1), w, w2, inc_if_false(ok, bad))
+
+def t40_d_go(fuel: Nat, +d: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +w = Commit.v3c_two(d)
+      +w2 = Commit.v3c_two(Nat.add(1n, d))
+      b0 = t40_i_go(1100n, 0, w, w2, bad)
+      t40_d_go(p, Nat.add(1n, d), b0)
+
+def t40_bad() -> U32:
+  t40_d_go(10n, 0n, 0)
+
+# T41 (brick 3 witness): the canonical size halves, `shr(2^(d+1)) = 2^d`, for
+# every non-wrapping `d` (`Commit.v3c_two_shr_of_lt`), i.e. `d` in `[0, 31)`.
+def t41_go(fuel: Nat, +d: Nat, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      +w = Commit.v3c_two(Nat.add(1n, d))
+      +w0 = Commit.v3c_two(d)
+      ok = U32.is_eq(U32.shr(w), w0)
+      t41_go(p, Nat.add(1n, d), inc_if_false(ok, bad))
+
+def t41_bad() -> U32:
+  t41_go(31n, 0n, 0)
+
+# T42 (brick 1 witness): `Word.cmp`'s `LT` reflected at the base — `i < 1` forces
+# `i = 0` (`Commit.v3c_lt_one_u32`), the leaf case of the completeness induction.
+def t42_go(fuel: Nat, +i: U32, bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      ok = Bool.or(Bool.not(U32.is_lt(i, 1)), U32.is_eq(i, 0))
+      t42_go(p, U32.add(i, 1), inc_if_false(ok, bad))
+
+def t42_bad() -> U32:
+  t42_go(64n, 0, 0)
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -869,3 +948,7 @@ def main() -> IO(Unit):
     report("T43 wake wrap inert at x=0 face (G15)", t43_bad())
     report("T44 wake wrap inert at corner (G15)", t44_bad())
     report("T45 interior wake still marks both sides (G15)", t45_bad())
+    report("T36 ne_idx exact on 32-leaf full tree", t36_bad())
+    report("T40 V3c-2 sub range preservation", t40_bad())
+    report("T41 V3c-2 canonical size halves", t41_bad())
+    report("T42 V3c-2 lt-one reflection", t42_bad())

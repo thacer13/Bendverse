@@ -324,3 +324,8 @@ def Laws.g15_wake_step_inert(t, n, i, dx, dy, dz, h):
   Equal.cong(Bool, Refine.PT,
     b => Tick.wake_write_m(b, t, n, Grid.neighbor(i, dx, dy, dz)),
     Grid.step_inside(i, dx, dy, dz), False{}, h)
+def Laws.v3c_ne_idx_complete(k, i, j, hi, hj, hne):
+  Commit.v3c_ne_idx_complete_imp(k, i, j, hi, hj, hne)
+
+def Laws.v3c_ne_idx_exact(k, i, j, hi, hj):
+  Commit.v3c_ne_idx_exact(k, i, j, hi, hj)
