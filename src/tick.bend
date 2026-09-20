@@ -18,6 +18,18 @@ def tget(t: R.PT, n: U32, +i: U32) -> U32:
       +h = U32.shr(n)
       Bool.pick(U32, U32.is_lt(i, h), tget(xs, h, i), tget(ys, h, U32.sub(i, h)))
 
+# V0-5: the `PT` mirror of `Ops.side_sel`'s decision — the wall-adhesion half
+# of the seed, over the five non-below faces, reading the packed tree rather than
+# the array. `tget` duplicates (`PT` is `Data`), so the reads inline. The below
+# half is the S2 branch's `bstat` (the cell below is static).
+def tstatic_side(+t: R.PT, +n: U32, +i: U32) -> Bool:
+  Bool.or(
+    Bool.or(Cell.static(Cell.material(tget(t, n, Grid.above(i)))),
+            Cell.static(Cell.material(tget(t, n, Grid.west(i))))),
+    Bool.or(Cell.static(Cell.material(tget(t, n, Grid.east(i)))),
+            Bool.or(Cell.static(Cell.material(tget(t, n, Grid.south(i)))),
+                    Cell.static(Cell.material(tget(t, n, Grid.north(i)))))))
+
 # ------------------------------------------------------------------ support
 # A support write changes only the support field: the changed leaf's old and
 # new potentials coincide, so Phi is preserved.
@@ -514,13 +526,15 @@ def sup_m(fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gated: Bool, +n
           want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
           sup_m(p, t, v, Bool.pick(SupSel, want, S1{}, S9{}), i, gated, n, wf, base)
         case S1{}:
-          adj = Ops.shell_adjacent(i)
-          sup_m(p, t, gv, Bool.pick(SupSel, adj, S4{}, S5{}), i, gated, n, wf, base)
+          sup_m(p, t, gv, S5{}, i, gated, n, wf, base)
         case S2{}:
           +b = gv
+          bstat = Cell.static(Cell.material(b))
           bcoh = U32.is_ne(Cell.cohesion(b), 0)
           bsup = U32.is_ne(Cell.support(b), 0)
-          sup_m(p, t, b, Bool.pick(SupSel, Bool.and(bcoh, bsup), S3{}, S6{}), i, gated, n, wf, base)
+          side = tstatic_side(t, n, i)
+          next = Bool.pick(SupSel, bstat, S4{}, Bool.pick(SupSel, Bool.and(bcoh, bsup), S3{}, Bool.pick(SupSel, side, S4{}, S6{})))
+          sup_m(p, t, b, next, i, gated, n, wf, base)
         case S3{}:
           +sv = Cell.support(gv)
           +v = Ops.set_support(tget(t, n, i), sv)
@@ -610,13 +624,15 @@ def sup_m_preserves(+fuel: Nat, +t: R.PT, +gv: U32, +sel: SupSel, +i: U32, +gate
           want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
           sup_m_preserves(p, t, v, Bool.pick(SupSel, want, S1{}, S9{}), i, gated, n, wf, base)
         case S1{}:
-          adj = Ops.shell_adjacent(i)
-          sup_m_preserves(p, t, gv, Bool.pick(SupSel, adj, S4{}, S5{}), i, gated, n, wf, base)
+          sup_m_preserves(p, t, gv, S5{}, i, gated, n, wf, base)
         case S2{}:
           +b = gv
+          bstat = Cell.static(Cell.material(b))
           bcoh = U32.is_ne(Cell.cohesion(b), 0)
           bsup = U32.is_ne(Cell.support(b), 0)
-          sup_m_preserves(p, t, b, Bool.pick(SupSel, Bool.and(bcoh, bsup), S3{}, S6{}), i, gated, n, wf, base)
+          side = tstatic_side(t, n, i)
+          next = Bool.pick(SupSel, bstat, S4{}, Bool.pick(SupSel, Bool.and(bcoh, bsup), S3{}, Bool.pick(SupSel, side, S4{}, S6{})))
+          sup_m_preserves(p, t, b, next, i, gated, n, wf, base)
         case S3{}:
           +sv = Cell.support(gv)
           +v = Ops.set_support(tget(t, n, i), sv)

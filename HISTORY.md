@@ -2173,6 +2173,9 @@ orphan anything, and it must land with the retirement recorded.
 
 ### A.62 — Pre-`V0` audit: slop, landmines, and one wrong constant
 
+> **Superseded by A.81** — `Ops.shell_adjacent` was replaced by a neighbourhood
+> seed read; `R6`/`R7` are now conforming.
+
 **Status:** cleanup. Gate green, 59 laws, both suites pass (sim rebuilt). No
 semantics changed — every edit is behaviour-preserving, verified by rebuilding
 and re-running the native simulation suite.
@@ -3190,4 +3193,59 @@ superseded-by pointer for its blocker claim.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.` (77 laws).
 - `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` native -> 20/20 PASS.
+- `bend_canary` -> 6 ok, 0 bad.
+
+### A.81 — V0-5: the support seed is a neighbourhood read (`R6`/`R7` closed)
+
+**Status:** engine semantics change (support seed) + mirror update + test + docs.
+`V0`'s last sub-step, and the last row of the §4.1 conformance table to leave
+*deviating*. Gate green (77 laws, unchanged — no law's meaning moved), fast 26/26,
+sim 21/21 (rebuilt, +T40), canaries 6 ok.
+
+**What was wrong.** Rules 6/7 say cohesion rigidity is a *local* property derived
+from the pre-phase neighbourhood, and support is derived, never carried. The
+support pass seeded grounding with `Ops.shell_adjacent(i)`, which returned
+`x/z/y ∈ {1,62}` — the layer next to the bedrock shell — and never read an
+adjacent cell. So a cell was grounded by *position*, and `R6`/`R7` were recorded
+as deviating (A.62). `V0-2` had closed the box at the grid level and `V0-4b` had
+closed `C3`, but neither touched the seed.
+
+**The change.** The seed is now read from the world:
+- `src/ops.bend`: `Ops.shell_adjacent` is gone. `face` maps a direction code
+  0..5 to the neighbour index, `seed_go` folds reads of the faces (threading the
+  linear `Array`), and `side_sel` is the wall-adhesion half over the five
+  non-below faces (selector 4 = grounded, 6 = crush).
+- `src/support.bend`: `Support.sup` case 1 reads `below` first (the support
+  contact — and the common propagation path), and case 2 decides on it: below
+  static → set support 31 (case 4); below cohesive *and* supported → inherit
+  (case 3); otherwise the wall faces are probed (`side_sel`, cases 30/31). An
+  eager six-face read was tried first and cost ~50 % on the build scenario; the
+  lazy order means the common terrain path (below already supported) pays no
+  extra reads, and the residual regression is ~24 % on build+pull+14 ticks.
+  Settled ticks are unchanged (no active cells → no support work).
+- `src/tick.bend`: the `sup_m` mirror moves with it — `tstatic_side` is the `PT`
+  form of the wall read, and `S1`/`S2` route to the new decision. `sup_m` stays
+  live (it mirrors the current `Support.sup`), unlike the retired `step_m`;
+  `sup_mirror_preserves_phi` is unchanged in meaning and still checks.
+- No coordinate is baked in, so interior bedrock now grounds too: a rock resting
+  on an interior bedrock block stays rock with support 31, and a rock against an
+  interior wall with empty below is held by wall adhesion.
+
+**Witness (`T40`).** Three clauses, all against a hand-built world (no worldgen
+shell): (a) a rock on interior bedrock → rock + support 31; (b) a rock against an
+interior bedrock wall, empty below → rock + support 31; (c) an isolated active
+rock (no static neighbour, empty below) → rubble. Under the retired coordinate
+seed (a) and (b) would crush — `(32,39,32)`/`(31,40,32)` are not shell-adjacent —
+so the witness is a real differential. Sim suite 21/21.
+
+**Docs.** PLAN §4.1 `R6`/`R7` → **conforming**; the `V0` frontier block moved to
+§5.2 "Landed (detail)" with the `V0-5` note; §5.1 gains the `V0` row; the
+dependency view drops the `V0-5` row and the order note records the empty
+frontier. §5.3 gaps are untouched: `G6` ("support test-witnessed only") still
+stands, because no support-*recompute* law was added — this changes engine
+behaviour, not the proof burden.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (77 laws).
+- `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` native -> 21/21 PASS.
 - `bend_canary` -> 6 ok, 0 bad.

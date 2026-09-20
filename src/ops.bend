@@ -70,22 +70,51 @@ def crush_word(+w: U32) -> U32:
 def crush_if_rock(+w: U32) -> U32:
   Bool.pick(U32, U32.is_eq(Cell.material(w), 3), crush_word(w), w)
 
-# The support seed for rules 6/7: the layer just inside the box shell is
-# treated as grounded, so cohesive cells there get support 31 and support then
-# propagates up the column.
+# The support seed for rules 6/7 (V0-5): grounding is a *neighbourhood* test,
+# not a coordinate one. The bedrock shell at 0/63 used to be detected by
+# hardcoding `x/z/y ∈ {1,62}` (`shell_adjacent`, A.62), which never read a
+# neighbour. Now the ground is read: `Support.sup` grounds a cell if the cell
+# *below* it is static material (bedrock) — the support contact — or, failing
+# that, if any other face neighbour is static (wall adhesion). No coordinate is
+# baked in, so interior bedrock grounds too and R6/R7 hold. The below read is on
+# the common propagation path, so the five wall reads are only paid where the
+# below cell neither grounds nor supports.
 #
-# NOTE (A.62): despite the old name this is *coordinate*-based, not a
-# neighbourhood test — it never looks at an adjacent cell. It bakes in the
-# 64³ world and a bedrock shell at 0/63 (the literals `1`/`62` are `0+1`/`63-1`).
-# That deviates from rule 6/7 ("rigidity from the pre-phase neighbourhood") and
-# from C2 ("the shell is generation, not grid"). Recorded in PLAN §4.1; the box
-# half was closed by `V0-2` (A.64), and the remaining positional seed is the
-# frontier item `V0-5` (R6/R7).
-def shell_adjacent(+i: U32) -> Bool:
-  +x = Grid.ix(i)
-  +z = Grid.iz(i)
-  +y = Grid.iy(i)
-  Bool.or(
-    Bool.or(Bool.or(U32.is_eq(x, 1), U32.is_eq(x, 62)), Bool.or(U32.is_eq(z, 1), U32.is_eq(z, 62))),
-    Bool.or(U32.is_eq(y, 1), U32.is_eq(y, 62))
-  )
+# `face` maps a direction code 0..5 to the neighbour index; `seed_go` folds the
+# reads. `Array` is linear, so the reads thread the `(world, value)` pair. It
+# returns selector 4 (grounded → support 31) if a neighbour is static, else
+# `acc` (the caller's fallback selector). The seed value `0` is a non-static
+# sentinel: material 0 is not static, so the first iteration only reads `face`.
+def face(+h: U32, +i: U32) -> U32:
+  match h:
+    case 0:
+      Grid.below(i)
+    case 1:
+      Grid.above(i)
+    case 2:
+      Grid.west(i)
+    case 3:
+      Grid.east(i)
+    case 4:
+      Grid.south(i)
+    case _:
+      Grid.north(i)
+
+def seed_go(
+  dirs: List<U32>, +i: U32, +acc: U32, gp: Array<U32> & U32
+) -> Array<U32> & U32:
+  match dirs:
+    case Nil{}:
+      match gp:
+        case (world, v):
+          (world, Bool.pick(U32, Cell.static(Cell.material(v)), 4, acc))
+    case Con{+h, t}:
+      match gp:
+        case (world, v):
+          seed_go(t, i, Bool.pick(U32, Cell.static(Cell.material(v)), 4, acc), Array.get(U32, world, face(h, i)))
+
+# The wall-adhesion half of the seed: the five non-below faces, returning
+# selector 4 (grounded) or 6 (crush). Used by `Support.sup` only where the below
+# cell neither grounds nor supports.
+def side_sel(world: Array<U32>, +i: U32) -> Array<U32> & U32:
+  seed_go([1, 2, 3, 4, 5], i, 6, (world, 0))

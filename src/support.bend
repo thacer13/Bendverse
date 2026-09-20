@@ -43,17 +43,24 @@ def sup(
               want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
               sup(p, (world, v), Bool.pick(U32, want, 1, 9), i, v, gated, wakes, todo, scan)
             case 1:
-              +v = gv
-              adj = Ops.shell_adjacent(i)
-              sup(p, (world, v), Bool.pick(U32, adj, 4, 5), i, w, gated, wakes, todo, scan)
+              # V0-5: the seed reads the neighbourhood. `below` is read first (it
+              # is both the support contact and the common propagation path);
+              # only a cell whose below neither grounds nor supports pays the
+              # wall reads (case 30 -> 31).
+              sup(p, (world, gv), 5, i, w, gated, wakes, todo, scan)
+            case 30:
+              sup(p, Ops.side_sel(world, i), 31, i, w, gated, wakes, todo, scan)
+            case 31:
+              sup(p, (world, w), gv, i, w, gated, wakes, todo, scan)
             case 5:
               q = Array.get(U32, world, Grid.below(i))
               sup(p, q, 2, i, w, gated, wakes, todo, scan)
             case 2:
               +b = gv
+              bstat = Cell.static(Cell.material(b))
               bcoh = U32.is_ne(Cell.cohesion(b), 0)
               bsup = U32.is_ne(Cell.support(b), 0)
-              sup(p, (world, b), Bool.pick(U32, Bool.and(bcoh, bsup), 3, 6), i, w, gated, wakes, todo, scan)
+              sup(p, (world, b), Bool.pick(U32, bstat, 4, Bool.pick(U32, Bool.and(bcoh, bsup), 3, 30)), i, w, gated, wakes, todo, scan)
             case 3:
               sv = Cell.support(gv)
               world = world[i] <- Ops.set_support(w, sv)

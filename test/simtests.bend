@@ -470,6 +470,48 @@ def t39() -> U32:
               is_bad(Nat.is_eq(one_sand_phi(5), model_one_sand(5))))
   U32.add(a, is_bad(Nat.is_eq(one_sand_phi(63), model_one_sand(63))))
 
+# T40 (V0-5): the support seed is a *neighbourhood* test, not a coordinate one.
+# (a) A rock resting on interior bedrock — not the box shell — is grounded by the
+# static neighbour *below* it, so it stays rock with support 31. (b) A rock
+# against an interior bedrock *wall*, with empty below, is grounded by the static
+# side neighbour (wall adhesion). Under the retired coordinate seed
+# (`shell_adjacent`, A.62) neither (32,39,32) nor (31,40,32) is shell-adjacent,
+# so in both cases the rock would inspect below, find nothing to rest on, and be
+# crushed. (c) is the control: an isolated active rock (no static neighbour,
+# empty below) still crushes.
+def t40_rock_on_bedrock() -> U32:
+  w0 = empty_world_at(18n)
+  +base_i = Grid.index(32, 39, 32)
+  +rock_i = Grid.index(32, 40, 32)
+  w1 = w0[base_i] <- Cell.encode(Cell.bedrock(), 63, 0, 0, 0)
+  w2 = w1[rock_i] <- Cell.activate(Cell.encode(Cell.rock(), 48, 0, 0, 0))
+  w3 = Sim.tick(w2)
+  +cell = Grid.value_at(w3, rock_i)
+  U32.add(is_bad(U32.is_eq(Cell.material(cell), Cell.rock())),
+          is_bad(U32.is_eq(Cell.support(cell), 31)))
+
+def t40_rock_on_wall() -> U32:
+  w0 = empty_world_at(18n)
+  +wall_i = Grid.index(31, 40, 32)
+  +rock_i = Grid.index(32, 40, 32)
+  w1 = w0[wall_i] <- Cell.encode(Cell.bedrock(), 63, 0, 0, 0)
+  w2 = w1[rock_i] <- Cell.activate(Cell.encode(Cell.rock(), 48, 0, 0, 0))
+  w3 = Sim.tick(w2)
+  +cell = Grid.value_at(w3, rock_i)
+  U32.add(is_bad(U32.is_eq(Cell.material(cell), Cell.rock())),
+          is_bad(U32.is_eq(Cell.support(cell), 31)))
+
+def t40_isolated_rock() -> U32:
+  w0 = empty_world_at(18n)
+  +rock_i = Grid.index(32, 40, 32)
+  w1 = w0[rock_i] <- Cell.activate(Cell.encode(Cell.rock(), 48, 0, 0, 0))
+  w2 = Sim.tick(w1)
+  +cell = Grid.value_at(w2, rock_i)
+  is_bad(U32.is_eq(Cell.material(cell), Cell.rubble()))
+
+def t40() -> U32:
+  U32.add(t40_rock_on_bedrock(), U32.add(t40_rock_on_wall(), t40_isolated_rock()))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -492,3 +534,4 @@ def main() -> IO(Unit):
     report("T37 dirty-row mask carries the work set", t37())
     report("T38 Phi never increases over 60 engine ticks", t38())
     report("T39 runtime Phi oracle agrees with the model", t39())
+    report("T40 support seed is a neighbourhood test (V0-5)", t40())

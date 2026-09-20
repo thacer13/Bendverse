@@ -487,8 +487,8 @@ This table is what would have caught T23/T24 on the day they landed.
 | `R3` | At most one writer per cell per phase | conforming | contention is resolved from the pre-phase state: of the two opposite-axis diagonal claimants of one target, the smaller index owns it (V0-1, A.63; T23). Drop/crush targets are injective within a colour |
 | `R4` | Colour × direction batches, injective targets | conforming | direction batches are a closed set (`Rules.Dir4`, no `k ≥ 4` fallback) and each batch's target map is proven injective (`batch_target_injective`, `diag_target_injective`, V0-3a, A.65); bit extraction reads `color_of` back as the three coordinate parities (`color_of_bit0/1/2`, V0-3b, A.66) and a same-colour target collision forces equal displacement parities (`color_collision_x_par/_z_par`), so the only cross-direction overlap is the opposite-diagonal parity class — resolved by the pre-phase tie-break (V0-1/T23, rule 3), not by re-reading |
 | `R5` | Falling is universal | conforming | `fall_*` laws |
-| `R6` | Cohesion rigidity is local | deviating | `Ops.shell_adjacent` (renamed from `adjacent_static`, A.62) seeds support from **coordinates**, not the neighbourhood: it hardcodes the 64³ shell (literals `1`/`62`) and never reads an adjacent cell |
-| `R7` | Support derived, scoped to disturbed cells | deviating | same seed: `Support.sup` case 1 grounds a cell by position, so support is not purely neighbourhood-derived. The activity gate and the `—`-no-staleness part are fine; the world *scan* was the separate `C3` deviation, closed by `V0-4b-3b` (A.77). The positional seed remains, tracked as `V0-5` |
+| `R6` | Cohesion rigidity is local | conforming | `V0-5` (A.81): the support seed reads the actual neighbours — the cell below (the support contact) and, where the below cell neither grounds nor supports, the five other faces (`Ops.side_sel`) — so grounding is neighbourhood-derived. `Ops.shell_adjacent` (A.62, the hardcoded `x/z/y ∈ {1,62}` shell) is gone; T40 witnesses below-static grounding, wall adhesion and the crush control |
+| `R7` | Support derived, scoped to disturbed cells | conforming | `V0-5` (A.81): `Support.sup` derives support from the current neighbourhood (`below`, then the wall faces), never by position and never carried across a structural change. The activity gate and the `—`-no-staleness part hold; the world *scan* was the separate `C3` deviation, closed by `V0-4b-3b` (A.77) |
 | `R8` | Impact is a threshold event | conforming | `rock_crumbles_lighter` |
 | `R9` | Activity effects land next tick | conforming | `V0-4a` (A.71) defers each phase's wakes to tick end (T33); `V0-4b-1` (A.72) made a move **clear** the mover's active bit so it is not re-evaluated by a later colour phase (T34); `V0-4b-2` (A.74) defers the support pass's crush wake too (T36). Every wake now lands at tick end |
 | `R10` | Determinism under any schedule | conforming | follows from `C1`: each phase is a pure function of its input (V0-1, A.63). The composition step now has a law — point writes at `ne_idx`-distinct leaves commute (`point_writes_commute`, V3c-1, A.68); the full region-split *equality* (the list/region fold, and `ne_idx`'s refinement to `U32.is_eq`) is still `V3c`/`G3` |
@@ -512,18 +512,19 @@ closed; T36). No write activates a cell within the tick that reads it.
 A.68): the phase's writes apply order-independently when their targets are
 distinct, which is what a region merge needs; the fold over a `List<Write>` and
 the `ne_idx`↔`U32.is_eq` refinement are the open remainder.
-`R6`/`R7` are a second, independent deviation: the support seed is positional, so
-"rigidity is local" is not yet true. `V0-2` closed the box at the grid level and
-`V0-4b-3b` closed `C3`, but neither replaced the seed, which remains a frontier
-item (`V0-5`). No row is closed by rewording a rule to match the code.
+`R6`/`R7` are now *conforming*: `V0-5` (A.81) replaced the positional support
+seed with a neighbourhood read — the cell below, then the five wall faces — so
+"rigidity is local" holds. No row is closed by rewording a rule to match the
+code.
 
 **Retirement (A.63).** `Rules.step` was replaced by `Rules.plan`/`phase_plan_w`, so the
 `step_m` mirror in `src/step.bend` (law `step_mirror_balance`) no longer mirrors
 the engine. It is **retired**: still a true theorem about the old selector
 machine, no longer evidence for the engine. Per §3.4 it is kept, not deleted, and
 must not be extended. `sup_m` (`src/tick.bend`, law `sup_mirror_preserves_phi`)
-still mirrors `Support.sup`, which `V0-1` did not touch, so it stays live until
-`V0-4b` rewrites that pass. `G10` consequently stays closed only for the retired shape; the live `Rules.plan`
+still mirrors `Support.sup` and stays **live**: `V0-4b` moved it with the deferred
+crush wake (A.74) and `V0-5` with the neighbourhood seed (A.81), and the law is
+unchanged in meaning. `G10` consequently stays closed only for the retired shape; the live `Rules.plan`
 write-site enumeration was recorded as `G14`, **closed by A.79 (`V3d-2`)** by typing the effect.
 
 ### 4.2 Known landmines (recorded, not yet fixed)
@@ -608,6 +609,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `V3c-1` | schedule-invariance kernel: point writes at leaves that `Commit.ne_idx` separates commute (`swap_m (swap_m t n i v) n j w = swap_m (swap_m t n j w) n i v`, law `point_writes_commute`), so a merged write set applies order-independently; `ne_idx` mirrors `swap_m`'s own walk (a split at some level, `False` at a leaf) and is exactly distinctness for in-range indices; T31 witnesses both the commutation and the predicate's sharpness. The engine no longer needs a `read/write` ordering argument (V0-1): this is the *composition* half. The list/region fold (V3c-1b) and the `ne_idx`↔`U32.is_eq` refinement remain | A.68 |
 | `V3d` | generic material-preserving write family: the four hand-written `PT` recursions (`Tick.chg_support`/`chg_fall`/`chg_activate`/`chg_deactivate`, each with its own `chg_X_if` and `array_X_write`) are replaced by one traversal over a `Data`-kinded selector, with `mat_pres` as the whole per-site obligation. A selector is required rather than a function parameter because Bend closures are affine (callable at most once) while a write is applied at every leaf. Also lands the first executable Φ oracle: `Settle.array_phi` is proof-side and `suml` is not tail-recursive, so it overflowed on a 2^18-cell world and the flagship property had never been checked end to end. T39 pins the oracle to `Settle.pot_at`; T38 runs it — Φ is non-increasing across 60 real ticks and strictly decreases | A.78 |
 | `V3d-2` | **write effects are typed (`G14` closed)**: `Rules.Write`'s `WSet` carries `op: Rules.Op` — a closed `Data` datatype with a total `Rules.apply_op` — so `plan` cannot emit an unclassified write and the write-set enumeration is a typing fact rather than an inspection. `write_effect_phi_balance`/`_count_balance` are total over `Op`; the decrease is refined per *shape* (preserving self-write / guarded crush / two-cell movement) rather than per site. The move/slide sites collapse to `OPres{OMov{}}`/`OPres{OId{}}`; `commit_sets` becomes `world[idx] <- apply_op(src, op)`, values still precomputed in `plan`, so `C1` purity and `C3` cost are untouched. Engine change only — `rules.bend` + one `sim.bend` pattern — with the fast and sim suites unchanged | A.79 |
+| `V0` | semantics rewrite complete: phase purity (`V0-1`), closure (`V0-2`), direction/colour batching (`V0-3`), cost via the carried dirty-row work set (`V0-4b`), and the neighbourhood support seed (`V0-5`) — every `C1`/`C2`/`C3` and `R1`–`R11` row in §4.1 now conforms | A.63–A.81 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -625,71 +627,7 @@ index).
 
 #### Frontier — do next
 
-- [ ] **V0** Semantics rewrite (contracts `C1` purity, `C2` closure, `C3` cost) · next · deps: — · serves: C3
-  — scoped in A.61; sub-steps land and test alone. `V0-1`/`V0-2`/`V0-3` are
-  **landed**; **the critical path is `V0-4b` (`C3`)** — see `NEXT` below.
-  **V0-1 done (A.63):** `Rules.plan`/`Rules.phase_plan_w` replace `Rules.step`;
-  `phase(state) = commit_sets(plan(state))`, `plan` reads only the pre-phase
-  state and resolves contention from it; T23/T24 re-witnessed as conformance and
-  T26 (a grain in an empty column settles) added. **V0-2 done (A.64):** every rule
-  target is guarded by `Grid.step_inside`, so a boundary step is inert and the
-  box is a grid property, not the shell (T27/T28). **V0-3a done (A.65):** the
-  live engine's directions are the closed `Rules.Dir4` set (no `k ≥ 4` default),
-  each direction batch's target map is proven injective, and every write target
-  flips the phase `y` bit; T29 guards the refactor. **V0-3b done (A.66):**
-  `color_of` bit extraction (`color_of_bit0/1/2`) plus the cross-direction
-  classification (`color_collision_x_par`/`_z_par`: a same-colour collision
-  forces equal displacement parities), so the only cross-direction overlap is
-  the opposite-diagonal class, resolved by the rule-3 tie-break; T30 witnesses
-  the direction-parity table.
-  **V0-4a done (A.71, `G12` closed):** a phase's wakes are pending — `Sim.phase`
-  returns the written world, `tick_active` threads all eight phases' wake lists
-  and `Rules.commit_wakes` applies them once at tick end, so a later phase never
-  evaluates a cell an earlier phase of the same tick woke; T33 witnesses it.
-  `Rules.phase` (immediate wake) was removed as dead code.
-  **V0-4b-1 done (A.72):** a move clears the mover's active bit (`Rules.mov`,
-  slide case 32), so the mover is not re-evaluated by a later colour phase in the
-  same tick — this closed the last source of in-tick activation and made the
-  evaluated set exact (T34: one cell per tick). The eight phase folds now run
-  over an **active-cell work list** (`Sim.active_list`/`filter_color`,
-  `Rules.plan` takes `todo: List<&2, U32>` and drops the colour sub-lattice
-  advance) instead of scanning 32768 cells per colour; T35 witnesses the colour
-  filter. Measured runtime is unchanged at 64³ because the full-world scans
-  remain (see `NEXT`).
-  **V0-4b-2 done (A.74, `G16` closed):** the support pass no longer applies its
-  wake inline — a crush accumulates the crushed cell and the tick applies all
-  wakes (support + phase) at tick end (T36). The pass also returns the active
-  cells it saw, so it *builds the phase work list*: the tick is now
-  `any_active` → `Support.pass_gated` → phases over the returned list, dropping
-  the separate `active_list` scan. Settled tick ≈ 0.09 ms (preserved); active
-  path one scan lighter. `sup_m` was updated to mirror the crush-only shape (the
-  deferred wakes are Φ-neutral).
-  **V0-4b-3a done (A.75):** `Support.sup` is driven either by a full scan
-  (`scan = True`, setup `pass_all`) or by the work list (`Support.pass_todo`),
-  so the tick's support no longer scans; `Sim.active_list` builds the list
-  ascending (bottom-up for support) and both support and the phases fold it.
-  Measured: the active transient is ≈ 15 % faster than A.74; settled unchanged
-  (still one `any_active` scan).
-  **V0-4b-3b done (A.77, `C3` closed):** the tick carries a **dirty-row mask**
-  (`src/dirty.bend`, one bit per `y` row) and builds the work list by scanning
-  only the rows a wake reached; the `any_active` and `active_list` world scans
-  are gone. Two A.76 blockers were cleared: (1) a recursive 27-neighbour
-  `block_mask`, inlined once per wake in the synchronous wake fold, overflowed
-  the checker, so the row reach is arithmetic (`Dirty.mark_wake`); (2) the 16³
-  chunk mask's chunk-major scan interleaves `y`, which lags the support pass's
-  bottom-up `below` propagation, so the granularity is rows, whose scan order is
-  exactly global ascending. The mask is threaded only through the *commit*; the
-  support/phase entry points stay monomorphic. T37 witnesses the carried work
-  set; settled tick ~1.3 µs (was ~89 µs).
-  **NEXT — `V0-5` (neighbourhood support seed, `R6`/`R7`):** `Ops.shell_adjacent`
-  still grounds support by coordinate (the hardcoded 64³ shell), so "rigidity is
-  local" is not yet true; `V0-2` closed the box and `V0-4b` closed `C3`, but
-  neither replaced the seed. Replace it with a real neighbourhood rigidity
-  source; the `sup_m` mirror moves with `Support.sup` case 1. T9 witnesses the
-  current behaviour.
-  `step_m`/`sup_m` (the mirror layer) are **not** to be extended: `step_m` is
-  **retired** (A.63 — it mirrored the removed `Rules.step`), and `sup_m` mirrors
-  `Support.sup`, which `V0-5` will replace (see §3.4 retirement, §4.1).
+*(empty — every `V0` sub-step is landed; the optional track below is the only open work.)*
 
 #### Optional track — droppable, does not gate the frontier
 
@@ -727,18 +665,85 @@ index).
 
 | id | state | deps | unblocks |
 |---|---|---|---|
-| `V0-5` (under `V0`) | next | — | — |
 | `V3c` | optional | — (`V3c-1` landed) | `M7d` |
 | `M7d` | optional | `V3c` | — |
 | `M7b`/`M7e` | blocked | — | — |
 | `P1` | deferred | — | — |
 
-**Order note.** The frontier (`V0-5`/`R6`–`R7`) is independent of the optional
-parallel track. `M8a–M8d` and `M9` have landed. M7 and V2b are independent; V2b
+**Order note.** The frontier is empty (`V0` landed); the optional parallel track
+is independent of it. `M8a–M8d` and `M9` have landed. M7 and V2b are independent; V2b
 may proceed first if the GPU path stalls. Dropping M7/M8 costs nothing above the
 scale track; dropping V2 costs the settling guarantee.
 
 #### Landed (detail; one-line index in §5.1)
+
+- [x] **V0** Semantics rewrite (contracts `C1` purity, `C2` closure, `C3` cost) · landed · deps: — · serves: C1 C2 C3
+  — scoped in A.61; sub-steps land and test alone. All five sub-steps landed:
+  `V0-1`/`V0-2`/`V0-3`/`V0-4b`/`V0-5`.
+  **V0-1 done (A.63):** `Rules.plan`/`Rules.phase_plan_w` replace `Rules.step`;
+  `phase(state) = commit_sets(plan(state))`, `plan` reads only the pre-phase
+  state and resolves contention from it; T23/T24 re-witnessed as conformance and
+  T26 (a grain in an empty column settles) added. **V0-2 done (A.64):** every rule
+  target is guarded by `Grid.step_inside`, so a boundary step is inert and the
+  box is a grid property, not the shell (T27/T28). **V0-3a done (A.65):** the
+  live engine's directions are the closed `Rules.Dir4` set (no `k ≥ 4` default),
+  each direction batch's target map is proven injective, and every write target
+  flips the phase `y` bit; T29 guards the refactor. **V0-3b done (A.66):**
+  `color_of` bit extraction (`color_of_bit0/1/2`) plus the cross-direction
+  classification (`color_collision_x_par`/`_z_par`: a same-colour collision
+  forces equal displacement parities), so the only cross-direction overlap is
+  the opposite-diagonal class, resolved by the rule-3 tie-break; T30 witnesses
+  the direction-parity table.
+  **V0-4a done (A.71, `G12` closed):** a phase's wakes are pending — `Sim.phase`
+  returns the written world, `tick_active` threads all eight phases' wake lists
+  and `Rules.commit_wakes` applies them once at tick end, so a later phase never
+  evaluates a cell an earlier phase of the same tick woke; T33 witnesses it.
+  `Rules.phase` (immediate wake) was removed as dead code.
+  **V0-4b-1 done (A.72):** a move clears the mover's active bit (`Rules.mov`,
+  slide case 32), so the mover is not re-evaluated by a later colour phase in the
+  same tick — this closed the last source of in-tick activation and made the
+  evaluated set exact (T34: one cell per tick). The eight phase folds now run
+  over an **active-cell work list** (`Sim.active_list`/`filter_color`,
+  `Rules.plan` takes `todo: List<&2, U32>` and drops the colour sub-lattice
+  advance) instead of scanning 32768 cells per colour; T35 witnesses the colour
+  filter. Measured runtime is unchanged at 64³ because the full-world scans
+  remained until `V0-4b-2`/`V0-4b-3b` removed them.
+  **V0-4b-2 done (A.74, `G16` closed):** the support pass no longer applies its
+  wake inline — a crush accumulates the crushed cell and the tick applies all
+  wakes (support + phase) at tick end (T36). The pass also returns the active
+  cells it saw, so it *builds the phase work list*: the tick is now
+  `any_active` → `Support.pass_gated` → phases over the returned list, dropping
+  the separate `active_list` scan. Settled tick ≈ 0.09 ms (preserved); active
+  path one scan lighter. `sup_m` was updated to mirror the crush-only shape (the
+  deferred wakes are Φ-neutral).
+  **V0-4b-3a done (A.75):** `Support.sup` is driven either by a full scan
+  (`scan = True`, setup `pass_all`) or by the work list (`Support.pass_todo`),
+  so the tick's support no longer scans; `Sim.active_list` builds the list
+  ascending (bottom-up for support) and both support and the phases fold it.
+  Measured: the active transient is ≈ 15 % faster than A.74; settled unchanged
+  (still one `any_active` scan).
+  **V0-4b-3b done (A.77, `C3` closed):** the tick carries a **dirty-row mask**
+  (`src/dirty.bend`, one bit per `y` row) and builds the work list by scanning
+  only the rows a wake reached; the `any_active` and `active_list` world scans
+  are gone. Two A.76 blockers were cleared: (1) a recursive 27-neighbour
+  `block_mask`, inlined once per wake in the synchronous wake fold, overflowed
+  the checker, so the row reach is arithmetic (`Dirty.mark_wake`); (2) the 16³
+  chunk mask's chunk-major scan interleaves `y`, which lags the support pass's
+  bottom-up `below` propagation, so the granularity is rows, whose scan order is
+  exactly global ascending. The mask is threaded only through the *commit*; the
+  support/phase entry points stay monomorphic. T37 witnesses the carried work
+  set; settled tick ~1.3 µs (was ~89 µs).
+  **V0-5 done (A.81, `R6`/`R7` closed):** the support seed is a neighbourhood
+  test. `Ops.shell_adjacent` (the hardcoded `x/z/y ∈ {1,62}` shell) is gone;
+  `Support.sup` reads the cell below — the support contact — and grounds a cell
+  whose below is static material, falling back to a five-face wall-adhesion read
+  (`Ops.side_sel`) only where the below cell neither grounds nor supports, so the
+  common terrain path pays no extra reads. `sup_m`'s `S1`/`S2` move with it
+  (`tstatic_side`). No coordinate is baked in, so interior bedrock grounds too;
+  T40 witnesses below-static grounding, wall adhesion, and the crush control.
+  `step_m`/`sup_m` (the mirror layer): `step_m` is **retired** (A.63 — it
+  mirrored the removed `Rules.step`); `sup_m` was kept live and moved with
+  `Support.sup` in `V0-5` (see §3.4 retirement, §4.1).
 
 - [x] **V2b-ii** `Array.swap.go` ↔ `to_pots` point-update correspondence — landed
   (A.27): a non-linear `PT` model with a machine-checked `Array.swap.go`
