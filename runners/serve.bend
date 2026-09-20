@@ -385,8 +385,328 @@ def bridge2_emit() -> IO(Unit):
     IO.print_err("serve: dense snapshot tick=0\n")
     bridge2_tick_result(Sim.tick_trace(Fixtures.spawn(Sim.build())))
 
+# ============================================================================
+# serve -- flow control (track `bridge3`, closes `G-bridge-1`).
+#
+# `bridge2` framed the stream and fixed the kinds, but the writer was a bare
+# synchronous emit and control was read at most once. This layer realises
+# SERVE.md §5-§6 as pure accounting plus a forked reader:
+#
+#   * a BOUNDED outbound queue (`cap` frames; rendezvous 1, hard cap 8);
+#   * a CREDIT window: CREDIT advances it, an emitted frame debits it, and no
+#     frame is ever written with a zero window (no overrun, no wrap -- `U32.sub`
+#     wraps, so the guard is the whole safety argument);
+#   * DROP-AND-KEYFRAME COALESCING: when the queue is full a delta is dropped,
+#     counted, and a fresh SNAPSHOT is armed, so the renderer sees either a
+#     contiguous delta run or a clean keyframe jump (never a gap);
+#   * an idle PING: after `threshold` ticks with nothing emitted, the writer
+#     offers a PING heartbeat.
+#
+# The accounting is pure (`Bridge3Flow`) and witnessed by T76-T80. The IO shell
+# drives it, and `bridge3_reader` drains stdin continuously into a `Chan` (so
+# control is no longer read at most once). The engine/writer split is still
+# co-resident in one IO thread: Bend's `Chan.recv` parks rather than polling, so
+# a non-blocking `try_recv` is not expressible; that residual is a gap.
+# ============================================================================
+
+type Bridge3Flow is Data:
+  B3Flow{
+    window: U32,     # send credit remaining (CREDIT advances, emit debits)
+    queued: U32,     # frames resident in the bounded outbound queue
+    cap: U32,        # queue capacity (>= 1)
+    coalesced: U32,  # deltas dropped since the last armed keyframe
+    keyframe: Bool,  # a fresh SNAPSHOT is armed
+    tick: U32,       # newest tick the engine has produced
+    idle: U32        # ticks since the last emitted frame (PING timer)
+  }
+
+def bridge3_flow_new(+cap: U32) -> Bridge3Flow:
+  B3Flow{0, 0, cap, 0, False{}, 0, 0}
+
+def bridge3_window(f: Bridge3Flow) -> U32:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: window
+
+def bridge3_queued(f: Bridge3Flow) -> U32:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: queued
+
+def bridge3_coalesced(f: Bridge3Flow) -> U32:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: coalesced
+
+def bridge3_is_keyframe(f: Bridge3Flow) -> Bool:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: keyframe
+
+def bridge3_idle(f: Bridge3Flow) -> U32:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}: idle
+
+def bridge3_can_emit(f: Bridge3Flow) -> Bool:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+      Bool.and(U32.is_gt(window, 0), U32.is_gt(queued, 0))
+
+def bridge3_has_room(f: Bridge3Flow) -> Bool:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+      U32.is_lt(queued, cap)
+
+def bridge3_has_credit(f: Bridge3Flow) -> Bool:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+      U32.is_gt(window, 0)
+
+# A CREDIT frame advances the send window; a REQUEST arms a keyframe.
+def bridge3_credit(f: Bridge3Flow, +n: U32) -> Bridge3Flow:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+      B3Flow{U32.add(window, n), queued, cap, coalesced, keyframe, tick, idle}
+
+def bridge3_arm_keyframe(f: Bridge3Flow, +tick: U32) -> Bridge3Flow:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick0, idle}:
+      B3Flow{window, queued, cap, coalesced, True{}, tick, idle}
+
+# --- emit: debit one credit and one slot, reset the idle timer ---------------
+def bridge3_emit_if(can: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+  match can:
+    case True{}:
+      B3Flow{U32.sub(window, 1), U32.sub(queued, 1), cap, coalesced, keyframe, tick, 0}
+    case False{}:
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}
+
+def bridge3_emit(f: Bridge3Flow) -> Bridge3Flow:
+  match f:
+    case B3Flow{+window, +queued, cap, coalesced, keyframe, tick, idle}:
+      bridge3_emit_if(Bool.and(U32.is_gt(window, 0), U32.is_gt(queued, 0)),
+        window, queued, cap, coalesced, keyframe, tick, idle)
+
+# --- bounded queue: push, with coalescing on overflow ------------------------
+def bridge3_push_delta_if(room: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+  match room:
+    case True{}:
+      B3Flow{window, U32.add(queued, 1), cap, coalesced, keyframe, tick, idle}
+    case False{}:
+      B3Flow{window, queued, cap, U32.add(coalesced, 1), True{}, tick, idle}
+
+def bridge3_push_delta(f: Bridge3Flow, +tick: U32) -> Bridge3Flow:
+  match f:
+    case B3Flow{window, +queued, +cap, coalesced, keyframe, tick0, idle}:
+      bridge3_push_delta_if(U32.is_lt(queued, cap), window, queued, cap, coalesced, keyframe, tick, idle)
+
+def bridge3_push_frame_if(room: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+  match room:
+    case True{}:
+      B3Flow{window, U32.add(queued, 1), cap, coalesced, keyframe, tick, idle}
+    case False{}:
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}
+
+def bridge3_push_frame(f: Bridge3Flow, +tick: U32) -> Bridge3Flow:
+  match f:
+    case B3Flow{window, +queued, +cap, coalesced, keyframe, tick0, idle}:
+      bridge3_push_frame_if(U32.is_lt(queued, cap), window, queued, cap, coalesced, keyframe, tick, idle)
+
+# Consume an armed keyframe: replace the queued delta run with one SNAPSHOT.
+def bridge3_take_kf_if(ok: Bool, +window: U32, +queued: U32, +cap: U32, +coalesced: U32, +keyframe: Bool, +tick: U32, +idle: U32) -> Bridge3Flow:
+  match ok:
+    case True{}:
+      B3Flow{window, 1, cap, 0, False{}, tick, idle}
+    case False{}:
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}
+
+def bridge3_take_keyframe(f: Bridge3Flow) -> Bridge3Flow:
+  match f:
+    case B3Flow{+window, +queued, +cap, +coalesced, +keyframe, tick, idle}:
+      bridge3_take_kf_if(Bool.and(keyframe, U32.is_gt(window, 0)),
+        window, queued, cap, coalesced, keyframe, tick, idle)
+
+# --- idle PING ---------------------------------------------------------------
+def bridge3_idle_tick(f: Bridge3Flow) -> Bridge3Flow:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+      B3Flow{window, queued, cap, coalesced, keyframe, tick, U32.add(idle, 1)}
+
+# Writer policy: 0 none, 1 SNAPSHOT, 2 DELTA, 3 PING. A keyframe beats queued
+# deltas; a PING is offered only when the queue is empty and the stream is idle.
+def bridge3_next_k(kf: Bool, q: Bool, w: Bool, idle_ok: Bool) -> U32:
+  Bool.pick(U32, w,
+    Bool.pick(U32, kf, 1, Bool.pick(U32, q, 2, Bool.pick(U32, idle_ok, 3, 0))),
+    0)
+
+def bridge3_next(f: Bridge3Flow, +threshold: U32) -> U32:
+  match f:
+    case B3Flow{window, queued, cap, coalesced, keyframe, tick, idle}:
+      bridge3_next_k(keyframe, U32.is_gt(queued, 0), U32.is_gt(window, 0), U32.is_ge(idle, threshold))
+
+# --- iteration helpers (tests and the writer) --------------------------------
+def bridge3_emit_go(fuel: Nat, f: Bridge3Flow) -> Bridge3Flow:
+  match fuel:
+    case 0n: f
+    case 1n+p: bridge3_emit_go(p, bridge3_emit(f))
+
+def bridge3_push_go(fuel: Nat, +tick: U32, f: Bridge3Flow) -> Bridge3Flow:
+  match fuel:
+    case 0n: f
+    case 1n+p: bridge3_push_go(p, U32.add(tick, 1), bridge3_push_delta(f, tick))
+
+def bridge3_idle_go(fuel: Nat, f: Bridge3Flow) -> Bridge3Flow:
+  match fuel:
+    case 0n: f
+    case 1n+p: bridge3_idle_go(p, bridge3_idle_tick(f))
+
+# ----------------------------------------------------------------- flow IO
+# Fold one inbound control into the flow: CREDIT advances the window, REQUEST
+# arms a keyframe, STOP is handled by the reader (channel close).
+def bridge3_apply_ctrl(f: Bridge3Flow, c: Bridge2Ctrl) -> Bridge3Flow:
+  match c:
+    case BCredit{frames}:
+      bridge3_credit(f, frames)
+    case BRequest{tick, flags}:
+      bridge3_arm_keyframe(f, tick)
+    case _:
+      f
+
+def bridge3_recv_fold(f: Bridge3Flow, m: Maybe<&1, Bridge2Ctrl>) -> Bridge3Flow:
+  match m:
+    case None{}:
+      # renderer closed stdin (STOP/EOF): flush the remaining frames and exit
+      bridge3_credit(f, 8)
+    case Some{c}:
+      bridge3_apply_ctrl(f, c)
+
+# Block the WRITER (never the engine) until the window holds credit, folding
+# whatever control arrives meanwhile.
+def bridge3_recv_step(chan: Chan(Bridge2Ctrl), f: Bridge3Flow) -> IO(Bridge3Flow):
+  do IO<Bridge3Flow>:
+    m : Maybe<&1, Bridge2Ctrl> <- Chan.recv(Bridge2Ctrl, chan)
+    IO.pure(Bridge3Flow, bridge3_recv_fold(f, m))
+
+def bridge3_grant_go(fuel: Nat, has: Bool, f: Bridge3Flow, +chan: Chan(Bridge2Ctrl)) -> IO(Bridge3Flow):
+  match fuel:
+    case 0n:
+      IO.pure(Bridge3Flow, f)
+    case 1n+p:
+      match has:
+        case True{}:
+          IO.pure(Bridge3Flow, f)
+        case False{}:
+          do IO<Bridge3Flow>:
+            +f2 : Bridge3Flow <- bridge3_recv_step(chan, f)
+            bridge3_grant_go(p, bridge3_has_credit(f2), f2, chan)
+
+def bridge3_grant_until(+f: Bridge3Flow, chan: Chan(Bridge2Ctrl)) -> IO(Bridge3Flow):
+  bridge3_grant_go(1024n, bridge3_has_credit(f), f, chan)
+
+def bridge3_write_if(ok: Bool, frame: List<&2, U32>, f: Bridge3Flow) -> IO(Bridge3Flow):
+  match ok:
+    case True{}:
+      do IO<Bridge3Flow>:
+        bridge2_stdout(frame)
+        IO.pure(Bridge3Flow, bridge3_emit(f))
+    case False{}:
+      IO.pure(Bridge3Flow, f)
+
+# Queue one frame, wait for credit, write it, and debit the flow. A frame is
+# only written when credit is held, so the window is never overrun even if the
+# renderer grants nothing.
+def bridge3_write_frame(f: Bridge3Flow, chan: Chan(Bridge2Ctrl), +tick: U32, frame: List<&2, U32>) -> IO(Bridge3Flow):
+  do IO<Bridge3Flow>:
+    f2 : Bridge3Flow = bridge3_push_frame(f, tick)
+    +f3 : Bridge3Flow <- bridge3_grant_until(f2, chan)
+    bridge3_write_if(bridge3_has_credit(f3), frame, f3)
+
+# Continuous stdin reader: decode each control frame and hand it to the writer
+# over a room-1 `Chan`. Closing stdin (EOF) closes the channel, which the writer
+# reads as STOP. This replaces the one-shot `bridge2_read_control`.
+#
+# Bend has no forward references, no mutual recursion, and a `match` may only
+# scrutinize a top-level parameter -- so the read/match/send loop is one
+# self-recursive `def` with a `Nat` fuel (the guide's server-loop shape) and a
+# `phase` selector: 0 reads, 1 unpacks the read result, 2 dispatches the bytes.
+# The extra `q`/`bytes` parameters are the same function's "which to run"
+# selector, so no helper needs a forward reference.
+def bridge3_reader_go(
+  fuel: Nat,
+  +phase: U32,
+  +chan: Chan(Bridge2Ctrl),
+  q: File & Result<&1, &1, U32 & String, List<&2, U32>>,
+  +bytes: List<&2, U32>
+) -> IO(Unit):
+  match fuel:
+    case 0n:
+      Chan.close(Bridge2Ctrl, chan)
+    case 1n+p:
+      match phase:
+        case 0:
+          match q:
+            case (f0, r0):
+              do IO<Unit>:
+                q2 : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f0, 1048576)
+                bridge3_reader_go(p, 1, chan, q2, Nil{})
+        case 1:
+          match q:
+            case (f2, res):
+              do IO<Unit>:
+                bytes2 : List<&2, U32> <- IO.pass(List<&2, U32>, res)
+                bridge3_reader_go(p, 2, chan, (f2, Fail{(0, "")}), bytes2)
+        case _:
+          match bytes:
+            case Nil{}:
+              Chan.close(Bridge2Ctrl, chan)
+            case Con{h, t}:
+              do IO<Unit>:
+                sent : Bool <- Chan.send(Bridge2Ctrl, chan, bridge2_decode_control(bytes))
+                bridge3_reader_go(p, 0, chan, q, Nil{})
+
+def bridge3_reader(chan: Chan(Bridge2Ctrl)) -> IO(Unit):
+  do IO<Unit>:
+    f : File <- IO.try(File, File.open("/dev/stdin", "r"))
+    bridge3_reader_go(1048576n, 0, chan, (f, Fail{(0, "")}), Nil{})
+
+# The flow-based writer: HELLO, a dense genesis SNAPSHOT, one tick's DELTA, a
+# sparse checkpoint SNAPSHOT, a PING, and a clean BYE -- every frame after
+# HELLO gated by the credit window the forked reader fills from CREDIT.
+def bridge3_checkpoint_store(r: Array<U32> & Store.Store, +chan: Chan(Bridge2Ctrl), f: Bridge3Flow) -> IO(Unit):
+  match r:
+    case (world, store):
+      do IO<Unit>:
+        ev : Store.Store = Store.evict(store)
+        f1 : Bridge3Flow <- bridge3_write_frame(f, chan, 1, bridge2_snapshot_sparse(ev, 1))
+        f2 : Bridge3Flow <- bridge3_write_frame(f1, chan, 1, bridge2_ping(1))
+        bridge2_stdout(bridge2_bye())
+        IO.print_err("serve: checkpoint tick=1, bye\n")
+
+def bridge3_checkpoint_flow(world: Array<U32>, chan: Chan(Bridge2Ctrl), f: Bridge3Flow) -> IO(Unit):
+  bridge3_checkpoint_store(bridge2_world_store(world), chan, f)
+
+def bridge3_tick_frame(r: Array<U32> & List<Sim.Delta>, +chan: Chan(Bridge2Ctrl), f: Bridge3Flow) -> IO(Unit):
+  match r:
+    case (world, ds):
+      do IO<Unit>:
+        f2 : Bridge3Flow <- bridge3_write_frame(f, chan, 1, bridge2_delta_frame(1, ds))
+        bridge3_checkpoint_flow(world, chan, f2)
+
+def bridge3_serve_control() -> IO(Unit):
+  do IO<Unit>:
+    +chan : Chan(Bridge2Ctrl) <- Chan.new(Bridge2Ctrl, 1)
+    IO.spawn(Unit, bridge3_reader(chan))
+    IO.print_err("serve: hello\n")
+    bridge2_stdout(bridge2_hello(0))
+    f0 : Bridge3Flow = bridge3_flow_new(8)
+    f1 : Bridge3Flow <- bridge3_write_frame(f0, chan, 0, bridge2_snapshot_dense(Fixtures.spawn(Sim.build()), 0))
+    IO.print_err("serve: dense snapshot tick=0\n")
+    bridge3_tick_frame(Sim.tick_trace(Fixtures.spawn(Sim.build())), chan, f1)
+
+def bridge3_serve_if(control: Bool) -> IO(Unit):
+  match control:
+    case True{}:
+      bridge3_serve_control()
+    case False{}:
+      bridge2_emit()
+
 def main() -> IO(Unit):
   do IO<Unit>:
     args : List<&1, String> <- IO.args()
-    bridge2_emit()
-    bridge2_control_if(bridge2_has_control(args))
+    bridge3_serve_if(bridge2_has_control(args))

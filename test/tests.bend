@@ -1450,6 +1450,99 @@ def gscale_local_go(fuel: Nat, +i: U32, +bad: U32) -> U32:
 def t70_bad() -> U32:
   gscale_local_go(U32.to_nat(4096), 0, 0)
 
+# T76-T80 (track `bridge3`, G-bridge-1): the flow-control accounting that
+# realises SERVE.md §5-§6. T76 the credit window (advance/debit, never overrun);
+# T77 the bounded queue; T78 drop-and-keyframe coalescing; T79 the idle PING;
+# T80 a deterministic end-to-end scenario over the bridge2 framing. The IO
+# reader/writer shell is exercised by hand over a pipe (a law cannot observe IO).
+
+# T76: a zero window cannot emit, and an emit attempt leaves the state at zero
+# rather than wrapping (`U32.sub(0, 1) == 2^32-1`); CREDIT advances the window;
+# each emit debits exactly one credit and one queue slot.
+def t76_bad() -> U32:
+  f0 = Serve.bridge3_flow_new(8)
+  +f1 = Serve.bridge3_push_go(4n, 1, f0)
+  b0 = inc_if_false(U32.is_eq(Serve.bridge3_window(f1), 0), 0)
+  +f2 = Serve.bridge3_emit(f1)
+  b1 = inc_if_false(U32.is_eq(Serve.bridge3_window(f2), 0), b0)
+  b2 = inc_if_false(U32.is_eq(Serve.bridge3_queued(f2), 4), b1)
+  +f3 = Serve.bridge3_credit(f2, 4)
+  +f4 = Serve.bridge3_emit_go(4n, f3)
+  b3 = inc_if_false(U32.is_eq(Serve.bridge3_window(f4), 0), b2)
+  b4 = inc_if_false(U32.is_eq(Serve.bridge3_queued(f4), 0), b3)
+  f5 = Serve.bridge3_emit(f4)
+  b5 = inc_if_false(U32.is_eq(Serve.bridge3_window(f5), 0), b4)
+  inc_if_false(U32.is_eq(U32.sub(0, 1), 4294967295), b5)
+
+# T77: the queue is bounded -- 20 deltas into capacity 8 leave 8 resident and
+# 12 coalesced, and `has_room` is false at capacity. A capacity-1 queue holds
+# one frame and coalesces the rest.
+def t77_bad() -> U32:
+  f0 = Serve.bridge3_flow_new(8)
+  +f1 = Serve.bridge3_push_go(20n, 1, f0)
+  b0 = inc_if_false(U32.is_eq(Serve.bridge3_queued(f1), 8), 0)
+  b1 = inc_if_false(U32.is_eq(Serve.bridge3_coalesced(f1), 12), b0)
+  b2 = inc_if_false(Serve.bridge3_is_keyframe(f1), b1)
+  b3 = inc_if_false(Bool.not(Serve.bridge3_has_room(f1)), b2)
+  g0 = Serve.bridge3_flow_new(1)
+  +g1 = Serve.bridge3_push_go(3n, 1, g0)
+  b4 = inc_if_false(U32.is_eq(Serve.bridge3_queued(g1), 1), b3)
+  inc_if_false(U32.is_eq(Serve.bridge3_coalesced(g1), 2), b4)
+
+# T78: a delta that arrives at a full queue is dropped and arms a fresh
+# SNAPSHOT; the writer policy prefers the keyframe over queued deltas, and
+# taking the keyframe supersedes the delta run with exactly one SNAPSHOT.
+def t78_bad() -> U32:
+  f0 = Serve.bridge3_flow_new(2)
+  f1 = Serve.bridge3_push_go(2n, 1, f0)
+  +f2 = Serve.bridge3_push_delta(f1, 3)
+  b0 = inc_if_false(U32.is_eq(Serve.bridge3_queued(f2), 2), 0)
+  b1 = inc_if_false(U32.is_eq(Serve.bridge3_coalesced(f2), 1), b0)
+  b2 = inc_if_false(Serve.bridge3_is_keyframe(f2), b1)
+  +f3 = Serve.bridge3_credit(f2, 4)
+  b3 = inc_if_false(U32.is_eq(Serve.bridge3_next(f3, 2), 1), b2)
+  +f4 = Serve.bridge3_take_keyframe(f3)
+  b4 = inc_if_false(Bool.not(Serve.bridge3_is_keyframe(f4)), b3)
+  b5 = inc_if_false(U32.is_eq(Serve.bridge3_coalesced(f4), 0), b4)
+  b6 = inc_if_false(U32.is_eq(Serve.bridge3_queued(f4), 1), b5)
+  inc_if_false(U32.is_eq(Serve.bridge3_next(f4, 2), 2), b6)
+
+# T79: an idle stream offers a PING once it passes the threshold -- but only
+# with credit held and the queue empty; a queued frame beats the PING, and an
+# emit resets the idle timer.
+def t79_bad() -> U32:
+  +f0 = Serve.bridge3_flow_new(4)
+  b0 = inc_if_false(U32.is_eq(Serve.bridge3_next(f0, 3), 0), 0)
+  +f1 = Serve.bridge3_credit(f0, 1)
+  b1 = inc_if_false(U32.is_eq(Serve.bridge3_next(f1, 3), 0), b0)
+  +f2 = Serve.bridge3_idle_go(3n, f1)
+  b2 = inc_if_false(U32.is_eq(Serve.bridge3_idle(f2), 3), b1)
+  b3 = inc_if_false(U32.is_eq(Serve.bridge3_next(f2, 3), 3), b2)
+  +f3 = Serve.bridge3_push_frame(f2, 1)
+  b4 = inc_if_false(U32.is_eq(Serve.bridge3_next(f3, 3), 2), b3)
+  +f4 = Serve.bridge3_emit(f3)
+  b5 = inc_if_false(U32.is_eq(Serve.bridge3_idle(f4), 0), b4)
+  inc_if_false(U32.is_eq(Serve.bridge3_window(f4), 0), b5)
+
+# T80: credit exhausted -> the queue overflows and coalesces -> credit returns
+# -> the keyframe is taken and emitted as one SNAPSHOT frame. The frame bytes
+# are the bridge2 framing: kind 1 for the SNAPSHOT and kind 3 for the idle PING.
+def t80_bad() -> U32:
+  f0 = Serve.bridge3_flow_new(2)
+  f1 = Serve.bridge3_push_go(3n, 1, f0)
+  +f2 = Serve.bridge3_credit(f1, 1)
+  b0 = inc_if_false(U32.is_eq(Serve.bridge3_next(f2, 2), 1), 0)
+  +f3 = Serve.bridge3_take_keyframe(f2)
+  +f4 = Serve.bridge3_emit(f3)
+  b1 = inc_if_false(U32.is_eq(Serve.bridge3_window(f4), 0), b0)
+  b2 = inc_if_false(U32.is_eq(Serve.bridge3_queued(f4), 0), b1)
+  +hdr = Serve.bridge2_dec_words(Serve.bridge2_frame(1, Export.bxe_u32_le(0, Nil{})))
+  b3 = inc_if_false(U32.is_eq(Serve.bridge2_word0(hdr), 4), b2)
+  b4 = inc_if_false(U32.is_eq(Serve.bridge2_word1(hdr), 1), b3)
+  +ping = Serve.bridge2_dec_words(Serve.bridge2_ping(9))
+  b5 = inc_if_false(U32.is_eq(Serve.bridge2_word1(ping), 3), b4)
+  inc_if_false(U32.is_eq(Serve.bridge2_word0(ping), 4), b5)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1518,3 +1611,8 @@ def main() -> IO(Unit):
     report("T68 gscale cw z roundtrip (in range)", t68_bad())
     report("T69 gscale cw key masked roundtrip", t69_bad())
     report("T70 gscale cw local masked roundtrip", t70_bad())
+    report("T76 bridge3 credit window (no overrun)", t76_bad())
+    report("T77 bridge3 bounded queue + coalesce count", t77_bad())
+    report("T78 bridge3 drop-and-keyframe coalescing", t78_bad())
+    report("T79 bridge3 idle PING policy", t79_bad())
+    report("T80 bridge3 flow scenario + framing", t80_bad())
