@@ -4012,3 +4012,36 @@ written with plain, single-use bindings.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 93/93 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS.
+
+### A.102 — S1 step 4b: window motion primitives
+
+**Status:** additive on `master`; **no law-count change** (114 laws). Gate green,
+fast **95/95**, sim **25/25**. No live-path change.
+
+**What landed (`src/window.bend`).** `Window.shift(w, dcx, dcy, dcz)` translates
+by whole chunks (U32 wrapping, so a negative delta is its two's complement);
+`Window.chunk_in`/`in_resident` test whether a chunk key is inside a window;
+`Window.entering w1 w2` / `leaving w1 w2` give the slabs to **load** and **evict**
+(the keys resident in one window and not the other). This is the load/evict
+decision a moving window needs.
+
+**Witnesses.** T99: a one-chunk `x`-translation of the canonical window
+partitions its 64 resident chunks into **16 entering / 16 leaving / 48
+unchanged**, and every entering key is in the new window and not the old. T100:
+`shift` is additive (two one-chunk shifts == one two-chunk shift).
+
+**Kind note (a Bend subtlety).** The key lists are `List<&2, U32>` — the
+*duplicable* kind `scan_row` uses — not the default `List<U32>` (the linear
+kind). That is what lets a key list be reused without a legality error, and it
+is why `Store.assemble_keys*` now take `List<&2, U32>` too.
+
+**Not done (step 4c).** The moved window is not yet wired into the live *array*:
+`Store.assemble_chunk` still writes through `Grid.index` (which masks each axis
+`&63`), so a window based away from the origin would alias its far edge onto the
+near cells. Migrating `assemble` to `Window.win_index` (canonical bit-identical
+by T81, so T18/T95/T96 stay green) is the next sub-step; only then does a moved
+window assemble into its own array.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 95/95 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS.

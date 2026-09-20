@@ -653,6 +653,7 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `genvec` (`.bgt` terrain vectors) | `runners/export.bend` writes a new additive `bendverse-terrain.bgt` (magic `BGT1`, 16-byte header + 784 × 20-byte records) with `Worldgen.gen_terrain` words and a `--terrain PATH` flag; the sample spans shell planes and out-of-box coordinates (`{0,21,42,63,64,80,200}`) so a port cannot bake in the absolute shell. `.bvs`/`.bvg` bytes unchanged. T85–T89. Serves Bendview's infinite-terrain port (`G-scale-8`) | A.100 |
 | `dirtywin` (size-parameterised mask) | new `src/dirtyn.bend`: the `Dirty` row mask generalised to `2^n` rows (`dwin_width`), with the `mark_wake` `y±1` reach **proven** (`dwin_mark_wake_self`/`_up`/`_down`) and 9 `dwin_` laws; T90–T94 (T94: the `n=6` instance agrees with `Dirty` row-for-row). Additive — the live 64-row path is untouched; `G-scale-2` groundwork, closure pending live wiring + the wrap-range lemma | A.100 |
 | `generator selector` (S1 step 4a) | decision A wired into the engine: `Worldgen.box()`/`terrain()` (a `Bool`) selects `gen` (reference shell) vs `gen_terrain` (shell-free), threaded through `Chunk.build_sel`/`gen_local_sel` and `Store.*_sel` (`chunk_list`/`assemble_cells`/`assemble_go`/`assemble`/`assemble_keys`/`build_all`/`evict`); the originals are wrappers, so every existing call site and test is unchanged. T97 (GTerrain reconstructs `build_terrain`) / T98 (box != terrain). A `Bool`, not a `Data` selector: a `+`-annotated `Data` param is rejected by the checker in this deep threading | A.101 |
+| `window motion` (S1 step 4b) | `Window.shift` translates by whole chunks; `Window.in_resident` tests chunk membership; `Window.entering`/`leaving` give the load/evict slabs. T99: a one-chunk x-move of the canonical window partitions its 64 chunks 16 entering / 16 leaving / 48 unchanged (and entering keys are in the new window, not the old); T100: `shift` is additive. The key lists are `List<&2, U32>` (the duplicable kind). **Not yet wired into the live array** — a moved window's `assemble` still writes through `Grid.index` (`&63`), so the addressing migration is step 4c | A.102 |
 | `gscale2` (full cw + winset) | `src/gscale.bend` lifts the `cw` y/z roundtrips to arbitrary `(x,y,z)` (`gscale_cw_y_rt_full`/`_z_rt_full`; field-extraction lemmas), and new `src/winset.bend` is a pure finite-set model of the resident chunk keys (`winset_mem`/`insert`/`remove`/`all`, `winset_evict`, `winset_gen_cell`) with laws `winset_mem_insert_self`/`_other`/`winset_remove_insert`; T71–T75. `G-scale-4` groundwork (the assemble/evict roundtrip law remains open) | A.96 |
 | `bridge3` (sidecar flow control) | `runners/serve.bend` realises `SERVE.md` §5–§6: bounded queue, credit window (`bridge3_credit`/`bridge3_emit`, no overrun), drop-and-keyframe delta coalescing, idle PING, and a **forked** stdin reader (`Chan` + `IO.spawn`) so control is read continuously; T76–T80. `G-bridge-1` partially closed (engine/writer split + read reassembly remain) | A.96 |
 | `bridge2` (snapshot framing fix) | `runners/export.bend`'s dense record encoder gathered by a flat `Grid.index` slice (`gi/4096 = y`), so each "chunk" record was a **64×64 `y`-plane** labelled with a `Chunk.key` — 130835/262144 cells misplaced, and mutually inconsistent with the (correct) sparse body. Fixed: one shared `bxe_cell_index`/`bxe_chunk_cells` gather in the `Store.chunk_list` order, reused by the dense and sparse paths (`serve.bend` drops its private copy); `G-bridge-2` closed. T47 (native, full body dense == sparse) + T83 (fast, address mapping). IO only | A.97 |
@@ -712,12 +713,16 @@ index).
   T95 (explicit == implicit set) / T96 (reconstructs `worldgen`). **Step 4a
   landed (A.101):** the generator selector — `Worldgen.box()`/`terrain()` threaded
   through `Chunk`/`Store` (wrappers keep every call site unchanged), so the window
-  mode regenerates from shell-free `gen_terrain` (T97/T98). Remaining: step 4b
-  window motion, step 5 window-sized dirty set, step 6 torus-law retirement. Each
-  step gate-green; gap candidates `G-scale-1`..`G-scale-8` (`G-scale-3` closed).
-  Decision A (`G-scale-8`): the window / infinite mode samples shell-free
-  `Worldgen.gen_terrain`, the closed box keeps its shell as a **reference mode**
-  (`R11` adapted, A.99).
+  mode regenerates from shell-free `gen_terrain` (T97/T98). **Step 4b
+  landed (A.102):** the motion primitives — `Window.shift`, `in_resident`, and
+  the entering/leaving slabs (T99/T100). Remaining: **step 4c** window-local
+  addressing (`assemble`/`assemble_chunk` via `Window.win_index`, so a *moved*
+  window writes its own array instead of aliasing through `Grid.index`'s `&63`
+  wrap; canonical stays bit-identical, T18/T95/T96), then step 5 window-sized
+  dirty set, step 6 torus-law retirement. Each step gate-green; gap candidates
+  `G-scale-1`..`G-scale-8` (`G-scale-3` closed). Decision A (`G-scale-8`): the
+  window / infinite mode samples shell-free `Worldgen.gen_terrain`, the closed
+  box keeps its shell as a **reference mode** (`R11` adapted, A.99).
 
 #### Optional track — droppable, does not gate the frontier
 
