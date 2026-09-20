@@ -2031,6 +2031,28 @@ def t100_bad() -> U32:
   b1 = inc_if_false(U32.is_eq(Window.base_y(a), Window.base_y(b)), b0)
   inc_if_false(U32.is_eq(Window.base_z(a), Window.base_z(b)), b1)
 
+# T101 (S1 step 4c): a *moved* window assembles into its own array. Translate the
+# canonical window one chunk in x (base chunk 1, so global x spans 16..79) and
+# check every window-local cell against `Worldgen.gen` at the recovered global
+# coordinate (`win_gx/gy/gz`). `Grid.index` masks `&63`, which would fold the far
+# edge (x>=64) onto the near cells, so this fails without the `win_index`
+# addressing migration. `wgen_go` walks `i` descending and conses, so the list
+# comes out in `Grid.to_list` order (index-ascending).
+def wgen_go(fuel: Nat, +i: U32, +w: Window.Window, acc: List<U32>) -> List<U32>:
+  match fuel:
+    case 0n:
+      acc
+    case 1n+p:
+      +g = Worldgen.gen(
+        Window.win_gx(w, i), Window.win_gy(w, i), Window.win_gz(w, i), 42)
+      wgen_go(p, U32.sub(i, 1), w, g <> acc)
+
+def t101_bad() -> U32:
+  +w = Window.at(1, 0, 0)
+  a = Store.assemble_w(w, Store.build_all())
+  list_cmp_go(
+    U32.to_nat(262144), wgen_go(U32.to_nat(262144), 262143, w, Nil{}), Grid.to_list(a), 0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2129,3 +2151,4 @@ def main() -> IO(Unit):
     report("T98 GBox vs GTerrain differ on the shell (decision A)", t98_bad())
     report("T99 window one-chunk x-move: 16 enter / 16 leave (S1 step 4b)", t99_bad())
     report("T100 window shift is additive (S1 step 4b)", t100_bad())
+    report("T101 moved window assembles its own array (S1 step 4c)", t101_bad())

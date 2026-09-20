@@ -4045,3 +4045,41 @@ window assemble into its own array.
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 95/95 PASS;
   `bend test/simtests.bend` native -> 25/25 PASS.
+
+### A.103 — S1 step 4c: window-local addressing
+
+**Status:** additive on `master`; **no law-count change** (114 laws). Gate green,
+fast **96/96**, sim **25/25**. No live-path behaviour change.
+
+**What landed (`src/store.bend`).** The assemble chain is now window-aware.
+`assemble_chunk_w(fuel, w, i, k, cells, world)` addresses each cell by its
+window-local flat index through `Window.win_index(w, …)` — which has no `&63` —
+instead of `Grid.index` (which masks every axis and folds a coordinate above the
+box back onto the opposite face). A `Window` is threaded through
+`assemble_cells_w_sel` and `assemble_keys_go_w_sel`; every pre-existing entry
+point (`assemble_chunk`, `assemble_cells*`, `assemble_keys*`, `assemble`) is now
+a thin wrapper over `Window.canonical()`, so the canonical path is unchanged and
+`assemble` stays bit-identical. Two new windowed entry points assemble a *moved*
+window over its own resident set: `Store.assemble_keys_w(w, keys, s)` and
+`Store.assemble_w(w, s)` (the latter over `Window.resident_keys w`).
+
+**Why it was needed.** `Grid.index` masks `&63`, so a window based away from the
+origin aliased its far edge onto the near cells: a chunk at global `x=64` landed
+at `x&63 = 0`. `win_index` computes the window-local coordinate by subtraction
+from the window origin (`win_lx/ly/lz`), so the far edge lands at its own slot.
+
+**Witness (T101).** A one-chunk `x`-translation of the canonical window (base
+chunk `1`, so global `x` spans `16..79`) is assembled from `Store.build_all()`
+and every one of the `262144` window-local cells is checked against
+`Worldgen.gen` at the global coordinate recovered by `win_gx/gy/gz`. The `&63`
+fold would alias `x>=64` onto the near cells, so this fails without the
+addressing migration. The canonical tests T18/T95/T96 are unchanged and still
+green (T81: `win_index` of the canonical window `== Grid.index`).
+
+**Kind note (a Bend subtlety).** An `Array` cannot be bound `+`-duplicable —
+`+a = Store.assemble_w(…)` is a checker error (`expected : Data, observed :
+Type`); arrays are threaded linearly, so the witness binds `a` plainly.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 96/96 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS.

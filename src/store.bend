@@ -3,6 +3,7 @@ import ./grid.bend as Grid
 import ./cell.bend as Cell
 import ./chunk.bend as Chunk
 import ./worldgen.bend as Worldgen
+import ./window.bend as Window
 
 type Store is Data:
   STip{}
@@ -98,7 +99,16 @@ def get(s: Store, +k: U32) -> Maybe<&2, List<&2, U32>>:
     case U32{w}:
       get_w(32n, w, s, k)
 
-def assemble_chunk(fuel: Nat, +i: U32, +k: U32, cells: List<&2, U32>, world: Array<U32>) -> Array<U32>:
+# S1 step 4c: the assemble chain is window-aware. `assemble_chunk_w` addresses a
+# cell by its window-local flat index via `Window.win_index`, which is torus-free
+# (no `&63`), so a chunk based away from the origin lands at its own window-local
+# slot instead of aliasing the far edge onto the near cells. The originals are
+# wrappers over `Window.canonical()`; for the canonical window `win_index` is
+# bit-identical to `Grid.index` (T81), so T18/T95/T96 stay green. `assemble_w`
+# (below, over `Window.resident_keys`) is what a moved window uses.
+def assemble_chunk_w(
+  fuel: Nat, +w: Window.Window, +i: U32, +k: U32, cells: List<&2, U32>, world: Array<U32>
+) -> Array<U32>:
   match fuel:
     case 0n:
       world
@@ -107,18 +117,27 @@ def assemble_chunk(fuel: Nat, +i: U32, +k: U32, cells: List<&2, U32>, world: Arr
         case Nil{}:
           world
         case Con{h, t}:
-          +idx = Grid.index(Chunk.global_x(k, i), Chunk.global_y(k, i), Chunk.global_z(k, i))
-          assemble_chunk(p, U32.add(i, 1), k, t, world[idx] <- h)
+          +idx = Window.win_index(
+            w, Chunk.global_x(k, i), Chunk.global_y(k, i), Chunk.global_z(k, i))
+          assemble_chunk_w(p, w, U32.add(i, 1), k, t, world[idx] <- h)
 
-def assemble_cells_sel(+sel: Bool, m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> Array<U32>:
+def assemble_chunk(fuel: Nat, +i: U32, +k: U32, cells: List<&2, U32>, world: Array<U32>) -> Array<U32>:
+  assemble_chunk_w(fuel, Window.canonical(), i, k, cells, world)
+
+def assemble_cells_w_sel(
+  +sel: Bool, +w: Window.Window, m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>
+) -> Array<U32>:
   match m:
     case None{}:
       # A missing (evicted) chunk is regenerated from the selected generator
       # (reference shell or shell-free terrain): the store is a sparse overlay
       # on the coordinate-indexed worldgen (rule 11).
-      assemble_chunk(U32.to_nat(Chunk.cells()), 0, k, chunk_list_sel(sel, k), world)
+      assemble_chunk_w(U32.to_nat(Chunk.cells()), w, 0, k, chunk_list_sel(sel, k), world)
     case Some{cells}:
-      assemble_chunk(U32.to_nat(Chunk.cells()), 0, k, cells, world)
+      assemble_chunk_w(U32.to_nat(Chunk.cells()), w, 0, k, cells, world)
+
+def assemble_cells_sel(+sel: Bool, m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> Array<U32>:
+  assemble_cells_w_sel(sel, Window.canonical(), m, k, world)
 
 def assemble_cells(m: Maybe<&2, List<&2, U32>>, +k: U32, world: Array<U32>) -> Array<U32>:
   assemble_cells_sel(Worldgen.box(), m, k, world)
@@ -144,7 +163,9 @@ def assemble(s: Store) -> Array<U32>:
 # instead of the implicit `assemble_go` loop bounds. Chunks are disjoint, so the
 # order of `keys` does not affect the result; `assemble s` is the canonical
 # instance (`Window.resident_keys canonical()`), which T95 checks.
-def assemble_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<&2, U32>, +s: Store, world: Array<U32>) -> Array<U32>:
+def assemble_keys_go_w_sel(
+  +sel: Bool, +w: Window.Window, fuel: Nat, keys: List<&2, U32>, +s: Store, world: Array<U32>
+) -> Array<U32>:
   match fuel:
     case 0n:
       world
@@ -153,13 +174,33 @@ def assemble_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<&2, U32>, +s: Store, 
         case Nil{}:
           world
         case Con{+h, t}:
-          assemble_keys_go_sel(sel, p, t, s, assemble_cells_sel(sel, get(s, h), h, world))
+          assemble_keys_go_w_sel(
+            sel, w, p, t, s, assemble_cells_w_sel(sel, w, get(s, h), h, world))
+
+def assemble_keys_go_sel(+sel: Bool, fuel: Nat, keys: List<&2, U32>, +s: Store, world: Array<U32>) -> Array<U32>:
+  assemble_keys_go_w_sel(sel, Window.canonical(), fuel, keys, s, world)
+
+def assemble_keys_w_sel(+sel: Bool, +w: Window.Window, keys: List<&2, U32>, s: Store) -> Array<U32>:
+  assemble_keys_go_w_sel(sel, w, 64n, keys, s, [0 : U32^18n])
 
 def assemble_keys_sel(+sel: Bool, keys: List<&2, U32>, s: Store) -> Array<U32>:
-  assemble_keys_go_sel(sel, 64n, keys, s, [0 : U32^18n])
+  assemble_keys_w_sel(sel, Window.canonical(), keys, s)
+
+def assemble_keys_w(w: Window.Window, keys: List<&2, U32>, s: Store) -> Array<U32>:
+  assemble_keys_w_sel(Worldgen.box(), w, keys, s)
 
 def assemble_keys(keys: List<&2, U32>, s: Store) -> Array<U32>:
-  assemble_keys_sel(Worldgen.box(), keys, s)
+  assemble_keys_w(Window.canonical(), keys, s)
+
+# S1 step 4c: assemble a *moved* window into its own window-local array over its
+# explicit resident set. The canonical instance is `assemble` (T18/T95); a moved
+# window addresses by `win_index`, so its far-edge chunks do not fold onto the
+# near cells. T101 witnesses the moved case against `Worldgen.gen`.
+def assemble_w_sel(+sel: Bool, +w: Window.Window, s: Store) -> Array<U32>:
+  assemble_keys_w_sel(sel, w, Window.resident_keys(w), s)
+
+def assemble_w(w: Window.Window, s: Store) -> Array<U32>:
+  assemble_w_sel(Worldgen.box(), w, s)
 
 def put_all_go_sel(+sel: Bool, fuel: Nat, +ci: U32, store: Store) -> Store:
   match fuel:
