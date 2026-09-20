@@ -1,6 +1,8 @@
 import Base
 import ./grid.bend as Grid
 import ./cell.bend as Cell
+import ./window.bend as Window
+import ./wgrid.bend as WGrid
 
 def mark_got(p: Array<U32> & U32, i: U32) -> Array<U32>:
   match p:
@@ -25,8 +27,8 @@ def mark_if(+ok: Bool, world: Array<U32>, i: U32) -> Array<U32>:
     case False{}:
       world
 
-def wake_x(
-  fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
+def wake_x_w(
+  +win: Window.Window, fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
 ) -> Array<U32>:
   match fuel:
     case 0n:
@@ -35,31 +37,45 @@ def wake_x(
       +ox = U32.sub(dx, 1)
       +oy = U32.sub(dy, 1)
       +oz = U32.sub(dz, 1)
-      j = Grid.neighbor(i, ox, oy, oz)
-      ok = Grid.step_inside(i, ox, oy, oz)
+      j = WGrid.wgrid_neighbor(win, i, ox, oy, oz)
+      ok = WGrid.wgrid_step_inside(win, i, ox, oy, oz)
       world2 = mark_if(ok, world, j)
-      wake_x(p, U32.add(dx, 1), dy, dz, i, world2)
+      wake_x_w(win, p, U32.add(dx, 1), dy, dz, i, world2)
 
-def wake_y(
-  fuel: Nat, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
+def wake_x(
+  fuel: Nat, +dx: U32, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
+) -> Array<U32>:
+  wake_x_w(Window.canonical(), fuel, dx, dy, dz, i, world)
+
+def wake_y_w(
+  +win: Window.Window, fuel: Nat, +dy: U32, +dz: U32, +i: U32, world: Array<U32>
 ) -> Array<U32>:
   match fuel:
     case 0n:
       world
     case 1n+p:
-      world2 = wake_x(U32.to_nat(3), 0, dy, dz, i, world)
-      wake_y(p, U32.add(dy, 1), dz, i, world2)
+      world2 = wake_x_w(win, U32.to_nat(3), 0, dy, dz, i, world)
+      wake_y_w(win, p, U32.add(dy, 1), dz, i, world2)
 
-def wake_z(fuel: Nat, +dz: U32, +i: U32, world: Array<U32>) -> Array<U32>:
+def wake_y(fuel: Nat, +dy: U32, +dz: U32, +i: U32, world: Array<U32>) -> Array<U32>:
+  wake_y_w(Window.canonical(), fuel, dy, dz, i, world)
+
+def wake_z_w(fuel: Nat, +win: Window.Window, +dz: U32, +i: U32, world: Array<U32>) -> Array<U32>:
   match fuel:
     case 0n:
       world
     case 1n+p:
-      world2 = wake_y(U32.to_nat(3), 0, dz, i, world)
-      wake_z(p, U32.add(dz, 1), i, world2)
+      world2 = wake_y_w(win, U32.to_nat(3), 0, dz, i, world)
+      wake_z_w(p, win, U32.add(dz, 1), i, world2)
+
+def wake_z(fuel: Nat, +dz: U32, +i: U32, world: Array<U32>) -> Array<U32>:
+  wake_z_w(fuel, Window.canonical(), dz, i, world)
+
+def wake_w(win: Window.Window, world: Array<U32>, i: U32) -> Array<U32>:
+  wake_z_w(U32.to_nat(3), win, 0, i, world)
 
 def wake(world: Array<U32>, i: U32) -> Array<U32>:
-  wake_z(U32.to_nat(3), 0, i, world)
+  wake_w(Window.canonical(), world, i)
 
 def set_support(+w: U32, s: U32) -> U32:
   Cell.encode(Cell.material(w), Cell.cohesion(w), Cell.active(w), s, Cell.fall(w))
@@ -101,23 +117,26 @@ def crush_if_rock(+w: U32) -> U32:
 # returns selector 4 (grounded → support 31) if a neighbour is static, else
 # `acc` (the caller's fallback selector). The seed value `0` is a non-static
 # sentinel: material 0 is not static, so the first iteration only reads `face`.
-def face(+h: U32, +i: U32) -> U32:
+def face_w(+win: Window.Window, +h: U32, +i: U32) -> U32:
   match h:
     case 0:
-      Grid.below(i)
+      WGrid.wgrid_below(win, i)
     case 1:
-      Grid.above(i)
+      WGrid.wgrid_above(win, i)
     case 2:
-      Grid.west(i)
+      WGrid.wgrid_west(win, i)
     case 3:
-      Grid.east(i)
+      WGrid.wgrid_east(win, i)
     case 4:
-      Grid.south(i)
+      WGrid.wgrid_south(win, i)
     case _:
-      Grid.north(i)
+      WGrid.wgrid_north(win, i)
+
+def face(+h: U32, +i: U32) -> U32:
+  face_w(Window.canonical(), h, i)
 
 def seed_go(
-  dirs: List<U32>, +i: U32, +acc: U32, gp: Array<U32> & U32
+  +win: Window.Window, dirs: List<U32>, +i: U32, +acc: U32, gp: Array<U32> & U32
 ) -> Array<U32> & U32:
   match dirs:
     case Nil{}:
@@ -127,10 +146,13 @@ def seed_go(
     case Con{+h, t}:
       match gp:
         case (world, v):
-          seed_go(t, i, Bool.pick(U32, Cell.static(Cell.material(v)), 4, acc), Array.get(U32, world, face(h, i)))
+          seed_go(win, t, i, Bool.pick(U32, Cell.static(Cell.material(v)), 4, acc), Array.get(U32, world, face_w(win, h, i)))
 
 # The wall-adhesion half of the seed: the five non-below faces, returning
 # selector 4 (grounded) or 6 (crush). Used by `Support.sup` only where the below
 # cell neither grounds nor supports.
+def side_sel_w(+win: Window.Window, world: Array<U32>, +i: U32) -> Array<U32> & U32:
+  seed_go(win, [1, 2, 3, 4, 5], i, 6, (world, 0))
+
 def side_sel(world: Array<U32>, +i: U32) -> Array<U32> & U32:
-  seed_go([1, 2, 3, 4, 5], i, 6, (world, 0))
+  side_sel_w(Window.canonical(), world, i)

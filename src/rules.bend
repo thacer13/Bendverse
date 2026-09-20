@@ -2,6 +2,8 @@ import Base
 import ./grid.bend as Grid
 import ./cell.bend as Cell
 import ./ops.bend as Ops
+import ./window.bend as Window
+import ./wgrid.bend as WGrid
 
 def color_of(+i: U32) -> U32:
   (U32.and(Grid.ix(i), 1)
@@ -168,19 +170,25 @@ def dir_dz(+k: Dir4) -> U32:
     case K3{}: 1
     case _: 0
 
-def side4(i: U32, +k: Dir4) -> U32:
+def side4_w(+win: Window.Window, i: U32, +k: Dir4) -> U32:
   match k:
-    case K0{}: Grid.neighbor(i, 4294967295, 0, 0)
-    case K1{}: Grid.neighbor(i, 1, 0, 0)
-    case K2{}: Grid.neighbor(i, 0, 0, 4294967295)
-    case K3{}: Grid.neighbor(i, 0, 0, 1)
+    case K0{}: WGrid.wgrid_neighbor(win, i, 4294967295, 0, 0)
+    case K1{}: WGrid.wgrid_neighbor(win, i, 1, 0, 0)
+    case K2{}: WGrid.wgrid_neighbor(win, i, 0, 0, 4294967295)
+    case K3{}: WGrid.wgrid_neighbor(win, i, 0, 0, 1)
+
+def side4(i: U32, +k: Dir4) -> U32:
+  side4_w(Window.canonical(), i, k)
+
+def diag4_w(+win: Window.Window, i: U32, +k: Dir4) -> U32:
+  match k:
+    case K0{}: WGrid.wgrid_neighbor(win, i, 4294967295, 4294967295, 0)
+    case K1{}: WGrid.wgrid_neighbor(win, i, 1, 4294967295, 0)
+    case K2{}: WGrid.wgrid_neighbor(win, i, 0, 4294967295, 4294967295)
+    case K3{}: WGrid.wgrid_neighbor(win, i, 0, 4294967295, 1)
 
 def diag4(i: U32, +k: Dir4) -> U32:
-  match k:
-    case K0{}: Grid.neighbor(i, 4294967295, 4294967295, 0)
-    case K1{}: Grid.neighbor(i, 1, 4294967295, 0)
-    case K2{}: Grid.neighbor(i, 0, 4294967295, 4294967295)
-    case K3{}: Grid.neighbor(i, 0, 4294967295, 1)
+  diag4_w(Window.canonical(), i, k)
 
 def dir_last(+k: Dir4) -> Bool:
   match k:
@@ -230,6 +238,7 @@ def dmg_of(+w: U32, +b: U32) -> Bool:
 # the mover's active bit and wake is deferred (V0-4a), so the active set only
 # shrinks within a tick.
 def plan(
+  +win: Window.Window,
   fuel: Nat,
   gp: Array<U32> & U32,
   +sel: U32,
@@ -254,75 +263,75 @@ def plan(
           match sel:
             case 0:
               +ab = U32.is_ne(Cell.active(gv), 0)
-              plan(p, (world, gv), Bool.pick(U32, ab, 1, 2), i, gv, k, b, d, ic, sets, wakes, todo)
+              plan(win, p, (world, gv), Bool.pick(U32, ab, 1, 2), i, gv, k, b, d, ic, sets, wakes, todo)
             case 1:
               +m = Cell.material(w)
               +skip = Bool.or(Bool.or(U32.is_eq(m, 0), Cell.static(m)), U32.is_ne(Cell.cohesion(w), 0))
-              plan(p, (world, gv), Bool.pick(U32, skip, 4, 5), i, w, k, b, d, ic, sets, wakes, todo)
+              plan(win, p, (world, gv), Bool.pick(U32, skip, 4, 5), i, w, k, b, d, ic, sets, wakes, todo)
             case 2:
-              plan(p, (world, gv), 14, i, w, k, b, d, ic, sets, wakes, todo)
+              plan(win, p, (world, gv), 14, i, w, k, b, d, ic, sets, wakes, todo)
             case 4:
-              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+              plan(win, p, (world, gv), 14, i, w, k, b, d, ic,
                 WSet{i, OPres{ODeact{}}, w} <> sets, wakes, todo)
             case 5:
-              q = Array.get(U32, world, Grid.below(i))
-              plan(p, q, 6, i, w, k, b, d, ic, sets, wakes, todo)
+              q = Array.get(U32, world, WGrid.wgrid_below(win, i))
+              plan(win, p, q, 6, i, w, k, b, d, ic, sets, wakes, todo)
             case 6:
-              +can = Bool.and(can_enter(w, gv), Grid.step_inside(i, 0, 4294967295, 0))
-              plan(p, (world, gv), Bool.pick(U32, can, 7, 8), i, w, k, gv, d, ic, sets, wakes, todo)
+              +can = Bool.and(can_enter(w, gv), WGrid.wgrid_step_inside(win, i, 0, 4294967295, 0))
+              plan(win, p, (world, gv), Bool.pick(U32, can, 7, 8), i, w, k, gv, d, ic, sets, wakes, todo)
             case 7:
-              +nb = Grid.below(i)
-              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+              +nb = WGrid.wgrid_below(win, i)
+              plan(win, p, (world, gv), 14, i, w, k, b, d, ic,
                 WSet{nb, OPres{OMov{}}, w} <> (WSet{i, OPres{OId{}}, gv} <> sets),
                 WWake{nb} <> (WWake{i} <> wakes), todo)
             case 8:
               +sl = Cell.slides(Cell.material(w))
-              plan(p, (world, gv), Bool.pick(U32, sl, 9, 21), i, w, K0{}, b, d, ic, sets, wakes, todo)
+              plan(win, p, (world, gv), Bool.pick(U32, sl, 9, 21), i, w, K0{}, b, d, ic, sets, wakes, todo)
             case 9:
-              q = Array.get(U32, world, side4(i, k))
-              plan(p, q, 10, i, w, k, b, d, ic, sets, wakes, todo)
+              q = Array.get(U32, world, side4_w(win, i, k))
+              plan(win, p, q, 10, i, w, k, b, d, ic, sets, wakes, todo)
             case 10:
               +ce = can_enter(w, gv)
-              plan(p, (world, gv), Bool.pick(U32, ce, 11, 12), i, w, k, b, d, ic, sets, wakes, todo)
+              plan(win, p, (world, gv), Bool.pick(U32, ce, 11, 12), i, w, k, b, d, ic, sets, wakes, todo)
             case 11:
-              q = Array.get(U32, world, diag4(i, k))
-              plan(p, q, 13, i, w, k, b, d, ic, sets, wakes, todo)
+              q = Array.get(U32, world, diag4_w(win, i, k))
+              plan(win, p, q, 13, i, w, k, b, d, ic, sets, wakes, todo)
             case 12:
               +fin = dir_last(k)
-              plan(p, (world, gv), Bool.pick(U32, fin, 21, 9), i, w, dir_next(k), b, d, ic, sets, wakes, todo)
+              plan(win, p, (world, gv), Bool.pick(U32, fin, 21, 9), i, w, dir_next(k), b, d, ic, sets, wakes, todo)
             case 13:
-              +ce2 = Bool.and(can_enter(w, gv), Grid.step_inside(i, dir_dx(k), 4294967295, dir_dz(k)))
-              plan(p, (world, gv), Bool.pick(U32, ce2, 30, 12), i, w, k, b, gv, ic, sets, wakes, todo)
+              +ce2 = Bool.and(can_enter(w, gv), WGrid.wgrid_step_inside(win, i, dir_dx(k), 4294967295, dir_dz(k)))
+              plan(win, p, (world, gv), Bool.pick(U32, ce2, 30, 12), i, w, k, b, gv, ic, sets, wakes, todo)
             case 30:
               +dx = dir_dx(k)
               +dz = dir_dz(k)
-              +ic0 = Grid.neighbor(i, U32.add(dx, dx), 0, U32.add(dz, dz))
+              +ic0 = WGrid.wgrid_neighbor(win, i, U32.add(dx, dx), 0, U32.add(dz, dz))
               q = Array.get(U32, world, ic0)
-              plan(p, q, 31, i, w, k, b, d, ic0, sets, wakes, todo)
+              plan(win, p, q, 31, i, w, k, b, d, ic0, sets, wakes, todo)
             case 31:
               # The opposite claimant only counts if it is inside the box: a
               # wrapped neighbour cannot reach the shared target (boundary moves
               # are inert), so it must not steal the target from `i`.
               +two_dx = U32.add(dir_dx(k), dir_dx(k))
               +two_dz = U32.add(dir_dz(k), dir_dz(k))
-              +lose = Bool.and(Grid.step_inside(i, two_dx, 0, two_dz),
+              +lose = Bool.and(WGrid.wgrid_step_inside(win, i, two_dx, 0, two_dz),
                         Bool.and(capable(gv), U32.is_lt(ic, i)))
-              plan(p, (world, gv), Bool.pick(U32, lose, 21, 32), i, w, k, b, d, ic, sets, wakes, todo)
+              plan(win, p, (world, gv), Bool.pick(U32, lose, 21, 32), i, w, k, b, d, ic, sets, wakes, todo)
             case 32:
-              +nd = diag4(i, k)
-              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+              +nd = diag4_w(win, i, k)
+              plan(win, p, (world, gv), 14, i, w, k, b, d, ic,
                 WSet{nd, OPres{ODeact{}}, w} <> (WSet{i, OPres{OId{}}, d} <> sets),
                 WWake{nd} <> (WWake{i} <> wakes), todo)
             case 21:
-              +dmg = Bool.and(dmg_of(w, b), Grid.step_inside(i, 0, 4294967295, 0))
-              plan(p, (world, gv), Bool.pick(U32, dmg, 22, 23), i, w, k, b, d, ic, sets, wakes, todo)
+              +dmg = Bool.and(dmg_of(w, b), WGrid.wgrid_step_inside(win, i, 0, 4294967295, 0))
+              plan(win, p, (world, gv), Bool.pick(U32, dmg, 22, 23), i, w, k, b, d, ic, sets, wakes, todo)
             case 22:
-              +nb = Grid.below(i)
-              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+              +nb = WGrid.wgrid_below(win, i)
+              plan(win, p, (world, gv), 14, i, w, k, b, d, ic,
                 WSet{nb, OCrushIfRock{}, b} <> (WSet{i, OPres{OFall0{}}, w} <> sets),
                 WWake{nb} <> (WWake{i} <> wakes), todo)
             case 23:
-              plan(p, (world, gv), 14, i, w, k, b, d, ic,
+              plan(win, p, (world, gv), 14, i, w, k, b, d, ic,
                 WSet{i, OPres{OFall0{}}, w} <> sets, wakes, todo)
             case 14:
               match todo:
@@ -330,7 +339,7 @@ def plan(
                   (world, sets, wakes)
                 case Con{+h, t}:
                   q = Array.get(U32, world, h)
-                  plan(p, q, 0, h, 0, K0{}, 0, 0, 0, sets, wakes, t)
+                  plan(win, p, q, 0, h, 0, K0{}, 0, 0, 0, sets, wakes, t)
             case _:
               (world, sets, wakes)
 
@@ -370,10 +379,10 @@ def phase_pending(r: Array<U32> & List<Write> & List<Write>) -> Array<U32> & Lis
 #
 # V0-4b: the phase runs over its work list `todo` (the active cells of the phase
 # colour, in any order) instead of the colour sub-lattice.
-def phase_plan_w(world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<Write>:
+def phase_plan_w(win: Window.Window, world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<Write>:
   match todo:
     case Nil{}:
       (world, Nil{})
     case Con{+h, t}:
       q = Array.get(U32, world, h)
-      phase_pending(plan(U32.to_nat(16777216), q, 0, h, 0, K0{}, 0, 0, 0, Nil{}, Nil{}, t))
+      phase_pending(plan(win, U32.to_nat(16777216), q, 0, h, 0, K0{}, 0, 0, 0, Nil{}, Nil{}, t))

@@ -2,6 +2,8 @@ import Base
 import ./grid.bend as Grid
 import ./cell.bend as Cell
 import ./ops.bend as Ops
+import ./window.bend as Window
+import ./wgrid.bend as WGrid
 
 # V0-4b-2/3 (rule 9): the support pass no longer applies its wake inline; a crush
 # conses the crushed cell onto `wakes`, and the tick applies the accumulated
@@ -13,8 +15,14 @@ import ./ops.bend as Ops
 # by the tick), so the tick no longer scans the world for support. The per-cell
 # writes are identical; only the advance differs, and the advance writes nothing
 # (the `sup_m` mirror tracks the per-cell writes, so its Φ claim is unaffected).
+#
+# S1 / slice W1: the machine is threaded with the resident `Window` (`+win`). In
+# W1 the neighbour reads and the scan bound still go through `WGrid`, whose
+# canonical instance is `Grid`; W2 makes the reads residency-aware (`G-scale-1`)
+# without touching this state machine again.
 
 def sup(
+  +win: Window.Window,
   fuel: Nat,
   gp: Array<U32> & U32,
   +sel: U32,
@@ -41,58 +49,58 @@ def sup(
               coh = U32.is_ne(Cell.cohesion(v), 0)
               st = Cell.static(Cell.material(v))
               want = Bool.and(okg, Bool.and(coh, Bool.not(st)))
-              sup(p, (world, v), Bool.pick(U32, want, 1, 9), i, v, gated, wakes, todo, scan)
+              sup(win, p, (world, v), Bool.pick(U32, want, 1, 9), i, v, gated, wakes, todo, scan)
             case 1:
               # V0-5: the seed reads the neighbourhood. `below` is read first (it
               # is both the support contact and the common propagation path);
               # only a cell whose below neither grounds nor supports pays the
               # wall reads (case 30 -> 31).
-              sup(p, (world, gv), 5, i, w, gated, wakes, todo, scan)
+              sup(win, p, (world, gv), 5, i, w, gated, wakes, todo, scan)
             case 30:
-              sup(p, Ops.side_sel(world, i), 31, i, w, gated, wakes, todo, scan)
+              sup(win, p, Ops.side_sel_w(win, world, i), 31, i, w, gated, wakes, todo, scan)
             case 31:
-              sup(p, (world, w), gv, i, w, gated, wakes, todo, scan)
+              sup(win, p, (world, w), gv, i, w, gated, wakes, todo, scan)
             case 5:
-              q = Array.get(U32, world, Grid.below(i))
-              sup(p, q, 2, i, w, gated, wakes, todo, scan)
+              q = Array.get(U32, world, WGrid.wgrid_below(win, i))
+              sup(win, p, q, 2, i, w, gated, wakes, todo, scan)
             case 2:
               +b = gv
               bstat = Cell.static(Cell.material(b))
               bcoh = U32.is_ne(Cell.cohesion(b), 0)
               bsup = U32.is_ne(Cell.support(b), 0)
-              sup(p, (world, b), Bool.pick(U32, bstat, 4, Bool.pick(U32, Bool.and(bcoh, bsup), 3, 30)), i, w, gated, wakes, todo, scan)
+              sup(win, p, (world, b), Bool.pick(U32, bstat, 4, Bool.pick(U32, Bool.and(bcoh, bsup), 3, 30)), i, w, gated, wakes, todo, scan)
             case 3:
               sv = Cell.support(gv)
               world = world[i] <- Ops.set_support(w, sv)
               q = Array.get(U32, world, i)
-              sup(p, q, 9, i, 0, gated, wakes, todo, scan)
+              sup(win, p, q, 9, i, 0, gated, wakes, todo, scan)
             case 4:
               world = world[i] <- Ops.set_support(w, 31)
               q = Array.get(U32, world, i)
-              sup(p, q, 9, i, 0, gated, wakes, todo, scan)
+              sup(win, p, q, 9, i, 0, gated, wakes, todo, scan)
             case 6:
               crushed = Ops.crush_if_rock(w)
               world = world[i] <- crushed
               q = Array.get(U32, world, i)
-              sup(p, q, 9, i, 0, gated, i <> wakes, todo, scan)
+              sup(win, p, q, 9, i, 0, gated, i <> wakes, todo, scan)
             case 9:
               match todo:
                 case Nil{}:
                   match scan:
                     case True{}:
                       +ni = U32.add(i, 1)
-                      sup(p, (world, gv), Bool.pick(U32, U32.is_eq(ni, Grid.volume()), 10, 11), i, 0, gated, wakes, Nil{}, scan)
+                      sup(win, p, (world, gv), Bool.pick(U32, U32.is_eq(ni, Window.win_cells()), 10, 11), i, 0, gated, wakes, Nil{}, scan)
                     case False{}:
                       (world, wakes)
                 case Con{+h, t}:
                   q = Array.get(U32, world, h)
-                  sup(p, q, 0, h, 0, gated, wakes, t, scan)
+                  sup(win, p, q, 0, h, 0, gated, wakes, t, scan)
             case 10:
               (world, wakes)
             case 11:
               +ni = U32.add(i, 1)
               q = Array.get(U32, world, ni)
-              sup(p, q, 0, ni, 0, gated, wakes, todo, scan)
+              sup(win, p, q, 0, ni, 0, gated, wakes, todo, scan)
             case _:
               (world, wakes)
 
@@ -103,19 +111,25 @@ def wake_all(wakes: List<U32>, world: Array<U32>) -> Array<U32>:
     case Con{h, t}:
       wake_all(t, Ops.wake(world, h))
 
-def pass_gated(world: Array<U32>, +gated: Bool) -> Array<U32> & List<U32>:
+def pass_gated_w(win: Window.Window, world: Array<U32>, +gated: Bool) -> Array<U32> & List<U32>:
   q = Array.get(U32, world, 0)
-  sup(U32.to_nat(16777216), q, 0, 0, 0, gated, Nil{}, Nil{}, True{})
+  sup(win, U32.to_nat(16777216), q, 0, 0, 0, gated, Nil{}, Nil{}, True{})
+
+def pass_gated(world: Array<U32>, +gated: Bool) -> Array<U32> & List<U32>:
+  pass_gated_w(Window.canonical(), world, gated)
 
 # The tick's entry: run support over the work list `todo` (ascending, so the
 # bottom-up `below` propagation matches the scan).
-def pass_todo(world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<U32>:
+def pass_todo_w(win: Window.Window, world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<U32>:
   match todo:
     case Nil{}:
       (world, Nil{})
     case Con{+h, t}:
       q = Array.get(U32, world, h)
-      sup(U32.to_nat(16777216), q, 0, h, 0, True{}, Nil{}, t, False{})
+      sup(win, U32.to_nat(16777216), q, 0, h, 0, True{}, Nil{}, t, False{})
+
+def pass_todo(world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<U32>:
+  pass_todo_w(Window.canonical(), world, todo)
 
 def pass_commit(r: Array<U32> & List<U32>) -> Array<U32>:
   match r:

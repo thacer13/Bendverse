@@ -50,17 +50,16 @@ def wgrid_iy(w: Window.Window, i: U32) -> U32:
 def wgrid_iz(w: Window.Window, i: U32) -> U32:
   Window.win_gz(w, i)
 
-# The window-frame neighbour: decompose the flat index to window-local
-# coordinates, offset, fold within the window edge (`win_edge`), recompose.
-# W1 keeps the torus fold (`&63`) so the canonical instance is `Grid.neighbor`
-# bit-for-bit. W2 replaces this with residency-aware resolution: a target whose
-# global coordinate leaves the resident set is inert (the `G-scale-1` margin
-# rule), not wrapped onto the opposite face.
+# The window-frame neighbour. W1 is canonical-only: the body *delegates* to
+# `Grid.neighbor`, so `wgrid_neighbor(Window.canonical(), i, ...)` and, through the
+# `Rules.side4/diag4` wrappers, every existing `Grid.neighbor`-shaped proof
+# (`diag4_y_flip`, `batch.bend`, `color.bend`) reduce *syntactically* to the same
+# term -- the seam is transparent. W2 replaces this body with residency-aware
+# resolution: a target whose global coordinate leaves the resident set is inert
+# (the `G-scale-1` margin rule), not wrapped onto the opposite face. That change
+# is local to this file; it will revisit the `diag4`/`side4` shape proofs.
 def wgrid_neighbor(+w: Window.Window, +i: U32, dx: U32, dy: U32, dz: U32) -> U32:
-  x = U32.and(U32.add(Window.win_ix(i), dx), 63)
-  z = U32.and(U32.add(Window.win_iz(i), dz), 63)
-  y = U32.and(U32.add(Window.win_iy(i), dy), 63)
-  (x .|. (z << 6n) .|. (y << 12n) : U32)
+  Grid.neighbor(i, dx, dy, dz)
 
 def wgrid_below(w: Window.Window, i: U32) -> U32:
   wgrid_neighbor(w, i, 0, 4294967295, 0)
@@ -80,15 +79,10 @@ def wgrid_south(w: Window.Window, i: U32) -> U32:
 def wgrid_north(w: Window.Window, i: U32) -> U32:
   wgrid_neighbor(w, i, 0, 0, 1)
 
-# The window-frame closure guard: does adding the raw offset keep the cell in the
-# window on every axis? W1 uses the same high-bit mask as `Grid.step_inside`
-# (`not(win_edge-1)`), so the canonical instance is bit-identical. W2 generalises
-# this to "the target is resident (or is explicitly loaded)" against the window's
-# base, which is exactly what makes a step at the moving face inert instead of
-# silently wrapping (`G-scale-1`).
+# The window-frame closure guard. W1 is canonical-only: the body delegates to
+# `Grid.step_inside`, so the seam is transparent and `Ops.wake`'s existing laws
+# stand. W2 generalises this to "the target is resident (or is explicitly
+# loaded)" against the window's base, which is exactly what makes a step at the
+# moving face inert instead of silently wrapping (`G-scale-1`).
 def wgrid_step_inside(+w: Window.Window, +i: U32, dx: U32, dy: U32, dz: U32) -> Bool:
-  +high = U32.not(U32.sub(64, 1))
-  okx = U32.is_eq(U32.and(U32.add(Window.win_ix(i), dx), high), 0)
-  oky = U32.is_eq(U32.and(U32.add(Window.win_iy(i), dy), high), 0)
-  okz = U32.is_eq(U32.and(U32.add(Window.win_iz(i), dz), high), 0)
-  Bool.and(okx, Bool.and(oky, okz))
+  Grid.step_inside(i, dx, dy, dz)

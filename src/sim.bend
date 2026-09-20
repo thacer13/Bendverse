@@ -6,6 +6,8 @@ import ./support.bend as Support
 import ./worldgen.bend as Worldgen
 import ./ops.bend as Ops
 import ./dirty.bend as Dirty
+import ./window.bend as Window
+import ./wgrid.bend as WGrid
 
 def build() -> Array<U32>:
   Support.pass_all(Worldgen.build())
@@ -62,22 +64,22 @@ def filter_color(+xs: List<&2, U32>, +c: U32) -> List<&2, U32>:
 # produced are *pending*; the tick threads them and applies them once, at tick
 # end, so no phase evaluates a cell an earlier phase of the same tick woke.
 def phase_w(
-  world: Array<U32>, +c: U32, +todo: List<&2, U32>
+  +win: Window.Window, world: Array<U32>, +c: U32, +todo: List<&2, U32>
 ) -> Array<U32> & List<Rules.Write>:
-  Rules.phase_plan_w(world, filter_color(todo, c))
+  Rules.phase_plan_w(win, world, filter_color(todo, c))
 
 def phase_get(r: Array<U32> & List<Rules.Write>) -> Array<U32>:
   match r:
     case (world2, _):
       world2
 
-def phase_todo(r: Array<U32> & List<&2, U32>, +c: U32) -> Array<U32>:
+def phase_todo(win: Window.Window, r: Array<U32> & List<&2, U32>, +c: U32) -> Array<U32>:
   match r:
     case (world2, todo):
-      phase_get(phase_w(world2, c, todo))
+      phase_get(phase_w(win, world2, c, todo))
 
 def phase(world: Array<U32>, +c: U32) -> Array<U32>:
-  phase_todo(active_list(world), c)
+  phase_todo(Window.canonical(), active_list(world), c)
 
 # `phases` folds colours `0 .. 7`. `r` is the *previous* phase's result (the
 # initial call passes the support-passed world with no writes); `todo` is the
@@ -85,7 +87,7 @@ def phase(world: Array<U32>, +c: U32) -> Array<U32>:
 # a parameter so the pair can be matched without a local binder (Bend matches
 # only parameters/fields).
 def phases(
-  fuel: Nat, +c: U32, r: Array<U32> & List<Rules.Write>, +todo: List<&2, U32>, wakes: List<Rules.Write>
+  +win: Window.Window, fuel: Nat, +c: U32, r: Array<U32> & List<Rules.Write>, +todo: List<&2, U32>, wakes: List<Rules.Write>
 ) -> Array<U32> & List<Rules.Write>:
   match fuel:
     case 0n:
@@ -95,7 +97,7 @@ def phases(
     case 1n+p:
       match r:
         case (world2, ws):
-          phases(p, U32.add(c, 1), phase_w(world2, c, todo), todo, List.append(&1, Rules.Write, ws, wakes))
+          phases(win, p, U32.add(c, 1), phase_w(win, world2, c, todo), todo, List.append(&1, Rules.Write, ws, wakes))
 
 # V0-4b-3b: the tick is driven by a dirty-row mask carried across ticks
 # (`src/dirty.bend`). The mask says which `y` rows may hold a cell activated since
@@ -108,7 +110,7 @@ def phases(
 # crosses a pair-returning fold (the A.76 checker overflow). A wake is applied
 # and its three reachable rows marked together.
 def commit_wakes_mask(
-  writes: List<Rules.Write>, world: Array<U32>, m: Dirty.Mask
+  +win: Window.Window, writes: List<Rules.Write>, world: Array<U32>, m: Dirty.Mask
 ) -> Array<U32> & Dirty.Mask:
   match writes:
     case Nil{}:
@@ -116,16 +118,16 @@ def commit_wakes_mask(
     case Con{h, t}:
       match h:
         case Rules.WSet{idx, op, src}:
-          commit_wakes_mask(t, world, m)
+          commit_wakes_mask(win, t, world, m)
         case Rules.WWake{+idx}:
-          w2 = Ops.wake(world, idx)
+          w2 = Ops.wake_w(win, world, idx)
           +m2 = Dirty.mark_wake(m, idx)
-          commit_wakes_mask(t, w2, m2)
+          commit_wakes_mask(win, t, w2, m2)
 
-def tick_commit_phases(r: Array<U32> & List<Rules.Write>) -> Array<U32> & Dirty.Mask:
+def tick_commit_phases(win: Window.Window, r: Array<U32> & List<Rules.Write>) -> Array<U32> & Dirty.Mask:
   match r:
     case (world3, wakes):
-      commit_wakes_mask(wakes, world3, Dirty.zermask())
+      commit_wakes_mask(win, wakes, world3, Dirty.zermask())
 
 # ------------------------------------------------------------------ trace (P1)
 # `tick_trace` is the engine's tick plus a *delta list*: one entry per cell the
@@ -155,12 +157,12 @@ type Delta is Data:
 # `Delta` per `WSet`, and ignores `WWake` (applied later by `commit_wakes_mask`).
 # The result is matched through a parameter (`commit_trace_cons`) because Bend
 # cannot scrutinize a computed value.
-def commit_trace_cons(r: Array<U32> & List<Delta> & List<Rules.Write>, +idx: U32, +nv: U32) -> Array<U32> & List<Delta> & List<Rules.Write>:
+def commit_trace_cons(+win: Window.Window, r: Array<U32> & List<Delta> & List<Rules.Write>, +idx: U32, +nv: U32) -> Array<U32> & List<Delta> & List<Rules.Write>:
   match r:
     case (world2, ds, wakes):
-      (world2, Delta{Grid.ix(idx), Grid.iy(idx), Grid.iz(idx), nv} <> ds, wakes)
+      (world2, Delta{WGrid.wgrid_ix(win, idx), WGrid.wgrid_iy(win, idx), WGrid.wgrid_iz(win, idx), nv} <> ds, wakes)
 
-def commit_trace(writes: List<Rules.Write>, world: Array<U32>, wakes: List<Rules.Write>) -> Array<U32> & List<Delta> & List<Rules.Write>:
+def commit_trace(+win: Window.Window, writes: List<Rules.Write>, world: Array<U32>, wakes: List<Rules.Write>) -> Array<U32> & List<Delta> & List<Rules.Write>:
   match writes:
     case Nil{}:
       (world, Nil{}, wakes)
@@ -168,36 +170,36 @@ def commit_trace(writes: List<Rules.Write>, world: Array<U32>, wakes: List<Rules
       match h:
         case Rules.WSet{+idx, op, src}:
           +nv = Rules.apply_op(src, op)
-          commit_trace_cons(commit_trace(t, world[idx] <- nv, wakes), idx, nv)
+          commit_trace_cons(win, commit_trace(win, t, world[idx] <- nv, wakes), idx, nv)
         case Rules.WWake{idx}:
-          commit_trace(t, world, wakes)
+          commit_trace(win, t, world, wakes)
 
 # The trace twin of `phase_pending`: commit the phase's set writes (recording
 # their deltas) and carry the pending wakes through unchanged. `commit_trace`
 # returns the 3-tuple directly so no 2-tuple is re-packed into a 3-tuple (a Bend
 # shape the checker rejects).
-def phase_pending_trace(r: Array<U32> & List<Rules.Write> & List<Rules.Write>) -> Array<U32> & List<Delta> & List<Rules.Write>:
+def phase_pending_trace(win: Window.Window, r: Array<U32> & List<Rules.Write> & List<Rules.Write>) -> Array<U32> & List<Delta> & List<Rules.Write>:
   match r:
     case (world, sets, wakes):
-      commit_trace(sets, world, wakes)
+      commit_trace(win, sets, world, wakes)
 
-def phase_plan_w_trace(world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<Delta> & List<Rules.Write>:
+def phase_plan_w_trace(+win: Window.Window, world: Array<U32>, todo: List<&2, U32>) -> Array<U32> & List<Delta> & List<Rules.Write>:
   match todo:
     case Nil{}:
       (world, Nil{}, Nil{})
     case Con{+h, t}:
       q = Array.get(U32, world, h)
-      phase_pending_trace(Rules.plan(U32.to_nat(16777216), q, 0, h, 0, Rules.K0{}, 0, 0, 0, Nil{}, Nil{}, t))
+      phase_pending_trace(win, Rules.plan(win, U32.to_nat(16777216), q, 0, h, 0, Rules.K0{}, 0, 0, 0, Nil{}, Nil{}, t))
 
-def phase_w_trace(world: Array<U32>, +c: U32, +todo: List<&2, U32>) -> Array<U32> & List<Delta> & List<Rules.Write>:
-  phase_plan_w_trace(world, filter_color(todo, c))
+def phase_w_trace(+win: Window.Window, world: Array<U32>, +c: U32, +todo: List<&2, U32>) -> Array<U32> & List<Delta> & List<Rules.Write>:
+  phase_plan_w_trace(win, world, filter_color(todo, c))
 
 # The trace twin of `phases`: same world/wake fold. `r` is the previous phase's
 # `(world, deltas, wakes)`; `acc` collects the deltas in application order
 # (older phases first) and `wakes` collects the deferred wakes. Replaying `acc`
 # in order reconstructs exactly the world `commit_sets` produced.
 def phases_trace(
-  fuel: Nat, +c: U32, r: Array<U32> & List<Delta> & List<Rules.Write>,
+  +win: Window.Window, fuel: Nat, +c: U32, r: Array<U32> & List<Delta> & List<Rules.Write>,
   +todo: List<&2, U32>, acc: List<Delta>, wakes: List<Rules.Write>
 ) -> Array<U32> & List<Delta> & List<Rules.Write>:
   match fuel:
@@ -208,14 +210,14 @@ def phases_trace(
     case 1n+p:
       match r:
         case (world2, ds, w2):
-          phases_trace(p, U32.add(c, 1), phase_w_trace(world2, c, todo), todo,
+          phases_trace(win, p, U32.add(c, 1), phase_w_trace(win, world2, c, todo), todo,
             List.append(&1, Delta, acc, ds), List.append(&1, Rules.Write, w2, wakes))
 
 # The trace twin of `commit_wakes_mask`: applies the deferred wakes exactly as
 # the live path does (so the world and mask are bit-identical) and threads the
 # delta list through untouched.
 def commit_wakes_mask_trace(
-  writes: List<Rules.Write>, world: Array<U32>, m: Dirty.Mask, ds: List<Delta>
+  +win: Window.Window, writes: List<Rules.Write>, world: Array<U32>, m: Dirty.Mask, ds: List<Delta>
 ) -> Array<U32> & Dirty.Mask & List<Delta>:
   match writes:
     case Nil{}:
@@ -223,29 +225,29 @@ def commit_wakes_mask_trace(
     case Con{h, t}:
       match h:
         case Rules.WSet{idx, op, src}:
-          commit_wakes_mask_trace(t, world, m, ds)
+          commit_wakes_mask_trace(win, t, world, m, ds)
         case Rules.WWake{+idx}:
-          w2 = Ops.wake(world, idx)
+          w2 = Ops.wake_w(win, world, idx)
           +m2 = Dirty.mark_wake(m, idx)
-          commit_wakes_mask_trace(t, w2, m2, ds)
+          commit_wakes_mask_trace(win, t, w2, m2, ds)
 
-def tick_commit_phases_trace(r: Array<U32> & List<Delta> & List<Rules.Write>) -> Array<U32> & Dirty.Mask & List<Delta>:
+def tick_commit_phases_trace(win: Window.Window, r: Array<U32> & List<Delta> & List<Rules.Write>) -> Array<U32> & Dirty.Mask & List<Delta>:
   match r:
     case (world3, ds, wakes):
-      commit_wakes_mask_trace(wakes, world3, Dirty.zermask(), ds)
+      commit_wakes_mask_trace(win, wakes, world3, Dirty.zermask(), ds)
 
-def tick_sup_trace(r: Array<U32> & List<U32>, todo: List<&2, U32>) -> Array<U32> & Dirty.Mask & List<Delta>:
+def tick_sup_trace(+win: Window.Window, r: Array<U32> & List<U32>, todo: List<&2, U32>) -> Array<U32> & Dirty.Mask & List<Delta>:
   match r:
     case (world2, sws):
-      tick_commit_phases_trace(phases_trace(8n, 0, (world2, Nil{}, Nil{}), todo, Nil{}, Rules.wake_writes(sws)))
+      tick_commit_phases_trace(win, phases_trace(win, 8n, 0, (world2, Nil{}, Nil{}), todo, Nil{}, Rules.wake_writes(sws)))
 
-def tick_go_trace(r: Array<U32> & List<&2, U32>) -> Array<U32> & Dirty.Mask & List<Delta>:
+def tick_go_trace(+win: Window.Window, r: Array<U32> & List<&2, U32>) -> Array<U32> & Dirty.Mask & List<Delta>:
   match r:
     case (world2, +todo):
-      tick_sup_trace(Support.pass_todo(world2, todo), todo)
+      tick_sup_trace(win, Support.pass_todo_w(win, world2, todo), todo)
 
-def tick_m_trace(r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask & List<Delta>:
-  tick_go_trace(Dirty.dirty_todo(r))
+def tick_m_trace(+win: Window.Window, r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask & List<Delta>:
+  tick_go_trace(win, Dirty.dirty_todo(r))
 
 # One tick plus its deltas. `tick` below is the world projection.
 def tick_trace_got(r: Array<U32> & Dirty.Mask & List<Delta>) -> Array<U32> & List<Delta>:
@@ -253,8 +255,11 @@ def tick_trace_got(r: Array<U32> & Dirty.Mask & List<Delta>) -> Array<U32> & Lis
     case (w, _, ds):
       (w, ds)
 
+def tick_trace_w(win: Window.Window, world: Array<U32>) -> Array<U32> & List<Delta>:
+  tick_trace_got(tick_m_trace(win, Dirty.active_mask(world)))
+
 def tick_trace(world: Array<U32>) -> Array<U32> & List<Delta>:
-  tick_trace_got(tick_m_trace(Dirty.active_mask(world)))
+  tick_trace_w(Window.canonical(), world)
 
 def tick_world(r: Array<U32> & List<Delta>) -> Array<U32>:
   match r:
@@ -264,25 +269,25 @@ def tick_world(r: Array<U32> & List<Delta>) -> Array<U32>:
 # The support pass over the work list (wakes deferred), then the eight phases
 # over the same list; the support and phase wakes are applied together at tick
 # end, and the mask accumulates the rows they touch.
-def tick_sup(r: Array<U32> & List<U32>, todo: List<&2, U32>) -> Array<U32> & Dirty.Mask:
+def tick_sup(+win: Window.Window, r: Array<U32> & List<U32>, todo: List<&2, U32>) -> Array<U32> & Dirty.Mask:
   match r:
     case (world2, sws):
-      tick_commit_phases(phases(8n, 0, (world2, Nil{}), todo, Rules.wake_writes(sws)))
+      tick_commit_phases(win, phases(win, 8n, 0, (world2, Nil{}), todo, Rules.wake_writes(sws)))
 
-def tick_go(r: Array<U32> & List<&2, U32>) -> Array<U32> & Dirty.Mask:
+def tick_go(+win: Window.Window, r: Array<U32> & List<&2, U32>) -> Array<U32> & Dirty.Mask:
   match r:
     case (world2, +todo):
-      tick_sup(Support.pass_todo(world2, todo), todo)
+      tick_sup(win, Support.pass_todo_w(win, world2, todo), todo)
 
-def tick_m(r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask:
-  tick_go(Dirty.dirty_todo(r))
+def tick_m(+win: Window.Window, r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask:
+  tick_go(win, Dirty.dirty_todo(r))
 
-def ticks_m(fuel: Nat, r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask:
+def ticks_m(+win: Window.Window, fuel: Nat, r: Array<U32> & Dirty.Mask) -> Array<U32> & Dirty.Mask:
   match fuel:
     case 0n:
       r
     case 1n+p:
-      ticks_m(p, tick_m(r))
+      ticks_m(win, p, tick_m(win, r))
 
 def ticks_step(r: Array<U32> & Dirty.Mask) -> Array<U32>:
   match r:
@@ -290,9 +295,17 @@ def ticks_step(r: Array<U32> & Dirty.Mask) -> Array<U32>:
       w
 
 # `tick` primes the mask from the world (one scan); `ticks` primes once and then
-# carries it across the whole run, so only the first tick scans the world.
+# carries it across the whole run, so only the first tick scans the world. The
+# `_w` entries take the resident window (W1: always `Window.canonical()` from the
+# plain wrappers); `W5` drives a moving window through them.
+def tick_w(win: Window.Window, world: Array<U32>) -> Array<U32>:
+  tick_world(tick_trace_w(win, world))
+
 def tick(world: Array<U32>) -> Array<U32>:
-  tick_world(tick_trace(world))
+  tick_w(Window.canonical(), world)
+
+def ticks_w(win: Window.Window, fuel: Nat, world: Array<U32>) -> Array<U32>:
+  ticks_step(ticks_m(win, fuel, Dirty.active_mask(world)))
 
 def ticks(fuel: Nat, world: Array<U32>) -> Array<U32>:
-  ticks_step(ticks_m(fuel, Dirty.active_mask(world)))
+  ticks_w(Window.canonical(), fuel, world)
