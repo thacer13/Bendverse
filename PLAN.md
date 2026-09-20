@@ -95,7 +95,7 @@ these costs more than reading them.
   the goal open (gate red). Use the former freely, the latter never in a commit.
 - `bend f.bend` checks the file, then runs `main`. `-o out` builds. `--checkup`
   checks and runs each import alone — **unsound here**: `LAWS.bend` alone reports
-  its 100 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
+  its 105 laws as TODOs. Use `bend PROOF.bend`, never `--checkup`, for the gate.
 - Imports resolve relative to the importing file, not the cwd; absolute import
   paths work (`import /abs/path/x.bend as X`).
 - Base APIs: `bend base <Name>`, `bend base --types`, `bend guide`. Do not guess.
@@ -381,7 +381,7 @@ with an ID. That registry — not prose — is the canonical record.
 
 ### 3.3 Claims, proofs, and trivial proofs
 
-100 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
+105 laws, every one discharged. Six are reflexivity proofs (`{==}`, both sides
 definitionally equal):
 
 `sanity`, `grid_volume`, `cell_full_mask`, `cell_reserved_bits`,
@@ -649,6 +649,8 @@ longer carry literals. `Chunk.per_axis()` (dead, and wrong: it said `4` for a
 | `bridge2` (transport) | `runners/serve.bend` real sidecar: length-framed `[len][kind][payload]` (HELLO/SNAPSHOT/DELTA/PING/BYE out, CREDIT/REQUEST/STOP in), the sparse snapshot (`Store.evict` regenerability + `assemble`), and the **B2 decision** (DELTA = render-visible fields, `(idx, Cell.deactivate word)`, global `Grid.index`, no `WWake`); T61–T65. IO only, `src/` untouched. Residual: credit/coalescing (`G-bridge-1`) | A.94 |
 | `gscale` (G-scale-3) | `src/gscale.bend` proves the `cw` split/rejoin in `Bits`/`Word`: `(w>>4)<<4 + (w&15) == w & 16383` (`gscale_global_rt`) plus the key/local model roundtrips, five laws `gscale_cw_{x,y,z,key,local}_rt`; T66–T70. Closes `G-scale-3`; mentions no `Grid.index`, so not in the torus retirement set | A.94 |
 | `window` (S1 step 2) | `src/window.bend`: the `Window` model (base chunk + cell origin) and the torus-free window-local index map (`win_lx/ly/lz`, `win_index`, inverses `win_gx/gy/gz`, `win_key`), with the canonical window pinned to the 64³ box. Additive — the live path still uses `Grid`, and no `&63` appears in the map, so a global coordinate above the box keeps its chunk index. T81 (canonical `win_index == Grid.index`) / T82 (global 80 not folded). The relabelling *law* is filed as `G-scale-7` | A.95 |
+| `gscale2` (full cw + winset) | `src/gscale.bend` lifts the `cw` y/z roundtrips to arbitrary `(x,y,z)` (`gscale_cw_y_rt_full`/`_z_rt_full`; field-extraction lemmas), and new `src/winset.bend` is a pure finite-set model of the resident chunk keys (`winset_mem`/`insert`/`remove`/`all`, `winset_evict`, `winset_gen_cell`) with laws `winset_mem_insert_self`/`_other`/`winset_remove_insert`; T71–T75. `G-scale-4` groundwork (the assemble/evict roundtrip law remains open) | A.96 |
+| `bridge3` (sidecar flow control) | `runners/serve.bend` realises `SERVE.md` §5–§6: bounded queue, credit window (`bridge3_credit`/`bridge3_emit`, no overrun), drop-and-keyframe delta coalescing, idle PING, and a **forked** stdin reader (`Chan` + `IO.spawn`) so control is read continuously; T76–T80. `G-bridge-1` partially closed (engine/writer split + read reassembly remain) | A.96 |
 
 Dropped by measurement (not by budget): `M7c` parallel render (A.19).
 
@@ -686,9 +688,10 @@ index).
 - [x] **B1** Transport implementation · landed (A.94) · deps: `bridge` P0 · serves: —
   — the real sidecar is in `runners/serve.bend` (length-framed `[len][kind][payload]`,
   all out/in kinds) plus the sparse snapshot (`Store.evict`'s sleeping ∧ gen-equal
-  test; `assemble` regenerates). Residual: credit-window accounting and delta
-  coalescing are specified in `SERVE.md` §5–§6 but not realised (synchronous
-  writer) — filed as `G-bridge-1`.
+  test; `assemble` regenerates). The flow-control residual is now largely
+  realised (A.96, `bridge3`: bounded queue, credit window, coalescing, idle PING,
+  forked reader); the engine/writer thread split and read reassembly remain —
+  `G-bridge-1`.
 - [x] **B2** Delta contract decision · landed (A.94) · deps: `scale` P1 · serves: —
   — **decided: render-visible fields only.** A `DELTA` record is `(idx, word)` with
   `word = Cell.deactivate(new)`; the activity bit is engine-internal and `WWake`
@@ -928,11 +931,11 @@ decision). Status is `open`, `accepted`, `review`, or `closed`.
 | `G-scale-1` | unproven | `Grid.step_inside` conflates "off the window" with "off the world" | open | S1 | a moving window needs a margin/load rule so a rule target just outside the resident set is not silently inert; closes by a window-margin invariant plus a test/law that every `Rules.plan` target of a resident cell is resident or loaded (`SCALE.md` §6) |
 | `G-scale-2` | unproven | `Dirty.Mask` is exactly 64 `y` rows | open | S1 | a window needs a window-sized mask or per-chunk dirty set; closes by a size-parameterised mask plus the `mark_wake` reach invariant |
 | `G-scale-3` | unproven | the `cw` split/rejoin identity `(x>>4)<<4 + (x&15) == x` is test-witnessed (T57–T60), not proven | closed | S1 | **closed (A.94, `gscale`):** `src/gscale.bend` proves it in `Bits`/`Word` — `gscale_global_rt` (`(w>>4)<<4 + (w&15) == w & 16383`, the in-range identity via `G5.g5_and_mask_id`), the disjoint-field `add == or` brick `gscale_add_and_or`, and the `model_index_rt`-style key/local roundtrips `gscale_kmodel_rt`/`gscale_lmodel_rt`; laws `gscale_cw_{x,y,z,key,local}_rt`; T66–T70 |
-| `G-scale-4` | unproven | the resident set is implicit in `assemble_go`'s loop bounds | open | S1 | a window needs an explicit set plus a load/evict policy; closes by a set model and `assemble`/`evict` roundtrip laws |
+| `G-scale-4` | unproven | the resident set is implicit in `assemble_go`'s loop bounds | open (partial) | S1 | a window needs an explicit set plus a load/evict policy. **A.96 groundwork (`gscale2`):** `src/winset.bend` is a pure finite-set model (`winset_mem`/`insert`/`remove`/`all`, `winset_evict`, `winset_gen_cell`) with laws `winset_mem_insert_self`/`_other`/`winset_remove_insert`; T73–T75. Still open: the `assemble`/`evict` roundtrip law (`assemble(evict(s)) == assemble(s)` for a regenerable chunk) needs an `Array` update-identity under the `G5` boundary, and general membership-after-remove needs a proof-relevant `is_eq` eliminator (the `Bool.pick` non-dependence blocker) |
 | `G-scale-5` | performance | the phase fold's cost scales with the active set, not the window | open | S1 | gates the scale target; closes by measurement on a real window, not a proof |
 | `G-scale-6` | retirement | every law mentioning `Grid.index`/`Grid.ix` is a torus law; migrating the live path orphans them | open | S1 | follow the `AGENTS.md` retirement protocol (keep, mark retired, update §4.1); never delete or silently weaken |
 | `G-scale-7` | unproven | the canonical window map is a relabelling of `Grid.index` (`win_index(canonical,x,y,z) == Grid.index(x,y,z)`) is test-witnessed (T81), not proven | open | S1 step 3 | a `U32.sub(x,0) == x` / mask-drop development over `Bits`/`Word` (reusing `G5.g5_and_mask_id` and the `gscale` field lemmas); closes by a law `win_canonical_index` |
-| `G-bridge-1` | unproven | the sidecar's credit window and delta coalescing are specified (`SERVE.md` §5–§6) but not realised — the writer is synchronous/single-threaded and control input is read at most once | open | B1 residual | a forked reader (`IO.fork`/`Chan`) draining stdin into a bounded queue with credit decrement and snapshot-on-stall, or the in-process C FFI option; closes by a transport test over a real pipe (not a law) |
+| `G-bridge-1` | unproven | the sidecar's credit window and delta coalescing are specified (`SERVE.md` §5–§6) | open (partial) | B1 residual | **A.96 (`bridge3`) landed the accounting:** bounded queue, credit window (no overrun/wrap), drop-and-keyframe coalescing, idle PING, and a forked `Chan` reader so control is read continuously; T76–T80, plus a manual pipe run (4 credit frames → 4 credited frames). **Still open:** (1) the engine and writer are still co-resident in one IO thread — Base has no non-blocking `Chan.try_recv`/`try_send`, so a slow renderer can still stall the engine at the stdout write (the §5 failure mode); closes by a Base try-chan or the in-process C FFI; (2) `bridge3_reader` decodes only the first frame per `read`, so partial/batched frames mis-parse — needs a header-keyed byte accumulator; (3) no `stall_ms`/`ping_ms` flags |
 
 ### 5.4 Deferred — publishing a proven slice to BendHub
 

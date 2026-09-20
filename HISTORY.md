@@ -3774,3 +3774,46 @@ needs a `U32.sub(x,0) == x` / mask-drop development — so it is `G-scale-7`
 **Verification**
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 67/67 PASS
   (was 65).
+
+### A.96 — bridge3 + gscale2 integration: sidecar flow control, full cw laws, winset model
+
+**Status:** two worker branches (`bridge3`, `gscale2`) landed on `master`,
+merged in order (`gscale2` then `bridge3`, each with an append conflict in
+`test/tests.bend` resolved to numeric order T71–T75 / T76–T80 / T81–T82).
+**Laws 100 → 105.** Gate green, fast **77/77**, sim **24/24**, canary 6/6.
+
+**Why.** Parallel tracks for the two independent engine-side surfaces while the
+supervisor landed `S1` step 2 (A.95): the Bendview M5 transport residual and the
+`S1` proof groundwork.
+
+**`gscale2` (proofs, additive).** Part 1: the `cw` y/z roundtrips lifted to
+arbitrary `(x,y,z)` — `gscale_cw_y_rt_full`/`_z_rt_full`, with the field
+extractions (`gscale_key_y/z_ext`, `gscale_local_y/z_ext`, the shrink-of-shift
+helpers) and the composed statements; the bounded `gscale_cw_y_rt`/`_z_rt` are
+untouched (append-only). Witnessed by T71/T72. Part 2: new `src/winset.bend`, a
+pure finite-set model of the resident chunk keys (`winset_mem`/`insert`/`remove`/
+`all`, `winset_evict`, `winset_gen_cell`) with laws `winset_mem_insert_self`/
+`_other`/`winset_remove_insert`; T73–T75. This is `G-scale-4` groundwork; the
+`assemble`/`evict` roundtrip law stays open (array update-identity under `G5`;
+general membership-after-remove blocked on a proof-relevant `is_eq` eliminator —
+`Bool.pick` is non-dependent).
+
+**`bridge3` (runners only).** `runners/serve.bend` realises `SERVE.md` §5–§6:
+a bounded outbound queue, credit-window accounting (`bridge3_emit` no-ops with no
+credit, so the window cannot underflow), drop-and-keyframe delta coalescing (a
+delta at a full queue is dropped and a SNAPSHOT keyframe armed), idle PING, and a
+**forked** stdin reader (`Chan` + `IO.spawn`) replacing the one-shot control read.
+No `@unsafe` (the read→match→send loop is one self-recursive `Nat`-fuelled def).
+Manual pipe run: four `CREDIT` frames then `STOP` produced HELLO / dense SNAPSHOT
+/ DELTA(tick 1) / sparse SNAPSHOT / PING / BYE, exit 0 — exactly four credited
+frames. T76–T80. `G-bridge-1` is **partially closed**: the accounting is
+realised, but (1) the engine and writer still share one IO thread (Base lacks a
+non-blocking `Chan.try_recv`/`try_send`), so a slow renderer can still stall the
+engine at the stdout write — the §5 failure mode; (2) `bridge3_reader` decodes
+only the first frame per `read`, so partial/batched frames mis-parse; (3)
+`stall_ms`/`ping_ms` flags are not parsed. These are recorded in `G-bridge-1`.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 77/77 PASS
+  (was 67); `bend test/simtests.bend` native -> 24/24 PASS; `bend_canary` -> 6 ok,
+  0 bad.
