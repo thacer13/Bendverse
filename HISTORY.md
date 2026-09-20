@@ -3249,3 +3249,37 @@ behaviour, not the proof burden.
 - `bend PROOF.bend` -> `All terms check.` (77 laws).
 - `bend test/tests.bend` -> 26/26 PASS; `bend test/simtests.bend` native -> 21/21 PASS.
 - `bend_canary` -> 6 ok, 0 bad.
+
+### A.82 — parallel tracks: worktree workers under one supervisor
+
+**Status:** workflow/tooling only; no engine, law, or test change. Gate green
+(77 laws). Adds the protocol that lets several independent tracks run at once
+without ever putting a second writer in the working tree.
+
+**Why.** Wall-clock is the scarce resource (tokens are not). PLAN's frontier is
+empty, so parallel work means deliberately opening tracks; the failure mode is
+two writers in one tree — A.80 and the in-flight V0-5 overlapped in this repo and
+were harmless only by luck (disjoint files). The human should not have to spawn a
+session by hand or ask for each merge/rebase.
+
+**What.** `AGENTS.md` gains a "Parallel tracks" section: one **supervisor**
+session owns `master`, integration, and the narrative files (`HISTORY.md`,
+`PLAN.md` §4/§5); each track is one **worker** in its own git worktree + branch,
+dispatched non-interactively. `tools/parallel.sh` (`new`/`dispatch`/`list`/`rm`)
+creates the worktree and runs `pi -p --approve` with `tools/worker-prompt.md` as
+the worker role, tee'ing output to `../Bendverse-<track>.log`.
+`tools/worker-prompt.md` encodes the worker's scope, ID reservation, and reduced
+verification budget. The human's prompt layer is unchanged — ask for the tracks
+in plain language; the supervisor dispatches and integrates.
+
+**Why worktrees.** They isolate the per-cwd scratch files
+(`.bendverse-spike.bend`, `.bendverse-goal.bend`) and the native cache
+(`$TMPDIR/bendverse/<basename>-simtests`), and keep the two writers off each
+other's files. Only the append-only `LAWS.bend`/`PROOF.bend`/`test/tests.bend`
+are shared; ID reservation keeps those merges trivial. CPU: 6 cores and `bend`
+uses all of them, so workers run the gate + fast suite and only the supervisor
+runs the native sim suite, once, at integration.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.` (77 laws).
+- `tools/parallel.sh list` -> one worktree (master).

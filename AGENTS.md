@@ -70,7 +70,8 @@ machine-checked by `PROOF.bend`.
   (`step_m`, `sup_m`) looking live — a mirror of a shape that no longer exists is
   worse than no mirror. Sunk cost is acceptable; inheriting a dead shape's
   assumptions into the next session is not.
-- Parallelize the code whenever the work is balanced.
+- Parallelize the code whenever the work is balanced — see **Parallel tracks**
+  below for the worktree/worker protocol.
 - **Commit autonomy (granted):** the human has given standing permission to
   commit autonomously at each step without asking first. Still run the gate
   before every commit, keep each commit scoped with a message in repo style, and
@@ -79,3 +80,36 @@ machine-checked by `PROOF.bend`.
   `bend_gate`, `bend_test`, `bend_run`, `bend_api`, `bend_lemmas`, `bend_goal`,
   `bend_spike`, `bend_plan`, `bend_status`, `bend_audit`. Prefer them over
   shelling out to `bend`/`grep`; they return compact, parsed results.
+
+## Parallel tracks (worktree workers)
+
+Wall-clock, not tokens, is the scarce resource, so several independent tracks may
+run at once — but **never two writers in one working tree**. The human keeps
+talking to a single session; this protocol is the session's job, not the human's.
+
+- **Topology.** One **supervisor** session owns `master`, integration, and the
+  narrative files (`HISTORY.md`, `PLAN.md` §4/§5). Each independent track gets
+  one **worker** in its own git worktree + branch, dispatched by the supervisor:
+  `tools/parallel.sh dispatch <track> "<task>"` runs a non-interactive
+  `pi -p` in the worktree, using `tools/worker-prompt.md` as the worker role and
+  writing output to `../Bendverse-<track>.log`. Dispatch two in parallel by
+  backgrounding them in one `bash` call (`… & … & wait`).
+- **The human adds nothing to their prompt layer.** Ask for the tracks in plain
+  language; the supervisor creates the worktrees, dispatches the workers, then
+  merges, rebases, gates, and updates `PLAN.md`/`HISTORY.md` itself.
+- **Single writer to `master`.** Workers commit only to their branch and never
+  merge/rebase/push. The supervisor lands one branch at a time, re-runs the gate
+  after each merge, and rebases the rest. (Two branches here share only the
+  append-only `LAWS.bend`/`PROOF.bend`/`test/tests.bend`, so merges stay trivial
+  with the reservation rule below.)
+- **ID reservation.** New law/def names are prefixed with the track id
+  (`v3c_`, `g5_`, …); new test numbers come from a block the supervisor assigns
+  (`T40+` on the current frontier); `HISTORY.md` A-numbers are the supervisor's
+  to assign. Workers must not edit `HISTORY.md` or the narrative PLAN sections.
+- **CPU budget.** The box has 6 cores and `bend` uses all of them. Workers run
+  the gate and the fast suite; only the supervisor runs the native simulation
+  suite, once, at integration. Cap concurrent tracks at ~3.
+- **Lifecycle.** `tools/parallel.sh new|rm|list`; remove a worktree once its
+  branch is merged. The per-cwd scratch files and the per-basename native cache
+  are isolated by construction when worktrees are named distinctly (the script
+  uses `../Bendverse-<track>`).
