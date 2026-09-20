@@ -20,6 +20,7 @@ import ./src/phase.bend as Phase
 import ./src/commit.bend as Commit
 import ./src/v3cw.bend as V3cw
 import ./src/selector.bend as Selector
+import ./src/cw.bend as Cw
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -779,3 +780,41 @@ law v3cw_commit_commutes:
   for +hyx: {V3cw.v3cw_in_range(List.append(&2, Rules.Write, ys, xs), n) == True{} : Bool}
   for +hpn: {Commit.v3c_pair_ne(V3cw.v3cw_proj(xs), V3cw.v3cw_proj(ys), t, n) == True{} : Bool}
   {Refine.unpack(Rules.commit_sets(V3cw.v3cw_lin(List.append(&2, Rules.Write, xs, ys)), Refine.pack(t))) == Refine.unpack(Rules.commit_sets(V3cw.v3cw_lin(List.append(&2, Rules.Write, ys, xs)), Refine.pack(t))) : Refine.PT}
+
+# P3 / G-scale-3 -- the `cw` global-coordinate split/rejoin, proven.
+#
+# `src/cw.bend` splits a global coordinate into a chunk key plus a local offset
+# and rejoins it with no torus mask; T57-T60 witness it. These laws close the
+# `G-scale-3` gap: the bit lemma `(x >> 4) << 4 + (x & 15) == x & 16383` (the
+# `cw_global_x/y/z` core, `Gscale.gscale_global_rt`) plus the field extraction
+# and the 10-bit / 4-bit key/local reconstruction (`Gscale.gscale_kmodel_rt`,
+# `Gscale.gscale_lmodel_rt`). The `x/y/z` axes are stated for `x < 16384` (the
+# 10-bit key range); the y/z forms put the axis chunk in its own slot because
+# `cw_global_y/z` read only that field. The key and local roundtrips are stated
+# for in-range `k < 2^30` and `l < 2^12`.
+law gscale_cw_x_rt:
+  for x: U32
+  for y: U32
+  for z: U32
+  for h: {U32.is_lt(x, 16384) == True{} : Bool}
+  {Cw.cw_global_x(Cw.cw_key(Cw.cw_chunk_of(x), Cw.cw_chunk_of(y), Cw.cw_chunk_of(z)), Cw.cw_local(Cw.cw_local_of(x), Cw.cw_local_of(y), Cw.cw_local_of(z))) == x : U32}
+
+law gscale_cw_y_rt:
+  for y: U32
+  for h: {U32.is_lt(y, 16384) == True{} : Bool}
+  {Cw.cw_global_y(Cw.cw_key(0, Cw.cw_chunk_of(y), 0), Cw.cw_local(0, Cw.cw_local_of(y), 0)) == y : U32}
+
+law gscale_cw_z_rt:
+  for z: U32
+  for h: {U32.is_lt(z, 16384) == True{} : Bool}
+  {Cw.cw_global_z(Cw.cw_key(0, 0, Cw.cw_chunk_of(z)), Cw.cw_local(0, 0, Cw.cw_local_of(z))) == z : U32}
+
+law gscale_cw_key_rt:
+  for k: U32
+  for h: {U32.is_lt(k, 1073741824) == True{} : Bool}
+  {Cw.cw_key(Cw.cw_key_x(k), Cw.cw_key_y(k), Cw.cw_key_z(k)) == k : U32}
+
+law gscale_cw_local_rt:
+  for l: U32
+  for h: {U32.is_lt(l, 4096) == True{} : Bool}
+  {Cw.cw_local(Cw.cw_local_x(l), Cw.cw_local_y(l), Cw.cw_local_z(l)) == l : U32}

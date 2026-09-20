@@ -28,6 +28,7 @@ import ./src/v3cw.bend as V3cw
 import ./src/color.bend as Color
 import ./src/word.bend as WR
 import ./src/selector.bend as Selector
+import ./src/gscale.bend as Gscale
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -338,3 +339,69 @@ def Laws.v3cw_commit_fold(ws, t, n, hn, hir):
 
 def Laws.v3cw_commit_commutes(xs, ys, t, n, hn, hxy, hyx, hpn):
   V3cw.v3cw_commit_commutes(xs, ys, t, n, hn, hxy, hyx, hpn)
+
+def Laws.gscale_cw_x_rt(x, y, z, h):
+  match x:
+    case U32{xw}:
+      match y:
+        case U32{yw}:
+          match z:
+            case U32{zw}:
+              +x2 = xw
+              +y2 = yw
+              +z2 = zw
+              +s = Gscale.gscale_cw_x_split(U32{x2}, U32{y2}, U32{z2})
+              +g = G5.g5_and_mask_id(Commit.v3c_full(14n), U32{x2}, h)
+              Equal.trans(U32,
+                Cw.cw_global_x(Cw.cw_key(Cw.cw_chunk_of(U32{x2}), Cw.cw_chunk_of(U32{y2}), Cw.cw_chunk_of(U32{z2})), Cw.cw_local(Cw.cw_local_of(U32{x2}), Cw.cw_local_of(U32{y2}), Cw.cw_local_of(U32{z2}))),
+                U32.and(U32{x2}, 16383),
+                U32{x2},
+                s, g)
+
+def Laws.gscale_cw_y_rt(y, h):
+  match y:
+    case U32{yw}:
+      +y2 = yw
+      +s = Gscale.gscale_cw_y_split(U32{y2})
+      +g = G5.g5_and_mask_id(Commit.v3c_full(14n), U32{y2}, h)
+      Equal.trans(U32,
+        Cw.cw_global_y(Cw.cw_key(0, Cw.cw_chunk_of(U32{y2}), 0), Cw.cw_local(0, Cw.cw_local_of(U32{y2}), 0)),
+        U32.and(U32{y2}, 16383),
+        U32{y2},
+        s, g)
+
+def Laws.gscale_cw_z_rt(z, h):
+  match z:
+    case U32{zw}:
+      +z2 = zw
+      +s = Gscale.gscale_cw_z_split(U32{z2})
+      +g = G5.g5_and_mask_id(Commit.v3c_full(14n), U32{z2}, h)
+      Equal.trans(U32,
+        Cw.cw_global_z(Cw.cw_key(0, 0, Cw.cw_chunk_of(U32{z2})), Cw.cw_local(0, 0, Cw.cw_local_of(U32{z2}))),
+        U32.and(U32{z2}, 16383),
+        U32{z2},
+        s, g)
+
+def Laws.gscale_cw_key_rt(k, h):
+  match k:
+    case U32{kw}:
+      +k2 = kw
+      +s = Gscale.gscale_cw_key_split(U32{k2})
+      +g = G5.g5_and_mask_id(Commit.v3c_full(30n), U32{k2}, h)
+      Equal.trans(U32,
+        Cw.cw_key(Cw.cw_key_x(U32{k2}), Cw.cw_key_y(U32{k2}), Cw.cw_key_z(U32{k2})),
+        U32.and(U32{k2}, 1073741823),
+        U32{k2},
+        s, g)
+
+def Laws.gscale_cw_local_rt(l, h):
+  match l:
+    case U32{lw}:
+      +l2 = lw
+      +s = Gscale.gscale_cw_local_split(U32{l2})
+      +g = G5.g5_and_mask_id(Commit.v3c_full(12n), U32{l2}, h)
+      Equal.trans(U32,
+        Cw.cw_local(Cw.cw_local_x(U32{l2}), Cw.cw_local_y(U32{l2}), Cw.cw_local_z(U32{l2})),
+        U32.and(U32{l2}, 4095),
+        U32{l2},
+        s, g)
