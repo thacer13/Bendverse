@@ -880,3 +880,35 @@ def shr_and_mask1_zero(+n: Nat, +X: Word(n))
               Word.zero(1n+p),
               e,
               shr_pad_zero(p)))
+
+# ---------------------------------------------------------------- gsc1 residual
+# The converse of `wgrid_axis_ok` (G-scale-1): a passing guard means the
+# window-local coordinate did not fold under the box mask. The bit brick is
+# `Bool.or(and(b,m), and(b, not m)) == b`; its `Word` lift is the pointwise
+# decomposition `y == (y & m) | (y & ~m)`, stated for an arbitrary mask so the
+# `w_or_zero`/`w_cmp_eq` route below can close `y & ~mask6 == 0 => y & mask6 == y`.
+def gsc1_b_or_and_not(b: Bool, m: Bool) -> {Bool.or(Bool.and(b, m), Bool.and(b, Bool.not(m))) == b : Bool}:
+  match b m:
+    case False{} False{}: {==}
+    case False{} True{}: {==}
+    case True{} False{}: {==}
+    case True{} True{}: {==}
+
+# `y == (y & m) | (y & ~m)`, bitwise, for any mask `m` (induction on the width
+# using `gsc1_b_or_and_not`).
+def gsc1_word_or_and_not(n: Nat, y: Word(n), m: Word(n))
+  -> {Word.or(n, Word.and(n, y, m), Word.and(n, y, Word.not(n, m))) == y : Word(n)}:
+  match n:
+    case 0n:
+      match y m: case WNil{} WNil{}: {==}
+    case 1n+p:
+      match y m:
+        case WCon{yh, yt} WCon{mh, mt}:
+          +ih = gsc1_word_or_and_not(p, yt, mt)
+          +bh = gsc1_b_or_and_not(yh, mh)
+          Equal.trans(Word(1n+p),
+            WCon{Bool.or(Bool.and(yh, mh), Bool.and(yh, Bool.not(mh))), Word.or(p, Word.and(p, yt, mt), Word.and(p, yt, Word.not(p, mt)))},
+            WCon{yh, Word.or(p, Word.and(p, yt, mt), Word.and(p, yt, Word.not(p, mt)))},
+            WCon{yh, yt},
+            Equal.cong(Bool, Word(1n+p), h => WCon{h, Word.or(p, Word.and(p, yt, mt), Word.and(p, yt, Word.not(p, mt)))}, Bool.or(Bool.and(yh, mh), Bool.and(yh, Bool.not(mh))), yh, bh),
+            Equal.cong(Word(p), Word(1n+p), t => WCon{yh, t}, Word.or(p, Word.and(p, yt, mt), Word.and(p, yt, Word.not(p, mt))), yt, ih))

@@ -1076,3 +1076,22 @@ law wgrid_canonical_resident:
   for y: U32
   for z: U32
   {WGrid.wgrid_resident(Window.canonical(), x, y, z) == Wmarg.wmarg_inbox(x, y, z) : Bool}
+
+# ----------------------------------------------------------------------------
+# G-scale-1 residual (gsc1) -- the converse bridge.
+#
+# `wgrid_axis_ok` is the engine's per-axis residency test (`wgrid_axis_guard`
+# proves in-frame => guard `True`). The converse is what makes the guard mean
+# "the coordinate did not fold": a passing guard forces the box mask `&63` to
+# be the identity on the target coordinate, so a guard-true step is a real step
+# within the window rather than a torus wrap. Proof: the guard is a
+# `U32.is_eq(_, 0)`, reflected by `Word.w_cmp_eq` to
+# `y & ~mask6 == 0`, then the pointwise decomposition
+# `Bits.gsc1_word_or_and_not` (`y == (y & mask6) | (y & ~mask6)`) with
+# `Bits.w_or_zero` returns `y & mask6 == y`.
+# ----------------------------------------------------------------------------
+law gsc1_axis_no_fold:
+  for local: U32
+  for d: U32
+  for h: {WGrid.wgrid_axis_ok(local, d) == True{} : Bool}
+  {U32.and(U32.add(local, d), 63) == U32.add(local, d) : U32}

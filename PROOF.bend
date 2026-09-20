@@ -572,3 +572,10 @@ def Laws.u32_word_bit(a, k, h):
 # ----------------------------------------------------------------------------
 def Laws.mask_word_get(m, y, h):
   Wordnat.wnat_mask_word_get(m, y, h)
+
+# gsc1 (G-scale-1 residual): the converse bridge (`Wmarg.gsc1_axis_no_fold`).
+# A passing `wgrid_axis_ok` means the high bits of `add(local,d)` are zero, so
+# the low-6-bit box mask is the identity; the bit brick is
+# `Bits.gsc1_word_or_and_not` and the guard reflection is `Word.w_cmp_eq`.
+def Laws.gsc1_axis_no_fold(local, d, h):
+  Wmarg.gsc1_axis_no_fold(local, d, h)
