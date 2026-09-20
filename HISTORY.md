@@ -3817,3 +3817,47 @@ only the first frame per `read`, so partial/batched frames mis-parse; (3)
 - `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 77/77 PASS
   (was 67); `bend test/simtests.bend` native -> 24/24 PASS; `bend_canary` -> 6 ok,
   0 bad.
+
+### A.97 — G-bridge-2: the dense `.bvs` snapshot records were `y`-planes, not chunks
+
+**Status:** defect found by the sibling renderer (Bendview,
+`../Bendview/docs/engine-report-bvs-snapshot-framing.md`, against `ccb68c1`) and
+fixed in `runners/`; **no engine/law change** (105 laws). Gate green, fast
+**78/78**, sim **25/25**.
+
+**The defect.** `runners/export.bend`'s `bxe_cells` serialised the dense
+snapshot by slicing the flat `Grid.index` array every `Chunk.cells() = 4096`
+words and labelling record `ci = gi/4096` with `Chunk.key(ci&3,(ci>>2)&3,(ci>>4)&3)`.
+But `Grid.index = x + z*64 + y*4096`, so `gi/4096 = y`: every record was a
+**64×64 `y`-plane** (words `x`-fastest then `z`), while the key claimed a 16³
+chunk. 130835/262144 cells were misplaced; record 0 was the all-bedrock `y=0`
+shell, and cell `ci=0,j=273` held the word for global `(17,0,4)` instead of
+`(1,1,1)`. Because the sparse checkpoint used the *correct* `Store.chunk_list`
+gather, the sidecar's dense and sparse `SNAPSHOT` bodies disagreed about where a
+cell lives. T63 pinned only the body's **size**, so the gate could not see it.
+
+**Reproduce (independent).** Decoding the emitted `.bvs` as documented chunks
+gives 130835 mismatches; as `y`-planes, 0. Both measured before the fix.
+
+**The fix (`runners/` only).** One correct gather, `bxe_chunk_cells` /
+`bxe_cell_index` (`Grid.index(Chunk.global_x/y/z(k,i))`, the `Store.chunk_list`
+order that `Store.assemble_chunk` writes), now serves both paths:
+`bxe_snapshot_bytes` builds records by iterating `ci` key-descending and
+prepending `key <> cells` (ascending), and `runners/serve.bend` drops its private
+`bridge2_chunk_cells`/`bridge2_words_le_onto` and reuses the shared helpers
+(`serve.bend` already imports `export.bend`). Size, record order, and the 32-byte
+header are unchanged; only the words within each record move to their documented
+offsets.
+
+**Witnesses so the defect cannot return.** `t47` (native sim): for a full
+(unevicted) store the dense body and sparse body are **byte-identical** across
+all 1048864 bytes (tail-recursive mismatch counter). `t83` (fast): the record
+offset `i` of chunk `k` addresses `Grid.index(Chunk.global_x/y/z(k,i))` and not
+the old flat slice `ci*4096 + i`. The old T63 remains a size contract.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 78/78 PASS;
+  `bend test/simtests.bend` native -> 25/25 PASS; `runners/export.bend` and
+  `runners/serve.bend` `--check-only` -> `All terms check.`
+- Regenerated `.bvs`: record `(0,0,0)` offset 273 now holds `0x1f603` (rock at
+  `(1,1,1)`), as documented.

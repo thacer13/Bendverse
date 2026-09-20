@@ -78,30 +78,9 @@ def bridge2_snap_header(+count: U32, ticks: U32, tail: List<&2, U32>) -> List<&2
               Export.bxe_u32_le(ticks,
                 Export.bxe_u32_le(count, tail))))))))
 
-# Extract one world chunk's 4096 cell words in `Store.chunk_list` local order
-# (ascending `Grid.index` within the chunk), threaded so the flat world is
-# reusable. `acc` is built descending, which is ascending.
-# `q` is the `(world, value)` pair from `Array.get` for local index `i`; it is a
-# parameter because a computed `Array.get` may not be a match scrutinee. The
-# final (fuel-0) read is discarded; its index is clamped so it cannot underflow.
-def bridge2_chunk_cells_go(
-  fuel: Nat, +k: U32, +i: U32, q: Array<U32> & U32, acc: List<&2, U32>
-) -> Array<U32> & List<&2, U32>:
-  match fuel:
-    case 0n:
-      match q:
-        case (world, v):
-          (world, acc)
-    case 1n+p:
-      match q:
-        case (world, v):
-          +ni = U32.add(i, 1)
-          +nidx = Grid.index(Chunk.global_x(k, ni), Chunk.global_y(k, ni), Chunk.global_z(k, ni))
-          bridge2_chunk_cells_go(p, k, ni, Array.get(U32, world, nidx), v <> acc)
-
-def bridge2_chunk_cells(world: Array<U32>, +k: U32) -> Array<U32> & List<&2, U32>:
-  bridge2_chunk_cells_go(U32.to_nat(Chunk.cells()), k, 0,
-    Array.get(U32, world, Grid.index(Chunk.global_x(k, 0), Chunk.global_y(k, 0), Chunk.global_z(k, 0))), Nil{})
+# (the chunk gather moved to `runners/export.bend` as `bxe_chunk_cells`, so the
+# dense and sparse snapshot paths share one correct `Chunk.local` gather —
+# G-bridge-2. The dense encoder was the one that was wrong.)
 
 def bridge2_set_chunk(
   r: Array<U32> & List<&2, U32>, +k: U32, store: Store.Store
@@ -122,7 +101,7 @@ def bridge2_world_store_go(
       match r:
         case (world, store):
           +k = Chunk.key(U32.and(ci, 3), U32.and(U32.shrn(ci, 2n), 3), U32.and(U32.shrn(ci, 4n), 3))
-          bridge2_world_store_go(p, U32.add(ci, 1), bridge2_set_chunk(bridge2_chunk_cells(world, k), k, store))
+          bridge2_world_store_go(p, U32.add(ci, 1), bridge2_set_chunk(Export.bxe_chunk_cells(world, k), k, store))
 
 def bridge2_world_store(world: Array<U32>) -> Array<U32> & Store.Store:
   bridge2_world_store_go(64n, 0, (world, Store.empty()))
@@ -145,14 +124,6 @@ def bridge2_count_present_go(fuel: Nat, +ci: U32, +s: Store.Store, acc: U32) -> 
       +add = Bool.pick(U32, bridge2_is_some(Store.get(s, k)), 1, 0)
       bridge2_count_present_go(p, U32.add(ci, 1), s, U32.add(acc, add))
 
-# Cons the little-endian bytes of each cell in front of `tail` (forward order).
-def bridge2_words_le_onto(cells: List<&2, U32>, tail: List<&2, U32>) -> List<&2, U32>:
-  match cells:
-    case Nil{}:
-      tail
-    case Con{h, t}:
-      Export.bxe_u32_le(h, bridge2_words_le_onto(t, tail))
-
 # Emit `key <> cells` for a present chunk, or nothing for an evicted one.
 def bridge2_rec_if(
   m: Maybe<&2, List<&2, U32>>, +k: U32, tail: List<&2, U32>
@@ -161,7 +132,7 @@ def bridge2_rec_if(
     case None{}:
       tail
     case Some{cells}:
-      Export.bxe_u32_le(k, bridge2_words_le_onto(cells, tail))
+      Export.bxe_u32_le(k, Export.bxe_cell_words(cells, tail))
 
 # Walk keys DESCENDING so prepending yields an ascending record set.
 def bridge2_records_go(fuel: Nat, +ci: U32, +s: Store.Store, acc: List<&2, U32>) -> List<&2, U32>:

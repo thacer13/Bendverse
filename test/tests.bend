@@ -1668,6 +1668,21 @@ def t82_bad() -> U32:
   b3 = inc_if_false(U32.is_eq(Grid.ix(Grid.index(80, 0, 0)), 16), b2)
   b3
 
+# T83 (G-bridge-2): a snapshot record is a true 16^3 chunk in `Chunk.local`
+# order, not a flat `Grid.index` slice. The full dense==sparse body equality is
+# the native sim witness `t47` (the fast JS runner cannot hold two 1 MiB
+# bodies). Here we pin the *address mapping*: record offset `i` of chunk `k`
+# reads `Grid.index(Chunk.global_x/y/z(k,i))` -- and, as a regression guard,
+# NOT the flat slice `ci*4096 + i` that was the defect.
+def t83_bad() -> U32:
+  +k = Chunk.key(0, 0, 0)
+  b0 = inc_if_false(U32.is_eq(Export.bxe_cell_index(k, 273), Grid.index(1, 1, 1)), 0)
+  b1 = inc_if_false(Bool.not(U32.is_eq(Export.bxe_cell_index(k, 273), 273)), b0)
+  +k2 = Chunk.key(1, 2, 3)
+  b2 = inc_if_false(U32.is_eq(Export.bxe_cell_index(k2, 1000),
+    Grid.index(Chunk.global_x(k2, 1000), Chunk.global_y(k2, 1000), Chunk.global_z(k2, 1000))), b1)
+  b2
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -1748,3 +1763,4 @@ def main() -> IO(Unit):
     report("T80 bridge3 flow scenario + framing", t80_bad())
     report("T81 window canonical index == Grid.index", t81_bad())
     report("T82 window no torus mask (global 80 not folded)", t82_bad())
+    report("T83 dense record offset maps to true chunk cell (G-bridge-2)", t83_bad())

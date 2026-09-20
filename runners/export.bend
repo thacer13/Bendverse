@@ -107,49 +107,80 @@ def bxe_snap_header(ticks: U32, tail: List<&2, U32>) -> List<&2, U32>:
               bxe_u32_le(ticks,
                 bxe_u32_le(64, tail))))))))
 
-# Emit the chunk key in front of `acc` when `cond`. Matching on the boolean
-# *parameter* is what Bend requires (a computed scrutinee needs its own def).
-def bxe_key_if(cond: Bool, +k: U32, acc: List<&2, U32>) -> List<&2, U32>:
-  match cond:
-    case True{}:
-      bxe_u32_le(k, acc)
-    case False{}:
-      acc
-
-# Walk the flat world *descending* in `Grid.index`, consing each word's four
-# little-endian bytes as a group: because the last word processed is index 0,
-# the result is the forward byte stream with each word internally forward (no
-# whole-list reverse, which would also flip the bytes inside a word). Descending
-# order is the chunk store read backwards: `ci = gi / 4096` is the chunk,
-# `i = gi % 4096` its local index, and the chunk key is emitted *after* its
-# local cell 0 so that, once consed, it lands just before that cell.
+# --------------------------------------------------------------- chunk records
+# A snapshot record is a 16^3 *chunk* keyed by `Chunk.key`, in `Store.chunk_list`
+# local order: local index `i` addresses the world word
+# `Grid.index(Chunk.global_x(k,i), Chunk.global_y(k,i), Chunk.global_z(k,i))`.
+# This is the mapping `Store.assemble_chunk` writes and `runners/serve.bend`
+# reads, and it is the *only* correct record content. Slicing the flat
+# `Grid.index` array every 4096 words is NOT a chunk (`Grid.index = x + z*64 +
+# y*4096`, so `gi / 4096 = y` is a `y`-plane) — that was the G-bridge-2 defect.
 #
-# `q` is the `(world, value)` pair from `Array.get`, matched as a parameter
-# (`Array` is affine and a local let cannot be a scrutinee). `fuel` counts cells.
-def bxe_cells(
-  fuel: Nat, q: Array<U32> & U32, +gi: U32, acc: List<&2, U32>
-) -> List<&2, U32>:
+# `k` and `i` are `+` so the three axis projections may each consume them; `q`
+# is the `(world, value)` pair from `Array.get`, matched as a parameter (`Array`
+# is affine and a local let cannot be a scrutinee). The final (fuel-0) read is
+# discarded; its index is clamped so it cannot underflow.
+# The world word a chunk record's local offset `i` addresses: the inverse of
+# `Chunk.local` composed with `Grid.index` (what `Store.assemble_chunk` writes).
+# The G-bridge-2 defect read `Grid.index`-slice offset `ci*4096 + i` instead.
+def bxe_cell_index(+k: U32, +i: U32) -> U32:
+  Grid.index(Chunk.global_x(k, i), Chunk.global_y(k, i), Chunk.global_z(k, i))
+
+def bxe_chunk_cells_go(
+  fuel: Nat, +k: U32, +i: U32, q: Array<U32> & U32, acc: List<&2, U32>
+) -> Array<U32> & List<&2, U32>:
   match fuel:
     case 0n:
-      acc
+      match q:
+        case (world, v):
+          (world, acc)
     case 1n+p:
       match q:
         case (world, v):
-          +ci = U32.div(gi, Chunk.cells())
-          +i = U32.mod(gi, Chunk.cells())
+          +ni = U32.add(i, 1)
+          bxe_chunk_cells_go(p, k, ni, Array.get(U32, world, bxe_cell_index(k, ni)), v <> acc)
+
+def bxe_chunk_cells(world: Array<U32>, +k: U32) -> Array<U32> & List<&2, U32>:
+  bxe_chunk_cells_go(U32.to_nat(Chunk.cells()), k, 0, Array.get(U32, world, bxe_cell_index(k, 0)), Nil{})
+
+# Cons the little-endian bytes of each cell in front of `tail` (forward order).
+def bxe_cell_words(cells: List<&2, U32>, tail: List<&2, U32>) -> List<&2, U32>:
+  match cells:
+    case Nil{}:
+      tail
+    case Con{h, t}:
+      bxe_u32_le(h, bxe_cell_words(t, tail))
+
+# `key <> cells <> acc` for one chunk, matched through a parameter (the
+# chunk-cells pair is computed, and a computed pair is not a scrutinee).
+def bxe_rec_if(
+  r: Array<U32> & List<&2, U32>, +k: U32, acc: List<&2, U32>
+) -> Array<U32> & List<&2, U32>:
+  match r:
+    case (world, cells):
+      (world, bxe_u32_le(k, bxe_cell_words(cells, acc)))
+
+# Walk keys DESCENDING so prepending yields an ascending record set — the order
+# the header comment specifies and the sparse path (`serve.bend`) emits.
+def bxe_records_go(
+  fuel: Nat, +ci: U32, r: Array<U32> & List<&2, U32>
+) -> Array<U32> & List<&2, U32>:
+  match fuel:
+    case 0n:
+      r
+    case 1n+p:
+      match r:
+        case (world, acc):
           +k = Chunk.key(U32.and(ci, 3), U32.and(U32.shrn(ci, 2n), 3), U32.and(U32.shrn(ci, 4n), 3))
-          acc1 = bxe_u32_le(v, acc)
-          acc2 = bxe_key_if(U32.is_zero(i), k, acc1)
-          # Clamp so index 0 re-reads itself instead of underflowing; the value
-          # is discarded by the fuel-0 call.
-          +ngi = U32.min(U32.sub(gi, 1), gi)
-          bxe_cells(p, Array.get(U32, world, ngi), ngi, acc2)
+          bxe_records_go(p, U32.min(U32.sub(ci, 1), ci), bxe_rec_if(bxe_chunk_cells(world, k), k, acc))
+
+def bxe_body(ticks: U32, r: Array<U32> & List<&2, U32>) -> List<&2, U32>:
+  match r:
+    case (world, recs):
+      List.append(&2, U32, bxe_snap_header(ticks, Nil{}), recs)
 
 def bxe_snapshot_bytes(world: Array<U32>, +ticks: U32) -> List<&2, U32>:
-  h = bxe_snap_header(ticks, Nil{})
-  +last = U32.sub(Grid.volume(), 1)
-  cells = bxe_cells(U32.to_nat(Grid.volume()), Array.get(U32, world, last), last, Nil{})
-  List.append(&2, U32, h, cells)
+  bxe_body(ticks, bxe_records_go(64n, 63, (world, Nil{})))
 
 def bxe_snapshot_size() -> U32:
   U32.add(32, U32.mul(64, 16388))

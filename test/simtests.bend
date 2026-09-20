@@ -7,6 +7,8 @@ import ../src/support.bend as Support
 import ../src/store.bend as Store
 import ../src/settle.bend as Settle
 import ../scenarios/fixtures.bend as Fixtures
+import ../runners/export.bend as Export
+import ../runners/serve.bend as Serve
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -551,6 +553,35 @@ def t46() -> U32:
   w = Sim.ticks(U32.to_nat(1), t46_world())
   is_bad(U32.is_ne(Cell.active(Grid.value_at(w, Grid.index(1, 39, 4))), 0))
 
+# T47 (G-bridge-2): the full-body witness for the snapshot framing fix. The
+# dense and sparse bodies must be byte-identical for a full (unevicted) store;
+# T83 in the fast suite pins the record address mapping, this checks all
+# 1048864 body bytes with a tail-recursive mismatch counter.
+def body_diff_go(fuel: Nat, +xs: List<&2, U32>, +ys: List<&2, U32>, +bad: U32) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match xs ys:
+        case Nil{} Nil{}:
+          bad
+        case Nil{} Con{hy, ty}:
+          U32.add(bad, 1)
+        case Con{hx, tx} Nil{}:
+          U32.add(bad, 1)
+        case Con{hx, tx} Con{hy, ty}:
+          body_diff_go(p, tx, ty, inc_if_false(U32.is_eq(hx, hy), bad))
+
+def t47_pair(r: Array<U32> & Store.Store) -> U32:
+  match r:
+    case (world, store):
+      +dense = Export.bxe_snapshot_bytes(world, 0)
+      +sparse = List.drop(&2, U32, Serve.bridge2_snapshot_sparse(store, 0), 8n)
+      body_diff_go(U32.to_nat(Export.bxe_snapshot_size()), dense, sparse, 0)
+
+def t47() -> U32:
+  t47_pair(Serve.bridge2_world_store(Sim.build()))
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -577,3 +608,4 @@ def main() -> IO(Unit):
     report("T44 wake does not leak across the x face (G15)", t44())
     report("T45 wake does not leak across the y face (G15)", t45())
     report("T46 in-box wake still propagates (G15 control)", t46())
+    report("T47 dense snapshot == sparse (full body, G-bridge-2)", t47())
