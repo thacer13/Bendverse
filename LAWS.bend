@@ -30,6 +30,8 @@ import ./src/maskword.bend as Maskword
 import ./src/dirty.bend as Dirty
 import ./src/wgrid.bend as WGrid
 import ./src/wmarg.bend as Wmarg
+import ./src/store.bend as Store
+import ./src/chunk.bend as Chunk
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -1095,3 +1097,71 @@ law gsc1_axis_no_fold:
   for d: U32
   for h: {WGrid.wgrid_axis_ok(local, d) == True{} : Bool}
   {U32.and(U32.add(local, d), 63) == U32.add(local, d) : U32}
+
+# ----------------------------------------------------------------------------
+# G-scale-4 residual (g4) -- the assemble/evict roundtrip at the store's
+# precision.
+#
+# `Store.gen_eq_cells` is a fuel-bounded elementwise `U32.is_eq` fold through
+# `Bool.and`. `g4_gen_eq_cells_reflect` recovers propositional list equality from
+# a `True` result under the exact-budget side conditions (`fuel` is the stored
+# list's length and the gen list is `fuel` long; for the store both are
+# `Chunk.cells() = 4096`, T161). The `U32.is_eq`-to-`==` eliminator already
+# existed (`u32_cmp_eq_reflect`); the new content is the `Bool.and` reflection
+# plus the length bookkeeping that rules out the trivially-True over-budget
+# case. `g4_assemble_chunk_regen` is the `Array` update-identity in its honest
+# form: `Store.assemble_chunk_w` is a pure fold of writes, so a chunk that passes
+# `gen_eq_cells` assembles to the same array as its pure-gen replacement -- the
+# per-chunk `assemble(evict)` step. The 64-key store walk and the `get`/`set`
+# refinement remain open: the concrete `assemble_cells_w_sel` cannot be
+# normalised inside the gate (its `chunk_list_sel` eagerly builds a 4096-leaf
+# `Chunk.build_sel` array), so the headline `assemble(evict s) == assemble s` is
+# a gap candidate; see PLAN §5.3 and `src/g4.bend`'s header.
+# ----------------------------------------------------------------------------
+law g4_gen_eq_cells_reflect:
+  for fuel: Nat
+  for +cells: +List<U32>
+  for +gen: +List<U32>
+  for +eq: Bool
+  for hfuel: {fuel == List.length(&2, U32, cells) : Nat}
+  for hlen: {List.length(&2, U32, gen) == fuel : Nat}
+  for h: {Store.gen_eq_cells(fuel, cells, gen, eq) == True{} : Bool}
+  {cells == gen : List<&2, U32>}
+
+law g4_assemble_chunk_regen:
+  for fuel: Nat
+  for w: Window.Window
+  for i: U32
+  for k: U32
+  for +cells: +List<U32>
+  for +gen: +List<U32>
+  for world: Array<U32>
+  for hfuel: {fuel == List.length(&2, U32, cells) : Nat}
+  for hlen: {List.length(&2, U32, gen) == fuel : Nat}
+  for h: {Store.gen_eq_cells(fuel, cells, gen, True{}) == True{} : Bool}
+  {Store.assemble_chunk_w(fuel, w, i, k, cells, world) == Store.assemble_chunk_w(fuel, w, i, k, gen, world) : Array<U32>}
+
+law g4_assemble_chunk_regen_chunk:
+  for w: Window.Window
+  for i: U32
+  for k: U32
+  for +cells: +List<U32>
+  for +gen: +List<U32>
+  for world: Array<U32>
+  for hfuel: {U32.to_nat(Chunk.cells()) == List.length(&2, U32, cells) : Nat}
+  for hlen: {List.length(&2, U32, gen) == U32.to_nat(Chunk.cells()) : Nat}
+  for h: {Store.gen_eq_cells(U32.to_nat(Chunk.cells()), cells, gen, True{}) == True{} : Bool}
+  {Store.assemble_chunk_w(U32.to_nat(Chunk.cells()), w, i, k, cells, world) == Store.assemble_chunk_w(U32.to_nat(Chunk.cells()), w, i, k, gen, world) : Array<U32>}
+
+# The `Some` (resident/kept) branch of the store's own `assemble_cells_w_sel` is
+# the primitive at `Chunk.cells()`, so the per-chunk roundtrip above is a
+# statement about the real store function for a present chunk. The `None` branch
+# is not bridgeable in the gate (`chunk_list_sel` does not normalise); see
+# `src/g4.bend`'s header.
+law g4_assemble_cells_present:
+  for +sel: Bool
+  for w: Window.Window
+  for k: U32
+  for +cells: +List<U32>
+  for world: Array<U32>
+  {Store.assemble_cells_w_sel(sel, w, Some{cells}, k, world) == Store.assemble_chunk_w(U32.to_nat(Chunk.cells()), w, 0, k, cells, world) : Array<U32>}

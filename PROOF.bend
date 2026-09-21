@@ -40,6 +40,7 @@ import ./src/wordnat.bend as Wordnat
 import ./src/g7.bend as G7
 import ./src/wgrid.bend as WGrid
 import ./src/wmarg.bend as Wmarg
+import ./src/g4.bend as G4
 
 # This import list is the coverage root: `bend PROOF.bend` checks every module
 # reachable from here, so an import whose *alias* looks unused may be the only
@@ -579,3 +580,23 @@ def Laws.mask_word_get(m, y, h):
 # `Bits.gsc1_word_or_and_not` and the guard reflection is `Word.w_cmp_eq`.
 def Laws.gsc1_axis_no_fold(local, d, h):
   Wmarg.gsc1_axis_no_fold(local, d, h)
+
+# g4 (G-scale-4 residual): the assemble/evict roundtrip at the store's
+# precision. `g4_gen_eq_cells_reflect` is the proof-relevant reflection of the
+# `Bool.and`/`U32.is_eq` regenerability fold to list equality (the blocker the
+# gap named); `g4_assemble_chunk_regen` composes it with the pure-fold `Array`
+# update-identity, so a regenerable chunk assembles exactly as its pure-gen
+# replacement (and the chunk-size instance `_chunk` is the fuel the store's own
+# `assemble_cells_w_sel` uses). Proofs live in `src/g4.bend`.
+# ----------------------------------------------------------------------------
+def Laws.g4_gen_eq_cells_reflect(fuel, cells, gen, eq, hfuel, hlen, h):
+  G4.g4_gen_eq_cells_eq(fuel, cells, gen, eq, hfuel, hlen, h)
+
+def Laws.g4_assemble_chunk_regen(fuel, w, i, k, cells, gen, world, hfuel, hlen, h):
+  G4.g4_assemble_chunk_regen(fuel, w, i, k, cells, gen, world, hfuel, hlen, h)
+
+def Laws.g4_assemble_chunk_regen_chunk(w, i, k, cells, gen, world, hfuel, hlen, h):
+  G4.g4_assemble_chunk_regen_chunk(w, i, k, cells, gen, world, hfuel, hlen, h)
+
+def Laws.g4_assemble_cells_present(sel, w, k, cells, world):
+  G4.g4_assemble_cells_present(sel, w, k, cells, world)
