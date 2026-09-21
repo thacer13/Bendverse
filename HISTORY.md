@@ -4850,3 +4850,43 @@ remains.
   checkpoint -> BYE).
 - Worker report: `../Bendverse-shellfree.report.md`. Reported by Bendview:
   `../Bendview/docs/engine-report-live-window-shell.md`.
+
+### A.121 — constant-stack shell-free live path (interpreter)
+
+**Status:** integrated on `master`. **+0 laws.** Gate green, fast **157/157**,
+sim **45/45**, checker canaries **6 ok / 0 bad**. Parallel track `stackfix`.
+
+**Why.** Bendview reported (`../Bendview/docs/engine-report-serve-interpreted-stack.md`)
+that `bend runners/serve.bend` (interpreted) overflows the stack right after the
+dense `SNAPSHOT` at A.120, while the compiled runner is fine and the pre-A.120
+shelled link exited 0. The shell-free path was not constant-stack.
+
+**Root cause.** The shell-free world is *far* busier: after the shell-free support
+pass the canonical world has **80879 active cells** (vs **441** shelled), so the
+first live tick records **80942 `WSet` deltas**. Five right-recursive folds on the
+live `tick_trace_w` path then built one machine-stack frame per delta
+(`Sim.filter_color`, `Sim.commit_trace`, `Sim.phases_trace`, `Rules.wake_writes`,
+and `Serve.focus_delta_records`).
+
+**Fix.** All five rewritten as tail-recursive accumulators with a single
+`List.reverse` at the end (`sfx_*` helpers) so byte order is preserved. The
+interpreted runner now exits 0 with the full 2360540-byte stream, and `cmp`
+against the compiled runner is **identical**; the box/reference path is
+unchanged.
+
+**Witnesses.** Fast **T190** (shell-free genesis checkpoint assembles back
+shell-free), **T191** (the deep shell-free first tick — the overflow witness,
+faults pre-fix), **T192** (`w5_trace_step_sel` moves the shell-free window),
+**T193** (`focus_delta_records` byte order matches the old right fold).
+
+**Latent (not live).** `Rules.commit_sets` (the non-trace `phases`/`phase` path,
+used by tests, not by the live `tick_trace_w` path) is still a right fold; it is
+only reached by the retired full-scan `phase` entry, so it was left untouched.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 157/157 PASS;
+  `bend test/simtests.bend` native -> 45/45 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+- `bend runners/serve.bend` (interpreted) -> exit 0, 2360540 bytes, `cmp` vs the
+  compiled runner -> IDENTICAL. Reported by Bendview:
+  `../Bendview/docs/engine-report-serve-interpreted-stack.md`.
