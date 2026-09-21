@@ -2303,6 +2303,72 @@ def t117_go(fuel: Nat, +y: U32, bad: U32) -> U32:
 def t117_bad() -> U32:
   t117_go(64n, 0, 0)
 
+# T156-T157 (S1 / W3, the live dirty-set rewire): the live `Dirty.Mask` now holds
+# the `Dirtyn` `Word(64)` directly, so every row operation delegates to `Dirtyn`
+# on that word and the `mask_word_get` bridge is definitional. T156 sweeps all 64
+# rows comparing `Dirty.is_dirty_y` / `Dirty.or_y` / `Dirty.mark_wake` against
+# `Dirtyn.dwin_get` / `dwin_or_y` / `dwin_mark_wake_auto` on `Dirty.w3_w_of m`
+# (including the mod-64 wrap neighbours). T157 witnesses the representation
+# identity `Maskword.mask_word m == Dirty.w3_w_of m`.
+def t156_go(fuel: Nat, +y: Nat, +m: Dirty.Mask, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +w = Dirty.w3_w_of(m)
+      +yu = U32.from_nat(y)
+      +b0 = inc_if_false(Bool.not(Bool.xor(Dirty.is_dirty_y(m, yu), Dirtyn.dwin_get(64n, w, y))), bad)
+      +ore = Cmp.is_eq(Word.cmp(64n, Dirty.w3_w_of(Dirty.or_y(m, yu)), Dirtyn.dwin_or_y(64n, w, y)))
+      +b1 = inc_if_false(ore, b0)
+      +i = Grid.index(0, yu, 0)
+      +wke = Cmp.is_eq(Word.cmp(64n, Dirty.w3_w_of(Dirty.mark_wake(m, i)), Dirtyn.dwin_mark_wake_auto(64n, w, y)))
+      t156_go(p, Nat.add(y, 1n), m, inc_if_false(wke, b1))
+
+def t156_bad() -> U32:
+  +m = Dirty.mark_wake(Dirty.or_y(Dirty.or_y(Dirty.zermask(), 7), 40), Grid.index(0, 5, 0))
+  t156_go(64n, 0n, m, 0)
+
+def t157_go(fuel: Nat, +m: Dirty.Mask, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +e = Cmp.is_eq(Word.cmp(64n, Maskword.mask_word(m), Dirty.w3_w_of(m)))
+      t157_go(p, m, inc_if_false(e, bad))
+
+def t157_bad() -> U32:
+  +m = Dirty.or_y(Dirty.or_y(Dirty.zermask(), 0), 33)
+  t157_go(64n, m, 0)
+
+# T166 (S1/W3, the prime-scan fast path). The live `Dirty.Mask` holds a
+# `Word(64)`, but `active_mask` accumulates the canonical two-`U32` limbs
+# natively and materialises the word once (`src/dirty.bend`), because a `Word` row
+# op per scanned cell is ~100x slower in native. This sweeps all 64 `y` rows of a
+# four-grain world and checks the resulting mask is dirty exactly at the grains'
+# rows -- covering the `y < 32` / `y >= 32` limb boundary.
+def t166_want(+y: U32) -> Bool:
+  Bool.or(U32.is_eq(y, 0), Bool.or(U32.is_eq(y, 5), Bool.or(U32.is_eq(y, 33), U32.is_eq(y, 63))))
+
+def t166_pair(r: Array<U32> & Dirty.Mask) -> Dirty.Mask:
+  match r:
+    case (w, m): m
+
+def t166_world() -> Array<U32>:
+  w0 = t43_empty(18n)
+  w1 = Array.set(U32, w0, Grid.index(1, 0, 1), Cell.activate(Cell.empty()))
+  w2 = Array.set(U32, w1, Grid.index(2, 5, 2), Cell.activate(Cell.empty()))
+  w3 = Array.set(U32, w2, Grid.index(3, 33, 3), Cell.activate(Cell.empty()))
+  Array.set(U32, w3, Grid.index(4, 63, 4), Cell.activate(Cell.empty()))
+
+def t166_go(fuel: Nat, +y: U32, +m: Dirty.Mask, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +got = Dirty.is_dirty_y(m, y)
+      t166_go(p, U32.add(y, 1), m, inc_if_false(bool_eq(got, t166_want(y)), bad))
+
+def t166_bad() -> U32:
+  +m = t166_pair(Dirty.active_mask(t166_world()))
+  t166_go(64n, 0, m, 0)
+
 # T122-T125 (S1 endgame, slice W1, `src/wgrid.bend`): the window-local coordinate
 # seam. T122: `wgrid_index` on the canonical window equals `Grid.index` (the seam
 # is a canonical relabelling). T123: `wgrid_neighbor` on the canonical window
@@ -2821,6 +2887,9 @@ def main() -> IO(Unit):
     report("T115 mask_word_get over all 64 rows, edge mask (G-scale-2)", t115_bad())
     report("T116 from_nat(to_nat a) = a (G-scale-2 index bridge)", t116_bad())
     report("T117 64-bound + and(31)/and(63) ranges (G-scale-2)", t117_bad())
+    report("T156 live Dirty delegates to Dirtyn on the held word (W3)", t156_bad())
+    report("T157 mask_word m == Dirty.w3_w_of m (W3)", t157_bad())
+    report("T166 active_mask marks exactly the active rows (W3 prime scan)", t166_bad())
     report("T122 wgrid canonical index == Grid.index (W1 seam)", t122_bad())
     report("T123 wgrid canonical neighbor == Grid.neighbor (W1 seam)", t123_bad())
     report("T124 wgrid canonical step_inside == Grid.step_inside (W1 seam)", t124_bad())
