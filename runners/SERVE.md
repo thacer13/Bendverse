@@ -186,8 +186,12 @@ reusing `runners/export.bend`'s encoders so there is exactly one snapshot format
 The outbound side is a bounded queue (`bridge3_flow_new`, default cap 8) under a
 credit window (`bridge3_credit`/`bridge3_emit`), with drop-and-keyframe
 coalescing (`bridge3_push_delta`/`bridge3_take_keyframe`) and an idle PING
-(`bridge3_next`); `bridge3_reader` drains stdin continuously into a `Chan` and
-`bridge3_write_frame` blocks the writer, not the engine, on an empty window.
+(`bridge3_next`); `bridge3_reader` streams stdin into a `Chan` — `File.read_bytes`
+is a read-*some* (it returns as soon as any bytes are available), so the reader
+accumulates bytes and extracts complete `[len][kind][payload]` frames one at a
+time (`bridge3_frame_need`/`_ready`/`_take`/`_rest`), and a batched or split frame
+no longer mis-parses (A.119, T181) — and `bridge3_write_frame` blocks the writer,
+not the engine, on an empty window.
 The accounting is pure and witnessed by T76-T80; the engine/writer thread split
 remains co-resident because Bend's `Chan.recv` parks rather than polls (no
 non-blocking `try_recv`), which is recorded as a gap candidate.

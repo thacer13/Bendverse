@@ -775,29 +775,71 @@ def bridge3_write_frame(f: Bridge3Flow, chan: Chan(Bridge2Ctrl), +tick: U32, fra
     +f3 : Bridge3Flow <- bridge3_grant_until(f2, chan)
     bridge3_write_if(bridge3_has_credit(f3), frame, f3)
 
-def bridge3_bytes_or_nil(res: Result<&1, &1, U32 & String, List<&2, U32>>) -> List<&2, U32>:
-  match res:
-    case Done{value}:
-      value
-    case Fail{(code, message)}:
-      Nil{}
-
-# Continuous stdin reader: decode each control frame and hand it to the writer
-# over a room-1 `Chan`. Closing stdin (EOF) closes the channel, which the writer
-# reads as STOP. This replaces the one-shot `bridge2_read_control`.
+# Continuous stdin reader: assemble `[len][kind][payload]` control frames from an
+# accumulating buffer and hand each decoded frame to the writer over a room-1
+# `Chan`. Closing stdin (EOF) closes the channel, which the writer reads as STOP.
+#
+# `File.read_bytes` is a read-*some*: it returns as soon as any bytes are
+# available (up to the max), so a renderer that holds stdin open is not a
+# problem. The old reader decoded the whole read as one frame and dropped the
+# rest, so two frames in one read (or a partial frame) mis-parsed -- `G-bridge-1`'s
+# reader half. This version carries the unconsumed bytes across reads and pulls
+# complete frames out one at a time.
 #
 # Bend has no forward references, no mutual recursion, and a `match` may only
 # scrutinize a top-level parameter -- so the read/match/send loop is one
 # self-recursive `def` with a `Nat` fuel (the guide's server-loop shape) and a
-# `phase` selector: 0 reads, 1 unpacks the read result, 2 dispatches the bytes.
-# The extra `q`/`bytes` parameters are the same function's "which to run"
-# selector, so no helper needs a forward reference.
+# `phase` selector: 0 reads, 1 folds the read result into `buf`/`eof`, 2 extracts
+# and dispatches frames. The extra `q`/`buf`/`eof` parameters are the same
+# function's state, so no helper needs a forward reference.
+
+# Bytes in the frame at the head of `buf`: an 8-byte header (`payload_len` u32,
+# `kind` u32) + `payload_len` payload bytes, or `0` when fewer than 8 bytes are
+# present. `buf` holds *bytes* (as `File.read_bytes` returns them), so the length
+# is the little-endian u32 of the first four bytes.
+def bridge3_frame_need(+buf: List<&2, U32>) -> Nat:
+  match buf:
+    case Nil{}:
+      0n
+    case Con{b0, r1}:
+      match r1:
+        case Nil{}:
+          0n
+        case Con{b1, r2}:
+          match r2:
+            case Nil{}:
+              0n
+            case Con{b2, r3}:
+              match r3:
+                case Nil{}:
+                  0n
+                case Con{b3, r4}:
+                  Nat.add(8n, U32.to_nat(bridge2_u32_of_le(b0, b1, b2, b3)))
+
+# Is the head frame fully present?
+def bridge3_frame_ready(+buf: List<&2, U32>) -> Bool:
+  +need = bridge3_frame_need(buf)
+  Bool.and(Nat.is_gt(need, 0n), Nat.is_ge(bridge2_len(buf), need))
+
+# A frame whose declared length exceeds the sane cap (SERVE.md §2, 64 MiB) is a
+# protocol error: the reader closes rather than buffering forever.
+def bridge3_frame_bad(+buf: List<&2, U32>) -> Bool:
+  Nat.is_gt(bridge3_frame_need(buf), 67108864n)
+
+def bridge3_frame_take(+buf: List<&2, U32>) -> List<&2, U32>:
+  List.take(&2, U32, buf, bridge3_frame_need(buf))
+
+def bridge3_frame_rest(+buf: List<&2, U32>) -> List<&2, U32>:
+  List.drop(&2, U32, buf, bridge3_frame_need(buf))
+
 def bridge3_reader_go(
   fuel: Nat,
   +phase: U32,
   +chan: Chan(Bridge2Ctrl),
   q: File & Result<&1, &1, U32 & String, List<&2, U32>>,
-  +bytes: List<&2, U32>
+  +buf: List<&2, U32>,
+  +ready: Bool,
+  +bad: Bool
 ) -> IO(Unit):
   match fuel:
     case 0n:
@@ -808,29 +850,49 @@ def bridge3_reader_go(
           match q:
             case (f0, r0):
               do IO<Unit>:
-                q2 : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f0, 1048576)
-                bridge3_reader_go(p, 1, chan, q2, Nil{})
+                q2 : File & Result<&1, &1, U32 & String, List<&2, U32>> <- File.read_bytes(f0, 65536)
+                bridge3_reader_go(p, 1, chan, q2, buf, False{}, False{})
         case 1:
           match q:
             case (f2, res):
+              match res:
+                case Done{value}:
+                  bridge3_reader_go(p, 2, chan, (f2, Fail{(0, "")}), List.append(&2, U32, buf, value), False{}, False{})
+                case Fail{(code, message)}:
+                  bridge3_reader_go(p, 6, chan, (f2, Fail{(0, "")}), buf, False{}, False{})
+        case 2:
+          bridge3_reader_go(p, 3, chan, q, buf, bridge3_frame_ready(buf), bridge3_frame_bad(buf))
+        case 3:
+          match ready:
+            case True{}:
               do IO<Unit>:
-                bytes2 : List<&2, U32> = bridge3_bytes_or_nil(res)
-                bridge3_reader_go(p, 2, chan, (f2, Fail{(0, "")}), bytes2)
+                sent : Bool <- Chan.send(Bridge2Ctrl, chan, bridge2_decode_control(bridge3_frame_take(buf)))
+                bridge3_reader_go(p, 2, chan, q, bridge3_frame_rest(buf), False{}, False{})
+            case False{}:
+              match bad:
+                case True{}:
+                  do IO<Unit>:
+                    IO.print_err("serve: control frame too large\n")
+                    Chan.close(Bridge2Ctrl, chan)
+                case False{}:
+                  bridge3_reader_go(p, 0, chan, q, buf, False{}, False{})
+        case 6:
+          bridge3_reader_go(p, 9, chan, q, buf, bridge3_frame_ready(buf), bridge3_frame_bad(buf))
         case _:
-          match bytes:
-            case Nil{}:
+          match ready:
+            case True{}:
+              do IO<Unit>:
+                sent : Bool <- Chan.send(Bridge2Ctrl, chan, bridge2_decode_control(bridge3_frame_take(buf)))
+                bridge3_reader_go(p, 6, chan, q, bridge3_frame_rest(buf), False{}, False{})
+            case False{}:
               do IO<Unit>:
                 IO.print_err("serve: control EOF\n")
                 Chan.close(Bridge2Ctrl, chan)
-            case Con{h, t}:
-              do IO<Unit>:
-                sent : Bool <- Chan.send(Bridge2Ctrl, chan, bridge2_decode_control(bytes))
-                bridge3_reader_go(p, 0, chan, q, Nil{})
 
 def bridge3_reader(chan: Chan(Bridge2Ctrl)) -> IO(Unit):
   do IO<Unit>:
     f : File <- IO.try(File, File.open("/dev/stdin", "r"))
-    bridge3_reader_go(1048576n, 0, chan, (f, Fail{(0, "")}), Nil{})
+    bridge3_reader_go(1048576n, 0, chan, (f, Fail{(0, "")}), Nil{}, False{}, False{})
 
 # The flow-based live link: HELLO, an ORIGIN (the canonical window's base chunk),
 # a dense SNAPSHOT of the genesis world at tick 0, then a continuous DELTA stream

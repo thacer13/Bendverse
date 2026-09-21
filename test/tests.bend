@@ -2707,6 +2707,32 @@ def t155_bad() -> U32:
   +f3 = Serve.focus_clear(f2)
   inc_if_false(Bool.not(focus_is(Serve.focus_of_flow(f3), 0, 0, 0)), b1)
 
+# T181 (G-bridge-1 reader half, A.119): the accumulating frame extractor pulls
+# complete `[len][kind][payload]` frames out of a byte buffer one at a time. Two
+# frames delivered in one read -- the case that used to drop the FOCUS -- split
+# correctly, and a partial header is not "ready".
+def t181_focus_ok(c: Serve.Bridge2Ctrl) -> Bool:
+  match c:
+    case Serve.BFocus{cx, cy, cz}:
+      Bool.and(U32.is_eq(cx, 1), Bool.and(U32.is_eq(cy, 0), U32.is_eq(cz, 0)))
+    case _:
+      False{}
+
+def t181_bad() -> U32:
+  +credit = Export.bxe_u32_le(4, Export.bxe_u32_le(5, Export.bxe_u32_le(4, Nil{})))
+  +focus = Export.bxe_u32_le(12, Export.bxe_u32_le(8, Export.bxe_u32_le(1, Export.bxe_u32_le(0, Export.bxe_u32_le(0, Nil{})))))
+  +buf = List.append(&2, U32, credit, focus)
+  b0 = inc_if_false(U32.is_eq(U32.from_nat(Serve.bridge3_frame_need(buf)), 12), 0)
+  b1 = inc_if_false(Serve.bridge3_frame_ready(buf), b0)
+  +f1 = Serve.bridge3_frame_take(buf)
+  +rest = Serve.bridge3_frame_rest(buf)
+  b2 = inc_if_false(bridge2_credit_ok(Serve.bridge2_decode_control(f1)), b1)
+  b3 = inc_if_false(U32.is_eq(U32.from_nat(Serve.bridge3_frame_need(rest)), 20), b2)
+  b4 = inc_if_false(Serve.bridge3_frame_ready(rest), b3)
+  b5 = inc_if_false(t181_focus_ok(Serve.bridge2_decode_control(Serve.bridge3_frame_take(rest))), b4)
+  +partial = Export.bxe_u32_le(4, Nil{})
+  inc_if_false(Bool.not(Serve.bridge3_frame_ready(partial)), b5)
+
 # T161-T165 (track `g4`, G-scale-4 residual): the assemble/evict roundtrip. The
 # laws (`g4_gen_eq_cells_reflect`, `g4_assemble_chunk_regen`) are stated over the
 # variable-fuel `Store.assemble_chunk_w` primitive, because the gate cannot
@@ -2982,6 +3008,7 @@ def main() -> IO(Unit):
     report("T153 focus delta shifts the window to the requested origin", t153_bad())
     report("T154 moved-window SNAPSHOT uses the window resident set", t154_bad())
     report("T155 flow carries and clears a pending focus", t155_bad())
+    report("T181 control frame extractor splits frames / rejects partial", t181_bad())
     report("T161 chunk lists are 4096 long (g4 reflection budget)", t161_bad())
     report("T162 gen_eq_cells: pure chunk true, modified chunk false (g4)", t162_bad())
     report("T163 evict drops regenerable, keeps modified entry (g4)", t163_bad())

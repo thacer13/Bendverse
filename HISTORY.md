@@ -4754,3 +4754,49 @@ normalisation of `chunk_list_sel`'s 4096-leaf array (`G-scale-4` updated).
   6 ok / 0 bad.
 - Worker reports: `../Bendverse-w3fix.report.md`,
   `../Bendverse-focusnative.report.md`, `../Bendverse-g4store.report.md`.
+
+### A.119 — streaming control reader (unblocks Bendview D1 live flight)
+
+**Status:** integrated on `master`. **+0 laws.** Gate green, fast **150/150**,
+sim **40/40**, checker canaries **6 ok / 0 bad**. IO-only (`runners/serve.bend`),
+`src/` untouched.
+
+**Why.** Bendview reported (`../Bendview/docs/engine-report-focus-control-reader.md`)
+that `bendview --live` could not apply a `FOCUS`: the engine's control reader
+decoded the whole `File.read_bytes` buffer as a single frame and discarded the
+rest, so a `FOCUS` sent alongside the opening `CREDIT` was dropped and the
+window never moved. The report diagnosed the read as *count-blocking*.
+
+**Diagnosis correction.** Empirically `File.read_bytes(f, n)` is a read-*some*:
+on both the interpreter and the native runtime it returns as soon as any bytes
+are available (a 10-byte request returned 2 then 8, not 10). The real bug was the
+decode, not the read: `bridge3_reader_go` treated each read as exactly one frame
+and carried no leftover, so batched frames were lost and split frames mis-parsed.
+
+**Fix (`runners/serve.bend`).** `bridge3_reader` now accumulates bytes and
+extracts complete `[len][kind][payload]` frames one at a time. New pure helpers
+`bridge3_frame_need` (frame size in *bytes*: `8 + payload_len`, read as the
+little-endian u32 of the first four bytes), `bridge3_frame_ready`,
+`bridge3_frame_take`, `bridge3_frame_rest`, and `bridge3_frame_bad` (the SERVE.md
+§2 64 MiB cap); the loop is the same self-recursive phase machine (phases: read,
+fold, extract/dispatch, EOF-drain). The now-dead `bridge3_bytes_or_nil` is
+removed.
+
+**Verified.** A `CREDIT` + `FOCUS` delivered in one write now produces the moved
+`ORIGIN` (`(1,0,0)`) and a moved-window `SNAPSHOT` — on both `bend
+runners/serve.bend -- --control` and the native binary. Fast **T181** witnesses
+the extractor (two frames split correctly, partial header not ready).
+
+**Residual.** Control is still folded only when the writer next needs credit (the
+room-1 `Chan`), so a `FOCUS` lands within a credit window rather than instantly;
+the engine/writer thread split (`G-bridge-1` item 1) remains. `G-bridge-1` item 2
+(the reader half) is now closed.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 150/150 PASS;
+  `bend test/simtests.bend` native -> 40/40 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+- `bend runners/serve.bend -- --control` with `CREDIT`+`FOCUS` in one write emits
+  `HELLO, ORIGIN(0,0,0), SNAPSHOT, DELTA×4, ORIGIN(1,0,0), SNAPSHOT, …` (native
+  binary identical). Reported by Bendview:
+  `../Bendview/docs/engine-report-focus-control-reader.md`.
