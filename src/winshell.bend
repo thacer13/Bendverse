@@ -4,6 +4,17 @@ import ./worldgen.bend as Worldgen
 import ./g7.bend as G7
 
 # ============================================================================
+# RETIRED (A.123). This module is the **window-local shell**: a ground at the
+# window's own edge. That is the wrong direction -- the ground is a property of
+# the **world**, not of the resident set (a window-local floor follows the
+# camera, so gravity would depend on where the observer stands). Nothing in
+# `src/` imports this module; it is kept only because the `LAWS.bend` laws
+# `win_border_canonical`/`win_gen_canonical` are declared over it and `AGENTS.md`
+# forbids deleting a law (retire, don't delete). It is **no longer evidence**:
+# see `PLAN.md` §4.1 / §5.3 (`G-scale-9`). `gen_at` may survive as a pure
+# *renderer* outer-boundary hint; it must not be the simulation ground.
+#
+# Original header (retained for provenance):
 # winshell (S1 / G-scale-8) -- the *box* contributes the shell at the window's
 # own edge.
 #

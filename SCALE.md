@@ -285,6 +285,20 @@ longer evidence. Never delete or silently weaken. If the canonical window stays
 the default address space, some `Grid` laws may remain valid evidence for the
 reference mode — decide per law.
 
+### W7 — the world-fixed ground (`G-scale-9`) — **the new frontier, and what `S1` ends on**
+The shell-free live window has no ground, so `Support` has no base case: the live
+build is born fully awake (~80k active cells; measured 80,438) and its material
+differs from the renderer's generated backdrop until one tick clears it (A.121).
+The **window-local shell** (`src/winshell.bend` `gen_at`) was the wrong fix — a
+floor that follows the camera — and is **retired (A.123)**. The right fix: a
+ground that is a **property of the world**, sampled by a pure world-coordinate
+function, so the renderer reproduces it and the served window is born settled.
+Choose the form (world-fixed bedrock plane / fixed-`y` boundary rule / void), make
+`Support.sup` ground against it (the boundary means "can't move *and* holds you
+up"), re-point the live link at the grounded sampler, and regenerate the `.bgt`
+oracle. *Files:* `src/worldgen.bend`, `src/support.bend`, `runners/serve.bend`,
+`runners/export.bend`.
+
 ### Independent pieces (safe worker tracks, no live-path edits)
 - `G-scale-4` residual: the `assemble`/`evict` roundtrip law (`Array` update
   identity under `G5` + a proof-relevant `is_eq` eliminator).

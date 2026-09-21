@@ -4957,3 +4957,39 @@ served window.
 
 **Verification**
 - Docs only; `bend PROOF.bend` re-run green, fast and sim suites unchanged.
+
+### A.123 — retire the window-local shell; `S1` ends at the world-fixed ground
+
+**Status:** code retirement + plan rework. **+0 laws** (139, unchanged). Gate
+green. Retirement per `AGENTS.md`: laws kept, marked retired, no longer evidence.
+
+**Why.** `src/winshell.bend` (`border_of`/`win_border`/`gen_at`) is the
+*window-local shell*: a ground at the window's own edge. A.122 established that
+the ground is a **world** property, so this is the wrong direction — a
+window-local floor follows the camera, i.e. gravity depends on where the observer
+stands. The module is dead in the engine (nothing in `src/` or `runners/`
+imports it) yet it carried two laws, a test pair, and a Bendview port, and it is
+what motivated decision A. It is exactly the artifact that diverged from
+coherence and influenced both projects, so it is retired rather than left to
+mislead.
+
+**Retired (kept, not deleted — `AGENTS.md`: never delete a law).**
+- `src/winshell.bend` — RETIRED header; the module stays only as the carrier of
+  its two declared laws.
+- laws `win_border_canonical` / `win_gen_canonical` — marked retired in
+  `LAWS.bend`/`PROOF.bend`; no longer evidence (`PLAN.md` §4.1, §5.1, §5.2).
+- witnesses **T106/T107** — withdrawn (the `Winshell` import and the two `report`
+  calls removed from `test/tests.bend`).
+- `PLAN.md`: the A.106 `winshell` row and the §5.2 `G-scale-8` step are marked
+  RETIRED; `SCALE.md` §8 gains **W7 — the world-fixed ground (`G-scale-9`)**, the
+  new frontier and what `S1` ends on.
+
+**Plan rework.** `S1` no longer ends at a window-local shell. Remaining: choose
+the ground's form (world-fixed bedrock plane / fixed-`y` boundary rule / void);
+add a pure world-coordinate grounded sampler; ground `Support.sup` against it;
+re-point the live link; regenerate the `.bgt` oracle; then `W6`. `G-scale-5` /
+`G-scale-8` stay as reframed in A.122.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> PASS (count
+  drops by 2: T106/T107 withdrawn).

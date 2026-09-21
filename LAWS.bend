@@ -984,8 +984,12 @@ law win_canonical_index:
   for hz: {U32.is_lt(z, 64) == True{} : Bool}
   {Window.win_index(Window.canonical(), x, y, z) == Grid.index(x, y, z) : U32}
 
-# S1 / PLAN `G-scale-8` (window-edge shell): the *box* contributes the shell at
-# the window's own edge. `win_border_canonical` pins the canonical window to the
+# S1 / PLAN `G-scale-8` (window-edge shell) -- **RETIRED (A.123)**, no longer
+# evidence. The *box* contributing the shell at the window's own edge is the
+# wrong direction: the ground is a **world** property, not the window edge (a
+# window-local floor follows the camera). The laws are kept because `AGENTS.md`
+# forbids deleting a law (retire, don't delete); see `PLAN.md` §4.1 / `G-scale-9`.
+# `win_border_canonical` pins the canonical window to the
 # absolute `gen` border; `win_gen_canonical` pins the shelled sampler to `gen`
 # bit-for-bit, so the fixed-box reference world stands.
 law win_border_canonical:

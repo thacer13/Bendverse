@@ -550,8 +550,11 @@ def Laws.wgrid_step_margin(w, i, dx, dy, dz, hx, hy, hz):
 def Laws.wgrid_canonical_resident(x, y, z):
   Wmarg.wgrid_canonical_resident(x, y, z)
 
-# winshell (S1 / G-scale-8): the window-edge shell. Proofs are the module lemmas
-# (`src/winshell.bend`); the canonical instances ride on `G7.g7_sub_zero`.
+# winshell (S1 / G-scale-8) -- **RETIRED (A.123)**: the window-edge shell is the
+# wrong direction for the ground (a window-local floor follows the camera). The
+# laws are kept (never delete a law) but are no longer evidence. Proofs are the
+# module lemmas (`src/winshell.bend`); the canonical instances ride on
+# `G7.g7_sub_zero`.
 # ----------------------------------------------------------------------------
 def Laws.win_border_canonical(x, y, z):
   Winshell.win_border_canonical(x, y, z)
