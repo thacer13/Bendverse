@@ -230,15 +230,23 @@ def focus_dcz(w: Window.Window, +cz: U32) -> U32:
 
 # DELTA on the resident window: `idx` is the WINDOW-LOCAL flat index (identical to
 # `Grid.index` on `Window.canonical()`, so the fixed-window bytes are unchanged).
-def focus_delta_records(+w: Window.Window, ds: List<Sim.Delta>) -> List<&2, U32>:
+# Tail-recursive (constant-stack): the shell-free live first tick carries ~80k
+# deltas, and the old `bxe_u32_le(idx, ... focus_delta_records(w, t))` built one
+# machine-stack frame per delta. The delta list is reversed first (a tail walk),
+# then each delta's bytes are prepended -- little-endian words stay intact, and
+# the emitted record order is byte-identical to the old right fold.
+def focus_delta_recs_go(ds: List<Sim.Delta>, +w: Window.Window, acc: List<&2, U32>) -> List<&2, U32>:
   match ds:
     case Nil{}:
-      Nil{}
+      acc
     case Con{h, t}:
       match h:
         case Sim.Delta{x, y, z, val}:
           +idx = Window.win_index(w, x, y, z)
-          Export.bxe_u32_le(idx, Export.bxe_u32_le(Cell.deactivate(val), focus_delta_records(w, t)))
+          focus_delta_recs_go(t, w, Export.bxe_u32_le(idx, Export.bxe_u32_le(Cell.deactivate(val), acc)))
+
+def focus_delta_records(+w: Window.Window, ds: List<Sim.Delta>) -> List<&2, U32>:
+  focus_delta_recs_go(List.reverse(&1, Sim.Delta, ds), w, Nil{})
 
 def focus_delta_frame(+w: Window.Window, +tick: U32, ds: List<Sim.Delta>) -> List<&2, U32>:
   +recs = focus_delta_records(w, ds)
