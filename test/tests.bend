@@ -30,6 +30,7 @@ import ../runners/export.bend as Export
 import ../src/dirty.bend as Dirty
 import ../src/dirtyn.bend as Dirtyn
 import ../src/wgrid.bend as WGrid
+import ../src/g4.bend as G4
 
 def is_bad(z: Bool) -> U32:
   match z:
@@ -2769,6 +2770,76 @@ def t165_bad() -> U32:
   b = Store.assemble(s)
   list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), 0)
 
+# T171-T175 (track `g4store`, G-scale-4 store-level trie refinement): witness the
+# new `g4_wf` / `get` / `set` laws on the concrete store -- the trie
+# well-formedness invariant, its preservation, same-key overwrite, other-key
+# transparency, and the malformed intermediate-leaf counterexample that shows
+# why the well-formedness hypothesis is load-bearing. The values are short
+# cell lists: the laws are about the key path, so 4096-long chunks would only
+# make the JS suite force work it does not need.
+
+def g4_cell_list(+seed: U32) -> List<&2, U32>:
+  Con{seed, Nil{}}
+
+# A store whose root is a `SLeaf` (a leaf at partial depth 32) -- the shape
+# `g4_wf` rejects. The explicit return type is needed: the `Store` constructors
+# are not inferable from bare application.
+def g4_malformed(+k: U32, v: List<&2, U32>) -> Store.Store:
+  Store.SLeaf{k, v}
+
+def g4_same_pair_bad(+k: U32, +k2: U32, bad: U32) -> U32:
+  match k:
+    case U32{w}:
+      match k2:
+        case U32{w2}:
+          inc_if_false(Cmp.is_eq(Bool.cmp(G4.g4_same(32n, w, w2), U32.is_eq(k, k2))), bad)
+
+# T171: a store built from `empty` is well-formed; a bare root `SLeaf` is not --
+# the shape `g4_wf` rejects.
+def t171_bad() -> U32:
+  +k = Chunk.key(0, 0, 0)
+  +good = Store.set(Store.empty(), k, g4_cell_list(1))
+  bad0 = inc_if_false(G4.g4_wf(32n, good), 0)
+  inc_if_false(Bool.not(G4.g4_wf(32n, g4_malformed(k, g4_cell_list(1)))), bad0)
+
+# T172: `set` preserves well-formedness, and a same-key overwrite on a
+# well-formed store reads back exactly the written chunk (g4_get_set_same32).
+def t172_bad() -> U32:
+  +k1 = Chunk.key(1, 2, 3)
+  +k2 = Chunk.key(2, 0, 1)
+  +s = Store.set(Store.empty(), k1, g4_cell_list(11))
+  +s2 = Store.set(s, k2, g4_cell_list(22))
+  bad0 = inc_if_false(G4.g4_wf(32n, s2), 0)
+  maybe_ref_eq(Store.get(s2, k2), g4_cell_list(22), bad0)
+
+# T173: a write at one key leaves every other key's read unchanged
+# (g4_get_set_other32): the earlier key keeps its value, the unset key reads
+# back `None`.
+def t173_bad() -> U32:
+  +k1 = Chunk.key(1, 2, 3)
+  +k2 = Chunk.key(2, 0, 1)
+  +k3 = Chunk.key(3, 3, 3)
+  +s = Store.set(Store.set(Store.empty(), k1, g4_cell_list(11)), k2, g4_cell_list(22))
+  bad0 = maybe_ref_eq(Store.get(s, k1), g4_cell_list(11), 0)
+  maybe_absent(Store.get(s, k3), bad0)
+
+# T174: `G4.g4_same` agrees with `U32.is_eq` on sampled key pairs (the
+# `g4_same_eq_cmp` bridge used to turn `is_eq == False` into path divergence).
+def t174_bad() -> U32:
+  +ka = Chunk.key(1, 2, 3)
+  bad0 = g4_same_pair_bad(ka, ka, 0)
+  bad1 = g4_same_pair_bad(ka, Chunk.key(1, 2, 4), bad0)
+  g4_same_pair_bad(ka, Chunk.key(3, 0, 0), bad1)
+
+# T175: the malformed intermediate-leaf store is well-formedness-FALSE and a
+# same-key overwrite there reads back `None` -- the counterexample that makes
+# the `g4_get_set_same32` well-formedness hypothesis load-bearing.
+def t175_bad() -> U32:
+  +k = Chunk.key(1, 2, 3)
+  +evil = g4_malformed(k, g4_cell_list(5))
+  bad0 = inc_if_false(Bool.not(G4.g4_wf(32n, evil)), 0)
+  maybe_absent(Store.get(Store.set(evil, k, g4_cell_list(6)), k), bad0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2916,3 +2987,8 @@ def main() -> IO(Unit):
     report("T163 evict drops regenerable, keeps modified entry (g4)", t163_bad())
     report("T164 evict is idempotent at the store entry (g4)", t164_bad())
     report("T165 assemble(evict s) == assemble s, mixed store (g4)", t165_bad())
+    report("T171 store wf: build_all true, root leaf false (g4store)", t171_bad())
+    report("T172 set preserves wf + same-key overwrite reads back (g4store)", t172_bad())
+    report("T173 other-key read unchanged after a write (g4store)", t173_bad())
+    report("T174 g4_same agrees with U32.is_eq on sampled keys (g4store)", t174_bad())
+    report("T175 malformed leaf: wf false, same-key get is None (g4store)", t175_bad())
