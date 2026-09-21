@@ -47,9 +47,38 @@ Kind values:
 | 5 | `CREDIT`   | renderer → engine | `frames u32`; advances the send window (°6) |
 | 6 | `REQUEST`  | renderer → engine | `tick u32, flags u32`; ask for a fresh SNAPSHOT |
 | 7 | `STOP`     | renderer → engine | empty; equivalent to closing stdin |
+| 8 | `FOCUS`    | renderer → engine | `cx u32, cy u32, cz u32`; move the window's base chunk origin |
+| 9 | `ORIGIN`   | engine → renderer | `bx u32, by u32, bz u32`; the window's current base chunk origin |
 
 All multi-byte integers are little-endian throughout, matching the snapshot and
 gen files (`runners/export.bend`).
+
+### 2.1 Focus and the window origin (track `focus`, Bendview D1)
+
+The fixed-window link is canonical; the **focus protocol** makes the resident
+window follow the renderer's camera.
+
+- **`FOCUS` (kind 8)** carries the target **base chunk origin** `(cx, cy, cz)` of
+the window (a chunk origin, not a global cell: it is total, exactly the
+coordinate `Window.shift` consumes, and symmetric with `ORIGIN`). The renderer
+derives the chunk it wants from its camera and the last `ORIGIN` it received.
+- **`ORIGIN` (kind 9)** replies with the window's base chunk origin, so the
+renderer can re-anchor its view frame. It is emitted once right after `HELLO`
+(the canonical `(0,0,0)`) and again immediately before every moved-window
+`SNAPSHOT`.
+- On a focus request the engine shifts the resident window (`Window.shift`),
+loads the entering slab / evicts the leaving slab (`Store.move_store`, lossless),
+runs one moved-window tick (`Sim.w5_trace_step`), then emits `ORIGIN` + a fresh
+`SNAPSHOT` of the moved window. A `SNAPSHOT` supersedes all prior deltas (§4),
+so the renderer may discard its delta run at the move. The engine coalesces
+requests: the newest pending `FOCUS` wins; requests arriving while a move is in
+flight are applied at the next frame boundary.
+- **Delta coordinates after a move.** A `DELTA` `idx` is the **window-local**
+flat index (`Window.win_index`), so it is relative to the most recent `ORIGIN`.
+On the canonical window `Window.win_index == Grid.index`, so the fixed-window
+bytes are unchanged. (This is the one payload change a moving-window client
+must make: apply `idx` against the window anchored at the last `ORIGIN` rather
+than the global 64³ `Grid.index`.)
 
 ## 3. Assumed delta payload (owned by `scale`)
 
@@ -75,13 +104,18 @@ tick).
 1. Renderer spawns `bendverse-serve` (or attaches the FIFO) and starts reading.
 2. Engine sends **HELLO** first. All fields come from the engine's own
    constants (`Grid.size`, `Chunk.size`, `Worldgen.seed`), so the renderer can
-   validate its own port before trusting a single cell.
+   validate its own port before trusting a single cell. An **ORIGIN** frame
+   follows immediately, carrying the initial window base chunk (`(0,0,0)` for
+   the canonical window).
 3. Engine sends a **SNAPSHOT** at tick 0 (the initial state), then **DELTA**
    frames as ticks advance. It may send a new SNAPSHOT at any time (checkpoint,
    request, or catch-up); a SNAPSHOT always supersedes all prior deltas.
-4. On an idle stream the engine emits **PING** at least every `ping_ms` (default
+4. A renderer **FOCUS** request moves the resident window. The engine replies
+   with a fresh **ORIGIN** and a **SNAPSHOT** of the moved window (a keyframe),
+   then continues the delta stream window-locally.
+5. On an idle stream the engine emits **PING** at least every `ping_ms` (default
    1000 ms) so the renderer can distinguish "quiet" from "dead".
-5. Engine exits: flush a final **BYE**, then close. Renderer exits: it closes
+6. Engine exits: flush a final **BYE**, then close. Renderer exits: it closes
    stdin / sends **STOP**; the engine stops at the next frame boundary.
 
 A reader that sees EOF without **BYE** treats the stream as truncated and
@@ -146,14 +180,23 @@ Defaults: `N = 1`, `M = 0` (no periodic checkpoint), `W = 4`, `MS = 1000`.
 Diagnostics go to **stderr**, never stdout.
 
 `runners/serve.bend` now realises §5-§6 on the writer side (track `bridge3`):
-`HELLO`; a dense genesis `SNAPSHOT`; a tick's `DELTA`; a sparse checkpoint
-`SNAPSHOT`; an idle `PING`; and a final `BYE`, reusing `runners/export.bend`'s
-encoders so there is exactly one snapshot format. The outbound side is a
-bounded queue (`bridge3_flow_new`, default cap 8) under a credit window
-(`bridge3_credit`/`bridge3_emit`), with drop-and-keyframe coalescing
-(`bridge3_push_delta`/`bridge3_take_keyframe`) and an idle PING
+`HELLO`; an `ORIGIN` (window base chunk); a dense genesis `SNAPSHOT`; a tick's
+`DELTA`; a sparse checkpoint `SNAPSHOT`; an idle `PING`; and a final `BYE`,
+reusing `runners/export.bend`'s encoders so there is exactly one snapshot format.
+The outbound side is a bounded queue (`bridge3_flow_new`, default cap 8) under a
+credit window (`bridge3_credit`/`bridge3_emit`), with drop-and-keyframe
+coalescing (`bridge3_push_delta`/`bridge3_take_keyframe`) and an idle PING
 (`bridge3_next`); `bridge3_reader` drains stdin continuously into a `Chan` and
 `bridge3_write_frame` blocks the writer, not the engine, on an empty window.
 The accounting is pure and witnessed by T76-T80; the engine/writer thread split
 remains co-resident because Bend's `Chan.recv` parks rather than polls (no
 non-blocking `try_recv`), which is recorded as a gap candidate.
+
+The **moving-window focus path** (track `focus`, §2.1) threads the resident
+`Window` through the live loop (`focus_initial`, `focus_next_state`) and consumes
+a pending `FOCUS` at a frame boundary: `Sim.w5_trace_step` shifts the window and
+runs the moved-window tick, then the engine emits `ORIGIN` + a sparse
+moved-window `SNAPSHOT` (`focus_origin_frame`, `focus_snapshot_sparse`). `DELTA`
+idx is window-local (`focus_delta_frame`), identical to `Grid.index` on the
+canonical window. The wire shapes are witnessed tick-free by T151-T155; the
+native end-to-end moved-window stream is left to integration.
