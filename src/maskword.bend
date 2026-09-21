@@ -5,43 +5,40 @@ import ./dirty.bend as Dirty
 import ./dirtyn.bend as Dirtyn
 
 # ============================================================================
-# maskword (S1 / PLAN `G-scale-2` item 3) -- the `Dirty.Mask <-> Word(64)`
-# isomorphism.
+# maskword (S1 / PLAN `G-scale-2` item 3) -- the `U32 <-> Word` bit-test bridge.
 #
-# `Dirty.Mask{lo, hi}` is two `U32`s (bit `y & 31` of `lo` for `y < 32`, else of
-# `hi`); `Dirtyn`'s model is a `Word(w)` (head = bit 0, LSB first). The two agree
-# only by test (T94); this module proves the bridge. The 64-bit word is
-# `mask_word m = cat 32 lo hi`, where `cat` places `lo` in bits 0..31 and `hi` in
-# 32..63 (`Word(Nat.add(32n, n))` -- `32` is a literal, so the width index
-# reduces).
+# S1/W3 rewire. `Dirty.Mask` is no longer a two-`U32` `{lo, hi}` record: it holds
+# the `Dirtyn` `Word(64)` directly and delegates its row operations to `Dirtyn`
+# (`src/dirty.bend`). The lo/hi word constructor (`cat`, `u32_word`, the old
+# `mask_word m = cat 32 lo hi`) therefore moved *below* `dirty` into
+# `src/dirtyn.bend` and is re-exported here; `mask_word` is now the identity on
+# the held word, so the `mask_word_get` bridge is definitional (superseding
+# A.109's value-theory development).
 #
-# The development is bottom-up:
+# What remains real here is the width-32 bridge, which does not mention
+# `Dirty.Mask` and does not reduce definitionally (`U32`'s bit operations are
+# native):
 #   * `and_wbit`      -- `and(w, {k})` is `{k}` or `0` by bit `k` of `w`;
 #   * `cmp_wbit_zero` -- a single-bit word is non-zero (so `is_ne` is `True`);
 #   * `shln_one`      -- `U32.shln(1, k) = U32{Dirtyn.dwin_bit(32, k)}`;
-#   * `u32_bit`       -- `U32.is_ne(and(a, shln(1,k)), 0) = dwin_get(32, aWord, k)`;
-#   * `cat_get`       -- `dwin_get` into the concatenation (the 64-bit split);
-#   * `mask_word_get` -- the law: `dwin_get(64, mask_word m, y) = is_dirty_y(m,y)`.
+#   * `u32_bit`       -- the law `u32_word_bit`:
+#                        `U32.is_ne(and(a, shln(1,k)), 0) = dwin_get(32, aWord, k)`;
+#   * `cat_get_low`/`cat_get_high` -- the (now unused) 64-bit lo/hi split.
 # ============================================================================
 
-# `cat n lo hi`: `lo` (width n) in the low bits, `hi` (width 32) in the high bits.
+# `cat n lo hi`, `u32_word`, and the mask word constructor now live *below*
+# `dirty` in `src/dirtyn.bend` (S1/W3), so `dirty.bend` can build/read the
+# `Word(64)` without importing this module (no cycle). They are re-exported here
+# so existing call sites and tests keep their names.
 def cat(n: Nat, lo: Word(n), hi: Word(32n)) -> Word(Nat.add(32n, n)):
-  match n:
-    case 0n:
-      hi
-    case 1n+ +p:
-      match lo:
-        case WCon{h, t}:
-          WCon{h, cat(p, t, hi)}
+  Dirtyn.cat(n, lo, hi)
 
 def u32_word(a: U32) -> Word(32n):
-  match a:
-    case U32{w}: w
+  Dirtyn.u32_word(a)
 
+# `mask_word m` is the `Word(64)` held by the (now word-based) `Dirty.Mask`.
 def mask_word(m: Dirty.Mask) -> Word(64n):
-  match m:
-    case Dirty.Mask{lo, hi}:
-      cat(32n, u32_word(lo), u32_word(hi))
+  Dirtyn.mask_word(Dirty.w3_w_of(m))
 
 # ------------------------------------------------------------------ bit algebra
 def pick_cons_false(p: Nat, +b: Bool, +x: Word(p), +y: Word(p))
