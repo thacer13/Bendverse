@@ -116,7 +116,8 @@ talking to a single session; this protocol is the session's job, not the human's
   to assign. Workers must not edit `HISTORY.md` or the narrative PLAN sections.
 - **CPU budget.** The box has 6 cores and `bend` uses all of them. Workers run
   the gate and the fast suite; only the supervisor runs the native simulation
-  suite, once, at integration. Cap concurrent tracks at ~3.
+  suite, once, at integration. The box tops out at one supervisor + three
+  concurrent workers; do not dispatch a fourth.
 - **Lifecycle.** `tools/parallel.sh new|rm|list`; remove a worktree once its
   branch is merged. `tools/parallel.sh reap [<track>...]` closes leaked worker
   panes (no args: idle workers whose worktree is gone); a dispatch killed
