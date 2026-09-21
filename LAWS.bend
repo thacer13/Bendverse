@@ -32,6 +32,7 @@ import ./src/wgrid.bend as WGrid
 import ./src/wmarg.bend as Wmarg
 import ./src/store.bend as Store
 import ./src/chunk.bend as Chunk
+import ./src/g4.bend as G4
 
 law sanity:
   {U32.add(2, 3) == 5 : U32}
@@ -1165,3 +1166,103 @@ law g4_assemble_cells_present:
   for +cells: +List<U32>
   for world: Array<U32>
   {Store.assemble_cells_w_sel(sel, w, Some{cells}, k, world) == Store.assemble_chunk_w(U32.to_nat(Chunk.cells()), w, 0, k, cells, world) : Array<U32>}
+
+# ----------------------------------------------------------------------------
+# G-scale-4 residual (g4), store-level trie refinement -- the second half of the
+# gap's blocker list. `Store.get_w`/`set_w` walk a `Word(n)` key prefix and form
+# a map only when every `SLeaf` sits at the bottom of the walk; `G4.g4_wf` is
+# that invariant (`STip` legal anywhere, `SLeaf` only at depth 0, `SNode` when
+# both children are well-formed). `g4_set_preserves_wf` keeps it under `set_w`,
+# and `g4_get_set_same` recovers `get(set(s,k,v),k) == Some{v}` for a well-formed
+# store. `g4_get_set_other` is the diverging-path companion: a write at one key
+# path is invisible to a read at a path that differs anywhere (no
+# well-formedness needed). `g4_get_set_same32`/`g4_get_set_other32` are the
+# full-depth `U32` statements; the latter keys divergence off
+# `U32.is_eq(k,k') == False` via `G4.g4_same_eq_cmp`. The 64-key `evict`/
+# `assemble` fold that these bricks serve remains the open residual (see PLAN
+# §5.3 and `src/g4.bend`'s header).
+# ----------------------------------------------------------------------------
+law g4_set_preserves_wf:
+  for n: Nat
+  for w: Word(n)
+  for s: Store.Store
+  for k: U32
+  for +v: +List<U32>
+  for h: {G4.g4_wf(n, s) == True{} : Bool}
+  {G4.g4_wf(n, Store.set_w(n, w, s, k, v)) == True{} : Bool}
+
+law g4_get_set_same:
+  for n: Nat
+  for w: Word(n)
+  for s: Store.Store
+  for k: U32
+  for +v: +List<U32>
+  for hwf: {G4.g4_wf(n, s) == True{} : Bool}
+  {Store.get_w(n, w, Store.set_w(n, w, s, k, v), k) == Some{v} : Maybe<&2, List<&2, U32>>}
+
+law g4_get_set_other:
+  for n: Nat
+  for w: Word(n)
+  for w2: Word(n)
+  for s: Store.Store
+  for k: U32
+  for k2: U32
+  for +v: +List<U32>
+  for hd: {G4.g4_same(n, w, w2) == False{} : Bool}
+  {Store.get_w(n, w2, Store.set_w(n, w, s, k, v), k2) == Store.get_w(n, w2, s, k2) : Maybe<&2, List<&2, U32>>}
+
+law g4_get_set_same32:
+  for s: Store.Store
+  for k: U32
+  for +v: +List<U32>
+  for hwf: {G4.g4_wf(32n, s) == True{} : Bool}
+  {Store.get(Store.set(s, k, v), k) == Some{v} : Maybe<&2, List<&2, U32>>}
+
+law g4_get_set_other32:
+  for s: Store.Store
+  for k: U32
+  for k2: U32
+  for +v: +List<U32>
+  for hne: {U32.is_eq(k, k2) == False{} : Bool}
+  {Store.get(Store.set(s, k, v), k2) == Store.get(s, k2) : Maybe<&2, List<&2, U32>>}
+
+# ----------------------------------------------------------------------------
+# G-scale-4 residual (g4), per-key fold steps. `g4_assemble_cells_same` is the
+# accepted/resident move (after a same-key `set` on a well-formed store, the
+# key's assembly equals assembling the explicit chunk), `g4_assemble_cells_other`
+# is non-interference (a `set` at another key is transparent), and
+# `g4_keep_cells_drop`/`g4_keep_cells_keep` are the `evict_key_sel` accumulator
+# primitives. The full 64-key `assemble(evict s) == assemble s` fold remains the
+# open residual (see PLAN §5.3 and `src/g4.bend`'s header).
+# ----------------------------------------------------------------------------
+law g4_assemble_cells_same:
+  for +sel: Bool
+  for k: U32
+  for s: Store.Store
+  for +v: +List<U32>
+  for world: Array<U32>
+  for hwf: {G4.g4_wf(32n, s) == True{} : Bool}
+  {Store.assemble_cells_sel(sel, Store.get(Store.set(s, k, v), k), k, world) == Store.assemble_cells_sel(sel, Some{v}, k, world) : Array<U32>}
+
+law g4_assemble_cells_other:
+  for +sel: Bool
+  for k1: U32
+  for k2: U32
+  for s: Store.Store
+  for +v: +List<U32>
+  for world: Array<U32>
+  for hne: {U32.is_eq(k2, k1) == False{} : Bool}
+  {Store.assemble_cells_sel(sel, Store.get(Store.set(s, k2, v), k1), k1, world) == Store.assemble_cells_sel(sel, Store.get(s, k1), k1, world) : Array<U32>}
+
+law g4_keep_cells_drop:
+  for store: Store.Store
+  for k: U32
+  for +cells: +List<U32>
+  {Store.get(Store.keep_cells(store, k, cells, True{}), k) == Store.get(store, k) : Maybe<&2, List<&2, U32>>}
+
+law g4_keep_cells_keep:
+  for store: Store.Store
+  for k: U32
+  for +cells: +List<U32>
+  for hwf: {G4.g4_wf(32n, store) == True{} : Bool}
+  {Store.get(Store.keep_cells(store, k, cells, False{}), k) == Some{cells} : Maybe<&2, List<&2, U32>>}

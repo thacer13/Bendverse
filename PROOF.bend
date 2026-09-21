@@ -600,3 +600,38 @@ def Laws.g4_assemble_chunk_regen_chunk(w, i, k, cells, gen, world, hfuel, hlen, 
 
 def Laws.g4_assemble_cells_present(sel, w, k, cells, world):
   G4.g4_assemble_cells_present(sel, w, k, cells, world)
+
+# Store-level trie refinement (g4, second G-scale-4 blocker). Proofs are in
+# `src/g4.bend`; `g4_wf` is the well-formedness invariant, `g4_set_preserves_wf`
+# keeps it under `set_w`, and `g4_get_set_same`/`g4_get_set_other` are the
+# read-after-write facts (same path / diverging path), lifted to full depth in
+# the `_32` wrappers.
+def Laws.g4_set_preserves_wf(n, w, s, k, v, h):
+  G4.g4_set_w_wf(n, w, s, k, v, h)
+
+def Laws.g4_get_set_same(n, w, s, k, v, hwf):
+  G4.g4_get_set_same(n, w, s, k, v, hwf)
+
+def Laws.g4_get_set_other(n, w, w2, s, k, k2, v, hd):
+  G4.g4_get_set_other(n, w, w2, s, k, k2, v, hd)
+
+def Laws.g4_get_set_same32(s, k, v, hwf):
+  G4.g4_get_set_same32(s, k, v, hwf)
+
+def Laws.g4_get_set_other32(s, k, k2, v, hne):
+  G4.g4_get_set_other32(s, k, k2, v, hne)
+
+# g4 per-key fold steps (see `src/g4.bend`): the assemble-after-set move at a
+# kept key, non-interference at another key, and the `evict_key_sel` accumulator
+# primitives. The full 64-key fold is the open residual.
+def Laws.g4_assemble_cells_same(sel, k, s, v, world, hwf):
+  G4.g4_assemble_cells_same(sel, k, s, v, world, hwf)
+
+def Laws.g4_assemble_cells_other(sel, k1, k2, s, v, world, hne):
+  G4.g4_assemble_cells_other(sel, k1, k2, s, v, world, hne)
+
+def Laws.g4_keep_cells_drop(store, k, cells):
+  G4.g4_keep_cells_drop(store, k, cells)
+
+def Laws.g4_keep_cells_keep(store, k, cells, hwf):
+  G4.g4_keep_cells_keep(store, k, cells, hwf)
