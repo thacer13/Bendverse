@@ -212,3 +212,16 @@ serves `Sim.shellfree_build_terrain` and the store/focus path takes
 `{0,63}` reference shell -- a moving window would otherwise draw a wall *inside*
 its resident set. The shelled `Sim.build` stays the reference mode (the fast and
 native suites build it directly, passing `Worldgen.box()`).
+
+> **Correction (`G-scale-9`).** "Shell-free" fixed the *walls* and removed the
+> *ground* with them. The absolute shell was doing two jobs at once: the
+> **boundary** (closure -- legitimately a box/window property, and correctly
+> window-relative) and the **ground** (the support base case of rules 5-7 -- a
+> property of the **world**, and wrong to make window-relative). With the ground
+> gone, `Support` has no anchor, so `Sim.shellfree_build_terrain` is born fully
+> awake (~80k active cells; measured 80,438) and the build crushe the boundary;
+> one tick then deactivates them (A.121). Consequence for this link: the served
+> world's material differs from the renderer's generated backdrop until the tick
+> that clears it, which is the `--live` "mud mound" snap. The fix is a
+> **world-fixed ground**, not a window-edge shell -- the `gen_at` variant
+> mentioned below must **not** become the simulation boundary.

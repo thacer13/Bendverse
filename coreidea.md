@@ -120,15 +120,27 @@ internally layer multiple scalar fields (e.g., macro-scale for base terrain
 shape, higher-frequency for material selection, sparse fields for isolated
 features) — but externally it must behave as a single pure lookup: same
 coordinate, same seed, same result, regardless of when or in what order it is
-called. The **terrain** function is shell-free: it says what material a
-coordinate holds, everywhere, with no absolute world edge. The box's shell
-(contract 2) is a property of the **box or window**, not of the coordinate — the
-bounded reference box adds the shell at its own edges (`x/y/z ∈ {0,63}` for the
-canonical 64³ box, or the window edge for a moving window), and an unbounded
-world samples the shell-free terrain alone. The canonical box reproduces the
-current absolute shell bit-for-bit, so the fixed-box worlds and laws stand;
-closure holds because the shell material is static (and, at the grid level,
-because rule targets are guarded — contract 2), not because the grid wraps.
+called. The **terrain** function is shell-free: it says what material a coordinate holds,
+everywhere, with no absolute world edge, and it is a function of the coordinate
+(and seed) alone — never of the window. Two things the old "shell" conflated must
+be kept distinct:
+
+- **Boundary (closure, contract 2)** is a property of the **grid or window**: a
+  rule target off the resident set is inert. Window-relative is *correct* here.
+- **Ground (the support base case of rules 5–7)** is a property of the **world**:
+  the world-fixed datum the support recursion bottoms out on. It must *not* be
+  window-relative. Ground at the window edge is ground that follows the camera:
+  gravity would depend on where the observer stands, `Support` would have no
+  stable anchor, and every solid cell would read as unsupported — the shell-free
+  live build's ~80k spurious active cells (A.121). The concrete form of the world
+  ground (a world-fixed bedrock plane, a fixed-`y` boundary rule, or a void) is a
+  design choice, filed as `G-scale-9`; what the contract fixes is that it is a
+  property of the *world*, not of the resident set.
+
+The closed reference box adds its historical shell on the absolute planes
+`x/y/z ∈ {0,63}`; the canonical window reproduces it bit-for-bit
+(`win_gen_canonical`), so the fixed-box worlds and laws stand. Closure holds
+because rule targets are guarded (contract 2), not because the grid wraps.
 
 Where the code stands (do not confuse this with the target)
 
@@ -139,13 +151,13 @@ terms; it changes only when a contract clause or a rule's status changes, not pe
 milestone.
 
 Purity (contract 1), closure (contract 2), and rule 9's "effects land next tick"
-all hold: a phase reads only the state it is handed, the box is a property of the
-grid rather than of the shell, and every wake is applied at tick end. The
-remaining deviations are consequences of one thing — the engine still sweeps the
-world. Cost is therefore not yet proportional to disturbance (contract 3), and
-support is seeded from a cell's position rather than derived from its
-neighbourhood (rules 6 and 7). No deviation is closed by rewording a rule to
-match the code.
+all hold: a phase reads only the state it is handed, the boundary is a property of
+the grid rather than of a shell, and every wake is applied at tick end. Cost
+(`C3`) is carried by the dirty-row work set (`V0-4b-3b`, A.77), and support is
+derived from the neighbourhood (`V0-5`, A.81). What is *not* yet closed is the
+**ground**: the live window is shell-free, so `Support` has no base case and the
+world is born fully awake (`G-scale-9`). No deviation is closed by rewording a
+rule to match the code.
 
 Ambition (in the open)
 

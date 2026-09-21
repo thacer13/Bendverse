@@ -4803,6 +4803,12 @@ the engine/writer thread split (`G-bridge-1` item 1) remains. `G-bridge-1` item 
 
 ### A.120 — shell-free live window (D5 / `G-scale-8` decision A)
 
+> **Superseded by A.122 on the *ground*.** The shell-free choice kept the terrain a
+> pure world-coordinate sampler (correct) but removed the shell's **ground** along
+> with its *walls* (wrong); the "if a window-local wall is wanted later, that
+> sampler must use `gen_at`" line points at camera-following ground. See
+> `G-scale-9`.
+
 **Status:** integrated on `master`. **+0 laws.** Gate green, fast **153/153**,
 sim **45/45**, checker canaries **6 ok / 0 bad**. Parallel track `shellfree`.
 
@@ -4853,6 +4859,10 @@ remains.
 
 ### A.121 — constant-stack shell-free live path (interpreter)
 
+> **Superseded by A.122 on the diagnosis.** The ~80k active cells are a *build*
+> artifact (the missing world ground), not a sustained tick cost; the stack fix
+> stands, the "busy world" reading is incomplete. See `G-scale-9`.
+
 **Status:** integrated on `master`. **+0 laws.** Gate green, fast **157/157**,
 sim **45/45**, checker canaries **6 ok / 0 bad**. Parallel track `stackfix`.
 
@@ -4890,3 +4900,60 @@ only reached by the retired full-scan `phase` entry, so it was left untouched.
 - `bend runners/serve.bend` (interpreted) -> exit 0, 2360540 bytes, `cmp` vs the
   compiled runner -> IDENTICAL. Reported by Bendview:
   `../Bendview/docs/engine-report-serve-interpreted-stack.md`.
+
+### A.122 — reframing: the ground is a world property, not the window edge
+
+**Status:** docs only. **+0 laws.** No `src/` change; `PROOF.bend` untouched. A
+`coreidea` rule edit, so logged here per `AGENTS.md`.
+
+**Why.** Bendview's `engine-report-live-sim-cost.md` blamed the shell-free live
+tick cost and proposed a dormancy/wake-set model or a per-tick budget matching
+the served window. Measurement against `a0378d1` does not support that: the cost
+is a one-time *build* artifact, and the sustained defect is a content mismatch at
+the seam, not a slow tick. The audit found one root cause behind a dozen
+misleading notes in both repos: the word **shell** was doing two jobs at once.
+
+**The reframe — boundary vs ground.** The absolute shell (bedrock on
+`x/y/z ∈ {0,63}`) was simultaneously (i) the **boundary** — what stops material
+leaving the box, i.e. closure/contract 2 — and (ii) the **ground** — the base case
+of `Support`'s recursion (rules 5–7). Those separate cleanly:
+
+- **Boundary/closure** is legitimately a property of the grid or window (an
+off-window step is inert). Window-relative is *correct* here.
+- **Ground** is a property of the **world**: a world-fixed datum. Window-relative
+is *wrong* — ground at the window edge follows the camera, so gravity would
+depend on where the observer stands and `Support` would have no stable anchor.
+
+Decision A (A.120) kept the good half (terrain is a pure world-coordinate
+sampler, `gen_terrain`) and dropped the bad half (it deleted the ground along
+with the walls). `gen_at` (`src/winshell.bend`, the window-local shell) is the
+same mistake wearing a different hat: a floor that travels with the camera. The
+standard resolution is Minecraft's: terrain is a pure function of world
+coordinates, the floor is world-fixed (a plane, or a void), and rendering has two
+radii — a **render horizon** (pure generator, not ticked) and a **simulation
+window** (resident, ticked), with render ≥ sim.
+
+**Evidence (measured).** Shelled `Sim.build` -> **0** active cells and material
+hash == raw `gen`. Shell-free `Sim.shellfree_build_terrain` -> **80,438** active
+cells (material hash 3 raw -> **4** at build) and **0** active after one tick.
+So the world is *physically* stable and the activity is spurious: `Support` reads
+"off-grid" as *not ground*, while closure reads it as *inert* — the two disagree
+about what the boundary means. That is the ~80k build transient and the boundary
+crush, not a sustained cost.
+
+**Changed (docs).** `coreidea.md` rule 11 split into boundary vs ground (plus the
+"Where the code stands" paragraph refreshed: `C3`/`R6`/`R7` are closed, the open
+item is the ground); `PLAN.md` §4.1 `R11`, §5.2 `S1`, §5.1 (A.120/A.121 caveats),
+and §5.3 — `G-scale-5` reframed, `G-scale-8` corrected, new **`G-scale-9`** (the
+world-fixed ground); `SCALE.md` §2/§6/§7/§8 (incl. the §7 non-goal violation note);
+`runners/SERVE.md` correction block; the two superseding pointers above; and the
+Bendview reports (`engine-report-live-window-shell.md`,
+`engine-report-gen-shell-and-window.md`, `engine-report-live-sim-cost.md`).
+
+**Open.** `G-scale-9` — choose the ground's concrete form (world-fixed bedrock
+plane, fixed-`y` boundary rule, or void) and ground `Support.sup` against it, so
+generated terrain is the sim's fixpoint and the renderer backdrop agrees with the
+served window.
+
+**Verification**
+- Docs only; `bend PROOF.bend` re-run green, fast and sim suites unchanged.

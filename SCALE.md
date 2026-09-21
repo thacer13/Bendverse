@@ -70,8 +70,9 @@ coordinate. The world is the union of the resident chunks over the pure `gen`
   coordinate.
 - **Resident set.** Replace the implicit 4×4×4 `assemble_go` loop with an
   explicit resident set (a keyed set, or a small `Store` with a window policy).
-  Loading is `gen`; eviction is the existing sleeping + gen-equal test, which is
-  already lossless.
+  Loading is the world-coordinate sampler (`gen_terrain`) **plus the
+  world-fixed ground** (`G-scale-9`) — loading `gen` conflated the two; eviction
+  is the existing sleeping + gen-equal test, which is already lossless.
 - **Window motion.** When the focus crosses a chunk boundary, load the entering
   slab and evict the leaving slab. A rule target outside the resident set is a
   boundary case: either the window is kept one chunk larger than the active
@@ -129,10 +130,13 @@ file the gap.
   `assemble_go` loop bounds; a window needs an explicit set and a load/evict
   policy with no double-residency or leak. *Gates:* memory/scale. *Closes by:* a
   set model plus `assemble`/`evict` roundtrip laws.
-- **`G-scale-5` (performance).** `Sim` primes the work list by scanning the whole
-  world; at scale the scan is the window (bounded), but the phase fold's
-  cost still scales with the active set, not the window. *Gates:* the scale
-  target. *Closes by:* measurement on a real window, not a proof.
+- **`G-scale-5` (performance) — reframed.** This candidate was mis-stated. `C3`
+  already makes the tick cost track disturbance; the real cost modes are (a) the
+  one-time build transient from the missing ground (`G-scale-9`: the shell-free
+  live build flags ~80k cells active — measured 80,438 — and crushes the
+  boundary) and (b) seam/frame cost (first `DELTA`, per-`FOCUS` sparse
+  `SNAPSHOT`). *Gates:* live usability. *Closes by:* a grounded build (no
+  transient) plus a render-horizon vs simulation-window frame measurement.
 - **`G-scale-6` (retirement).** Every law that mentions `Grid.index`/`Grid.ix`
   is a law about the torus; migrating the live path orphans them. *Gates:*
   traceability. *Closes by:* the retirement protocol in `AGENTS.md` (keep, mark
@@ -143,6 +147,11 @@ file the gap.
 - No GPU / `!` work (that is `M7b`/`M7e`, `G4`).
 - No change to the rule system, the write algebra, or the conservation/Φ laws —
   the window is a coordinate and residency change, not a semantics change.
+  **Correction:** decision A (A.120, serving the shell-free live window) *was* a
+  semantics change riding inside this migration — it removed the shell, which was
+  the world's **ground**, not just its boundary. That violation is the source of
+  `G-scale-9`; the coordinate/residency discipline still holds for everything
+  else.
 - No refactor of the live `Grid`/`Sim` path in steps 1–6 (this note's §5).
   §8 scopes the live migration (steps 7+) **explicitly**: the same
   coordinate/residency discipline, one gate-green slice at a time.
@@ -150,21 +159,24 @@ file the gap.
 ## 8. Handoff — the live rule migration (S1 endgame, fresh-session brief)
 
 Steps 2–4 (the model: `Window`, explicit resident set, generator selector,
-window-local addressing, motion primitives, window-edge shell, the store
-load/evict policy) and the `G-scale-2` item (3) isomorphism are landed
+window-local addressing, motion primitives, window-edge shell (a *renderer*
+boundary hint — wrong as the sim's ground, `G-scale-9`), the store load/evict
+policy) and the `G-scale-2` item (3) isomorphism are landed
 (A.95–A.109). **W1 is landed (A.110):** `src/wgrid.bend` is the window-local
 coordinate seam (`wgrid_index`, `wgrid_ix/iy/iz`, and a window-parameterised
 `wgrid_neighbor`/`wgrid_step_inside`), and the resident `Window` is threaded
 through `Ops`/`Rules`/`Support`/`Sim` (canonical-only: the bodies still delegate
 to `Grid`, so every proof/test stands). What remains is the **rule migration**:
 moving the live tick pipeline off the fixed `Grid` torus onto a window. §7 stays
-binding — it is a coordinate + residency change, not a semantics change.
+binding for coordinates and residency — **except** that decision A (A.120) crossed
+it by changing the live world's material (removing the ground, `G-scale-9`).
 
 **State (verify with `bend_status` / `bend_audit` first).** Gate green, 139 laws,
 fast 149/149, sim 40/40, gaps 6 open / 13 closed. Relevant landed API:
 `src/window.bend` (`Window`, `win_index`, `win_lx/ly/lz`, `win_gx/gy/gz`,
 `shift`, `entering`/`leaving`), `src/store.bend` (`assemble_w`, `window_store`),
-`src/winshell.bend` (`win_border`/`gen_at`), `src/maskword.bend` + `src/wordnat.bend`
+`src/winshell.bend` (`win_border`/`gen_at` — renderer boundary hint only,
+*not* the sim ground, `G-scale-9`), `src/maskword.bend` + `src/wordnat.bend`
 (`mask_word_get`), `src/dirtyn.bend` (size-parameterised mask + wrap range).
 
 **The seam.** The write algebra (`Refine`/`PT`, the Φ/count laws), the phase
@@ -258,8 +270,11 @@ move). **Residual:** the fixed-window live link is landed (`runners/serve.bend`,
 A.115), the **moving-window focus protocol** (renderer-supplied focus →
 `w5_trace_step`) is landed (A.117, native witness A.118), and the live link now
 serves the **shell-free window** (A.120, `w5_*_sel` + `Worldgen.terrain()`), so
-`--live` no longer draws the absolute bedrock walls. `G-scale-5` closes only when
-the phase-fold cost is *measured* on a real window — not yet done. The move is
+`--live` no longer draws the absolute bedrock walls. **Correction (`G-scale-9`):**
+shell-free removed the *ground* along with the walls, so the live build is born
+fully awake (~80k active cells); the fix is a **world-fixed ground**, not a
+window-edge shell. `G-scale-5` was also mis-stated — the cost is the build
+transient plus seam/frame cost, not a sustained phase fold (see §6). The move is
 now **lossless** (A.114, `Store.move_store`).
 
 ### W6 — retirement (`step 6`, `G-scale-6`)
