@@ -14,6 +14,15 @@ import ./store.bend as Store
 def build() -> Array<U32>:
   Support.pass_all(Worldgen.build())
 
+# The shell-free live world (decision A, `G-scale-8`): `build` over the
+# shell-free `Worldgen.build_terrain`, support-seeded the same way. The live
+# link (`runners/serve.bend`) uses this so the window / infinite mode samples
+# shell-free terrain; `build` stays the shelled reference world. The `shellfree_`
+# prefix is the parallel-track reservation (the box/reference name `build` is
+# untouched).
+def shellfree_build_terrain() -> Array<U32>:
+  Support.pass_all(Worldgen.build_terrain())
+
 # ------------------------------------------------------------------ V0-4b
 # The phase fold runs over an *active-cell work list* instead of the colour
 # sub-lattice. Since V0-4b-3b the tick's list is built by the carried dirty-row
@@ -421,6 +430,18 @@ def w5_ck_get(r: Array<U32> & Store.Store) -> Store.Store:
 def w5_ck_store(+w: Window.Window, world: Array<U32>) -> Store.Store:
   w5_ck_get(w5_checkpoint(w, world))
 
+# The selector-aware genesis checkpoint (W5 wiring, `G-scale-8`): gather the
+# window-local array into a fresh store, then express it over the window's
+# resident set in the selected generator's terms (`Store.window_store_sel`). The
+# gathered cells are already concrete -- the selector cannot *add* a shell -- so
+# the shell-free live world must itself be built shell-free (`Sim.shellfree_build_terrain`);
+# what `sel` fixes is that the checkpoint's resident set is stated against the
+# same generator the surrounding assemble/move path uses. For the complete
+# gather every resident key is present, so `w5_ck_store_sel(Worldgen.box(), ...)`
+# is bit-identical to `w5_ck_store`.
+def w5_ck_store_sel(+sel: Bool, +w: Window.Window, world: Array<U32>) -> Store.Store:
+  Store.window_store_sel(sel, w, w5_ck_store(w, world))
+
 # The checkpoint folded into an existing store instead of a fresh one: the
 # resident keys are overwritten with the gathered (ticked) cells while any
 # non-resident survivor of the preceding lossless move is carried through. The
@@ -439,27 +460,42 @@ def w5_ck_store_on(+w: Window.Window, world: Array<U32>, s: Store.Store) -> Stor
 # modified (non-gen-equal) chunk that leaves the window is preserved rather than
 # dropped by an unconditional resident-set rebuild, so moving the window back
 # restores the pile (`Store.window_store` would regenerate it from `gen`).
+def w5_move_sel(
+  +sel: Bool, +w: Window.Window, dcx: U32, dcy: U32, dcz: U32, s: Store.Store
+) -> Window.Window & Store.Store:
+  +w2 = Window.shift(w, dcx, dcy, dcz)
+  (w2, Store.move_store_sel(sel, w, w2, s))
+
 def w5_move(
   +w: Window.Window, dcx: U32, dcy: U32, dcz: U32, s: Store.Store
 ) -> Window.Window & Store.Store:
-  +w2 = Window.shift(w, dcx, dcy, dcz)
-  (w2, Store.move_store(w, w2, s))
+  w5_move_sel(Worldgen.box(), w, dcx, dcy, dcz, s)
 
 # One chunk step: move, assemble the moved window, tick `fuel` times, checkpoint
 # *onto the moved store* (`w5_ck_store_on`) so the lossless move's non-resident
 # survivors are not dropped at the seam. The `(window, store)` pair is threaded
 # through a parameter because a computed pair is not a scrutinee.
-def w5_step_r(r: Window.Window & Store.Store, fuel: Nat) -> Window.Window & Store.Store:
+def w5_step_r_sel(
+  +sel: Bool, r: Window.Window & Store.Store, fuel: Nat
+) -> Window.Window & Store.Store:
   match r:
     case (+w2, +s2):
-      world = Store.assemble_w(w2, s2)
+      world = Store.assemble_w_sel(sel, w2, s2)
       world2 = ticks_w(w2, fuel, world)
       (w2, w5_ck_store_on(w2, world2, s2))
+
+def w5_step_r(r: Window.Window & Store.Store, fuel: Nat) -> Window.Window & Store.Store:
+  w5_step_r_sel(Worldgen.box(), r, fuel)
+
+def w5_step_sel(
+  +sel: Bool, w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store
+) -> Window.Window & Store.Store:
+  w5_step_r_sel(sel, w5_move_sel(sel, w, dcx, dcy, dcz, s), fuel)
 
 def w5_step(
   w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store
 ) -> Window.Window & Store.Store:
-  w5_step_r(w5_move(w, dcx, dcy, dcz, s), fuel)
+  w5_step_sel(Worldgen.box(), w, dcx, dcy, dcz, fuel, s)
 
 # The tick fold that accumulates `List<Delta>` across `fuel` ticks, each tick's
 # deltas carrying *global* coordinates (W1's `commit_trace` maps the window-local
@@ -489,15 +525,25 @@ def w5_trace_fin(
     case (world2, ds):
       (w2, w5_ck_store_on(w2, world2, s2), ds)
 
-def w5_trace_step_r(
-  r: Window.Window & Store.Store, fuel: Nat
+def w5_trace_step_r_sel(
+  +sel: Bool, r: Window.Window & Store.Store, fuel: Nat
 ) -> Window.Window & Store.Store & List<Delta>:
   match r:
     case (+w2, +s2):
-      world = Store.assemble_w(w2, s2)
+      world = Store.assemble_w_sel(sel, w2, s2)
       w5_trace_fin(w2, s2, w5_ticks_trace(fuel, w2, (world, Nil{}), Nil{}))
+
+def w5_trace_step_r(
+  r: Window.Window & Store.Store, fuel: Nat
+) -> Window.Window & Store.Store & List<Delta>:
+  w5_trace_step_r_sel(Worldgen.box(), r, fuel)
+
+def w5_trace_step_sel(
+  +sel: Bool, w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store
+) -> Window.Window & Store.Store & List<Delta>:
+  w5_trace_step_r_sel(sel, w5_move_sel(sel, w, dcx, dcy, dcz, s), fuel)
 
 def w5_trace_step(
   w: Window.Window, dcx: U32, dcy: U32, dcz: U32, fuel: Nat, s: Store.Store
 ) -> Window.Window & Store.Store & List<Delta>:
-  w5_trace_step_r(w5_move(w, dcx, dcy, dcz, s), fuel)
+  w5_trace_step_sel(Worldgen.box(), w, dcx, dcy, dcz, fuel, s)
