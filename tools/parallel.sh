@@ -1,60 +1,67 @@
 #!/usr/bin/env bash
-# Parallel tracks for Bendverse: one git worktree + branch per track, driven by a
-# single supervisor session that owns master and integration.
+# Parallel tracks: one git worktree + branch per track, driven by a single
+# supervisor session that owns master and integration.
 #
-# Why: wall-clock is the scarce resource, and Bend checks use all 6 cores. Two
-# writers in one working tree lose work; separate worktrees isolate edits, the
-# per-cwd scratch files (`.bendverse-*.bend`), and the per-basename native cache
-# (`$TMPDIR/bendverse/<basename>-simtests`). The supervisor dispatches workers
-# here and integrates their branches itself.
+# Shared plumbing. This file is byte-identical in Bendview and Bendverse and
+# derives the repo name at runtime; keep it that way (change one, change the
+# other). Project-specific worker rules live in tools/worker-prompt.md, which
+# `dispatch` passes as the worker's role.
+#
+# Why worktrees: wall-clock, not tokens, is the scarce resource, and two writers
+# in one working tree lose work. Separate worktrees isolate edits and per-cwd
+# scratch files; the supervisor dispatches workers here and integrates their
+# branches itself.
 #
 # Dispatch backend (chosen automatically):
 #   - inside Herdr (HERDR_ENV=1): each worker is an interactive `pi` in its own
-#     Herdr pane, so the human can watch it and Herdr tracks its
-#     idle/working/blocked/done state; the pane output is captured to the log.
+#     Herdr pane (watchable; Herdr tracks its idle/working/blocked/done state);
+#     the pane output is captured to the log.
 #   - otherwise: a headless `pi -p`, output captured to the log.
-# The worktree/branch protocol is identical either way.
 #
 # Usage:
-#   tools/parallel.sh new <track>             # worktree ../Bendverse-<track> on branch <track>
+#   tools/parallel.sh new <track>             # worktree ../<Repo>-<track> on branch <track>
 #   tools/parallel.sh dispatch <track> "task" # run a worker in that worktree
 #   tools/parallel.sh list                    # worktrees
 #   tools/parallel.sh rm <track>              # remove worktree (keeps unmerged branch)
-#   tools/parallel.sh reap [<track>...]       # close leaked worker panes (no args: idle
-#                                             # workers whose worktree is gone)
+#   tools/parallel.sh reap [<track>...]       # close leaked worker panes (no args:
+#                                             # idle workers whose worktree is gone)
 #
-# Env knobs:
-#   BENDVERSE_SPLIT=right|down   Herdr pane split direction (default right; use
-#                                down for the second concurrent worker)
-#   BENDVERSE_KEEP_PANES=1       leave finished Herdr panes open (default: close)
-#   BENDVERSE_TIMEOUT_MS=...     Herdr worker wait timeout (default 3600000)
+# Env knobs (REPO-prefixed names, e.g. BENDVIEW_SPLIT, also work):
+#   TRACK_SPLIT=right|down   Herdr pane split direction (default right; use
+#                            down for the second concurrent worker)
+#   TRACK_KEEP_PANES=1       leave finished Herdr panes open (default: close)
+#   TRACK_TIMEOUT_MS=...     Herdr worker wait timeout (default 3600000)
 #
-# Worker output is captured to ../Bendverse-<track>.log; the worker also writes
-# ../Bendverse-<track>.report.md (its own final report) so the supervisor has a
-# clean result either way.
+# Worker output is captured to ../<Repo>-<track>.log; the worker also writes
+# ../<Repo>-<track>.report.md (its own final report).
 set -euo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
 BASE=$(basename "$ROOT")
 PARENT=$(dirname "$ROOT")
+PREFIX=$(printf '%s' "$BASE" | tr '[:lower:]' '[:upper:]')
 WT="$PARENT/$BASE-"      # worktree prefix
 LOG="$PARENT/$BASE-"     # log/report prefix
-SPLIT=${BENDVERSE_SPLIT:-right}
-TIMEOUT_MS=${BENDVERSE_TIMEOUT_MS:-3600000}
 
-# A dispatch that is killed (e.g. the supervisor's tool timeout) must not leak its
-# Herdr pane: `dispatch_herdr` records the pane here and the EXIT/INT/TERM trap
-# closes it. On the normal path the pane is closed and ACTIVE_PANE cleared, so the
-# trap is a no-op. BENDVERSE_KEEP_PANES=1 disables both.
+# A knob is read as generic TRACK_<name>, then repo-prefixed <PREFIX>_<name>.
+knob() { printenv "TRACK_$1" 2>/dev/null || printenv "${PREFIX}_$1" 2>/dev/null || true; }
+SPLIT=$(knob SPLIT); SPLIT=${SPLIT:-right}
+TIMEOUT_MS=$(knob TIMEOUT_MS); TIMEOUT_MS=${TIMEOUT_MS:-3600000}
+KEEP_PANES=$(knob KEEP_PANES)
+
+# A dispatch that is killed (e.g. the supervisor's tool timeout) must not leak
+# its Herdr pane: record it here and close it on EXIT/INT/TERM. On the normal
+# path the pane is closed and ACTIVE_PANE cleared, so the trap is a no-op.
+# TRACK_KEEP_PANES=1 disables both.
 ACTIVE_PANE=""
 cleanup_pane() {
-  if [ -n "$ACTIVE_PANE" ] && [ "${BENDVERSE_KEEP_PANES:-}" != 1 ]; then
+  if [ -n "$ACTIVE_PANE" ] && [ "$KEEP_PANES" != 1 ]; then
     herdr pane close "$ACTIVE_PANE" >/dev/null 2>&1 || true
   fi
 }
 trap cleanup_pane EXIT INT TERM
 
-usage() { sed -n '2,30p' "$0"; }
+usage() { sed -n '2,40p' "$0"; }
 
 cmd=${1:-}
 shift || true
@@ -62,7 +69,7 @@ shift || true
 # Headless worker: `pi -p`, output tee'd to the log.
 dispatch_pi() { # track worktree task log
   local t=$1 p=$2 task=$3 l=$4
-  ( cd "$p" && BENDVERSE_TRACK="$t" pi -p --approve \
+  ( cd "$p" && env "${PREFIX}_TRACK=$t" TRACK="$t" pi -p --approve \
       --append-system-prompt "$ROOT/tools/worker-prompt.md" \
       "$task" ) 2>&1 | tee "$l"
 }
@@ -72,9 +79,10 @@ dispatch_herdr() { # track worktree task log
   local t=$1 p=$2 task=$3 l=$4
   command -v herdr >/dev/null || { echo "HERDR_ENV=1 but herdr not on PATH" >&2; return 1; }
   command -v jq >/dev/null || { echo "HERDR_ENV=1 but jq not on PATH" >&2; return 1; }
-  local pane
-  pane=$(herdr pane split --current --direction "$SPLIT" --cwd "$p" \
-           --env "BENDVERSE_TRACK=$t" --no-focus | jq -r '.result.pane.pane_id')
+  local pane target=(--current)
+  if [ -n "${HERDR_PANE_ID:-}" ]; then target=(--pane "$HERDR_PANE_ID"); fi
+  pane=$(herdr pane split "${target[@]}" --direction "$SPLIT" --cwd "$p" \
+           --env "${PREFIX}_TRACK=$t" --env "TRACK=$t" --no-focus | jq -r '.result.pane.pane_id')
   if [ -z "$pane" ] || [ "$pane" = "null" ]; then
     echo "herdr pane split returned no pane id" >&2; return 1
   fi
@@ -85,7 +93,7 @@ dispatch_herdr() { # track worktree task log
   herdr agent prompt "$t" "$task" --wait --timeout "$TIMEOUT_MS" >/dev/null \
     || echo "note: worker did not settle cleanly (blocked/stalled?) — captured anyway" >&2
   herdr agent read "$t" --source recent --lines 400 --format text > "$l" 2>&1 || true
-  if [ "${BENDVERSE_KEEP_PANES:-}" != 1 ]; then
+  if [ "$KEEP_PANES" != 1 ]; then
     herdr pane close "$pane" >/dev/null 2>&1 || true
   fi
   ACTIVE_PANE=""
@@ -125,7 +133,7 @@ case "$cmd" in
       herdr agent list | jq -r '.result.agents[] | select(.name != null) | [.name,.pane_id,.cwd] | @tsv' |
       while IFS=$'\t' read -r name pane cwd; do
         case "$cwd" in
-          *Bendverse-*)
+          *"$BASE"-*)
             if [ ! -d "$cwd" ]; then
               echo "closing leaked pane $pane ($name; worktree gone)"
               herdr pane close "$pane" >/dev/null 2>&1 || true
