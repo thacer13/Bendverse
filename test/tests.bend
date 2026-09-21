@@ -2582,6 +2582,69 @@ def t144_bad() -> U32:
   +s0 = Store.set(Store.build_all(), k, mod_quiet(Store.chunk_list(k)))
   t144_step(Sim.w5_step(w1, 1, 0, 0, 0n, s0), Store.assemble_w(w1, s0))
 
+# T161-T165 (track `g4`, G-scale-4 residual): the assemble/evict roundtrip. The
+# laws (`g4_gen_eq_cells_reflect`, `g4_assemble_chunk_regen`) are stated over the
+# variable-fuel `Store.assemble_chunk_w` primitive, because the gate cannot
+# normalise `Store.assemble_cells_w_sel` (its `chunk_list_sel` eagerly builds a
+# 4096-leaf array). These tests exercise the concrete `Store.assemble`/
+# `Store.evict` path and the exact list-length side conditions of the laws.
+def maybe_ref_eq(m: Maybe<&2, List<&2, U32>>, +ref: List<&2, U32>, bad: U32) -> U32:
+  match m:
+    case None{}:
+      U32.add(bad, 1)
+    case Some{val}:
+      inc_if_false(dlist_eq(val, ref), bad)
+
+# T161: the stored and gen chunk lists are both `Chunk.cells() == 4096` long --
+# the `hfuel`/`hlen` side conditions of `g4_gen_eq_cells_reflect`.
+def t161_bad() -> U32:
+  +k = Chunk.key(2, 3, 1)
+  +cl = List.length(&2, U32, Store.chunk_list(k))
+  +cs = List.length(&2, U32, Store.chunk_list_sel(Worldgen.box(), k))
+  bad0 = inc_if_false(Nat.is_eq(cl, 4096n), 0)
+  inc_if_false(Nat.is_eq(cs, 4096n), bad0)
+
+# T162: `gen_eq_cells` on a real chunk: the pure chunk passes, a modified one
+# (active bit set) does not -- the predicate the reflection eliminates.
+def t162_bad() -> U32:
+  +k = Chunk.key(2, 3, 1)
+  +cl = Store.chunk_list(k)
+  +ge = Store.gen_eq_cells(U32.to_nat(4096), cl, cl, True{})
+  bad0 = inc_if_false(ge, 0)
+  +cm = mod_first(cl)
+  +gem = Store.gen_eq_cells(U32.to_nat(4096), cm, cl, True{})
+  inc_if_false(Bool.not(gem), bad0)
+
+# T163: `evict` drops the regenerable key (reads back `None`) and keeps the
+# modified key (reads back its stored cells) -- the store-level behaviour the
+# open `get`/`set` refinement would pin.
+def t163_bad() -> U32:
+  +kgen = Chunk.key(0, 0, 0)
+  +kmod = Chunk.key(1, 2, 3)
+  +sm = Store.set(Store.build_all(), kmod, mod_first(Store.chunk_list(kmod)))
+  +ev = Store.evict(sm)
+  bad0 = maybe_absent(Store.get(ev, kgen), 0)
+  maybe_ref_eq(Store.get(ev, kmod), mod_first(Store.chunk_list(kmod)), bad0)
+
+# T164: eviction is idempotent -- the regenerable key stays gone and the
+# modified key survives a second `evict`, at the store-entry level.
+def t164_bad() -> U32:
+  +kgen = Chunk.key(0, 0, 0)
+  +kmod = Chunk.key(1, 2, 3)
+  +sm = Store.set(Store.build_all(), kmod, mod_first(Store.chunk_list(kmod)))
+  +ev2 = Store.evict(Store.evict(sm))
+  bad0 = maybe_absent(Store.get(ev2, kgen), 0)
+  maybe_ref_eq(Store.get(ev2, kmod), mod_first(Store.chunk_list(kmod)), bad0)
+
+# T165: the headline roundtrip on a mixed store, `assemble(evict s) == assemble s`
+# (every dropped chunk is regenerated from worldgen, every kept chunk survives).
+def t165_bad() -> U32:
+  +kmod = Chunk.key(1, 2, 3)
+  +s = Store.set(Store.build_all(), kmod, mod_first(Store.chunk_list(kmod)))
+  a = Store.assemble(Store.evict(s))
+  b = Store.assemble(s)
+  list_cmp_go(U32.to_nat(262144), Grid.to_list(a), Grid.to_list(b), 0)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2716,3 +2779,8 @@ def main() -> IO(Unit):
     report("T142 move_store loads the entering slab", t142_bad())
     report("T143 move_store preserves the resident overlap", t143_bad())
     report("T144 w5_step out-and-back preserves a modified leaving chunk", t144_bad())
+    report("T161 chunk lists are 4096 long (g4 reflection budget)", t161_bad())
+    report("T162 gen_eq_cells: pure chunk true, modified chunk false (g4)", t162_bad())
+    report("T163 evict drops regenerable, keeps modified entry (g4)", t163_bad())
+    report("T164 evict is idempotent at the store entry (g4)", t164_bad())
+    report("T165 assemble(evict s) == assemble s, mixed store (g4)", t165_bad())
