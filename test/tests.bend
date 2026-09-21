@@ -2338,6 +2338,37 @@ def t157_bad() -> U32:
   +m = Dirty.or_y(Dirty.or_y(Dirty.zermask(), 0), 33)
   t157_go(64n, m, 0)
 
+# T166 (S1/W3, the prime-scan fast path). The live `Dirty.Mask` holds a
+# `Word(64)`, but `active_mask` accumulates the canonical two-`U32` limbs
+# natively and materialises the word once (`src/dirty.bend`), because a `Word` row
+# op per scanned cell is ~100x slower in native. This sweeps all 64 `y` rows of a
+# four-grain world and checks the resulting mask is dirty exactly at the grains'
+# rows -- covering the `y < 32` / `y >= 32` limb boundary.
+def t166_want(+y: U32) -> Bool:
+  Bool.or(U32.is_eq(y, 0), Bool.or(U32.is_eq(y, 5), Bool.or(U32.is_eq(y, 33), U32.is_eq(y, 63))))
+
+def t166_pair(r: Array<U32> & Dirty.Mask) -> Dirty.Mask:
+  match r:
+    case (w, m): m
+
+def t166_world() -> Array<U32>:
+  w0 = t43_empty(18n)
+  w1 = Array.set(U32, w0, Grid.index(1, 0, 1), Cell.activate(Cell.empty()))
+  w2 = Array.set(U32, w1, Grid.index(2, 5, 2), Cell.activate(Cell.empty()))
+  w3 = Array.set(U32, w2, Grid.index(3, 33, 3), Cell.activate(Cell.empty()))
+  Array.set(U32, w3, Grid.index(4, 63, 4), Cell.activate(Cell.empty()))
+
+def t166_go(fuel: Nat, +y: U32, +m: Dirty.Mask, bad: U32) -> U32:
+  match fuel:
+    case 0n: bad
+    case 1n+p:
+      +got = Dirty.is_dirty_y(m, y)
+      t166_go(p, U32.add(y, 1), m, inc_if_false(bool_eq(got, t166_want(y)), bad))
+
+def t166_bad() -> U32:
+  +m = t166_pair(Dirty.active_mask(t166_world()))
+  t166_go(64n, 0, m, 0)
+
 # T122-T125 (S1 endgame, slice W1, `src/wgrid.bend`): the window-local coordinate
 # seam. T122: `wgrid_index` on the canonical window equals `Grid.index` (the seam
 # is a canonical relabelling). T123: `wgrid_neighbor` on the canonical window
@@ -2737,6 +2768,7 @@ def main() -> IO(Unit):
     report("T117 64-bound + and(31)/and(63) ranges (G-scale-2)", t117_bad())
     report("T156 live Dirty delegates to Dirtyn on the held word (W3)", t156_bad())
     report("T157 mask_word m == Dirty.w3_w_of m (W3)", t157_bad())
+    report("T166 active_mask marks exactly the active rows (W3 prime scan)", t166_bad())
     report("T122 wgrid canonical index == Grid.index (W1 seam)", t122_bad())
     report("T123 wgrid canonical neighbor == Grid.neighbor (W1 seam)", t123_bad())
     report("T124 wgrid canonical step_inside == Grid.step_inside (W1 seam)", t124_bad())

@@ -65,26 +65,64 @@ def mark_wake(+m: Mask, +i: U32) -> Mask:
 
 # ------------------------------------------------------------------ scans
 # `active_mask` is the one-time prime: the rows that contain an active cell.
-def amask_go(fuel: Nat, +i: U32, m: Mask, gp: Array<U32> & U32) -> Array<U32> & Mask:
+#
+# S1/W3 performance note. The live `Mask` holds a `Word(64)` (so `mask_word_get`
+# is definitional and the width generalises), but the prime scan touches every
+# cell of the world, and a `Word(64)` row op is 64 structural steps -- with the
+# `mark_if` `pick` the native evaluator forces that branch for *every* cell, a
+# ~100x regression (measured: a 50-tick settle went from ~1.5s to minutes). The
+# scan therefore accumulates the canonical two-`U32` limbs natively (`W3AMask`) and
+# materialises the `Word(64)` once, at the end. The result is bit-identical:
+# `cat 32 lo hi` is exactly the old lo/hi layout. `mark_wake` (per wake, not per
+# cell) still delegates to `Dirtyn`.
+type W3AMask is Data:
+  W3AMask{lo: U32, hi: U32}
+
+def w3_amask_zero() -> W3AMask:
+  W3AMask{0, 0}
+
+def w3_amask_or_y(+m: W3AMask, +y: U32) -> W3AMask:
+  match m:
+    case W3AMask{lo, hi}:
+      +bit = U32.shln(1, U32.to_nat(U32.and(y, 31)))
+      z = U32.is_lt(y, 32)
+      Bool.pick(W3AMask, z,
+        W3AMask{U32.or(lo, bit), hi},
+        W3AMask{lo, U32.or(hi, bit)})
+
+def w3_amask_mark_if(+m: W3AMask, +y: U32, b: Bool) -> W3AMask:
+  Bool.pick(W3AMask, b, w3_amask_or_y(m, y), m)
+
+def w3_amask_to_mask(m: W3AMask) -> Mask:
+  match m:
+    case W3AMask{lo, hi}:
+      Mask{Dirtyn.cat(32n, Dirtyn.u32_word(lo), Dirtyn.u32_word(hi))}
+
+def w3_amask_go(fuel: Nat, +i: U32, m: W3AMask, gp: Array<U32> & U32) -> Array<U32> & W3AMask:
   match fuel:
     case 0n:
       match gp:
         case (world, v):
           +act = U32.is_ne(Cell.active(v), 0)
-          (world, mark_if(m, Grid.iy(i), act))
+          (world, w3_amask_mark_if(m, Grid.iy(i), act))
     case 1n+p:
       match gp:
         case (world, v):
           +act = U32.is_ne(Cell.active(v), 0)
-          +m2 = mark_if(m, Grid.iy(i), act)
+          +m2 = w3_amask_mark_if(m, Grid.iy(i), act)
           +ni = U32.sub(i, 1)
           q = Array.get(U32, world, ni)
-          amask_go(p, ni, m2, q)
+          w3_amask_go(p, ni, m2, q)
+
+def w3_amask_finish(r: Array<U32> & W3AMask) -> Array<U32> & Mask:
+  match r:
+    case (world, m):
+      (world, w3_amask_to_mask(m))
 
 def active_mask(world: Array<U32>) -> Array<U32> & Mask:
   +hi = U32.sub(Grid.volume(), 1)
   q = Array.get(U32, world, hi)
-  amask_go(U32.to_nat(hi), hi, zermask(), q)
+  w3_amask_finish(w3_amask_go(U32.to_nat(hi), hi, w3_amask_zero(), q))
 
 # One row: `base = y<<12`, `fuel = k` walks local `k = z*64+x` from 4095 to 0, so
 # the terminal step processes `k=0` and no read runs past the row.
