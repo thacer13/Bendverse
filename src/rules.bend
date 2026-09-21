@@ -358,13 +358,20 @@ def commit_sets(writes: List<Write>, world: Array<U32>) -> Array<U32>:
 
 # V0-4b-2: the support pass returns its crushed-cell wake indices as a
 # `List<U32>`; convert them to `WWake` writes so the tick can apply the support
-# and phase wakes together at tick end.
-def wake_writes(xs: List<U32>) -> List<Write>:
+# and phase wakes together at tick end. Tail-recursive (constant-stack): a
+# support pass on the shell-free terrain can crush a whole rock column at once,
+# so the old `WWake{h} <> wake_writes(t)` built one machine-stack frame per
+# crush (the A.116 class). The accumulator reverses and `wake_writes` reverses
+# back, so the wake order is unchanged.
+def sfx_wake_writes_go(xs: List<U32>, acc: List<Write>) -> List<Write>:
   match xs:
     case Nil{}:
-      Nil{}
+      acc
     case Con{h, t}:
-      WWake{h} <> wake_writes(t)
+      sfx_wake_writes_go(t, WWake{h} <> acc)
+
+def wake_writes(xs: List<U32>) -> List<Write>:
+  List.reverse(&1, Write, sfx_wake_writes_go(xs, Nil{}))
 
 # One phase, writes applied and wakes pending.
 def phase_pending(r: Array<U32> & List<Write> & List<Write>) -> Array<U32> & List<Write>:

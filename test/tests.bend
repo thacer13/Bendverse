@@ -2948,6 +2948,76 @@ def t184_bad() -> U32:
     Store.move_store_sel(Worldgen.terrain(), w0, w1, Store.build_all_sel(Worldgen.box())), k)), terr0), b2)
   inc_if_false(U32.is_eq(shellfree_chunk_first(Store.get(
     Store.move_store_sel(Worldgen.box(), w0, w1, Store.build_all_sel(Worldgen.box())), k)), box0), b3)
+# T190-T193 (track `stackfix`, shell-free live path is constant-stack under the
+# interpreter): A.120's shell-free live world leaves ~80k cells active after the
+# support pass, so the first live tick folds lists far deeper than the old
+# right-recursive `filter_color`/`commit_trace`/`phases_trace`/`focus_delta_records`
+# could hold. Interpreted `bend runners/serve.bend` faulted right after the dense
+# SNAPSHOT (Bendview engine report). T190 the shell-free genesis checkpoint
+# assembles back shell-free; T191 forces the whole deep first tick (the overflow
+# witness); T192 the selector-threaded `w5_trace_step_sel` move path runs; T193
+# `focus_delta_records` keeps the byte order of a small delta list.
+# ============================================================================
+
+def t190_bad() -> U32:
+  +s = Sim.w5_ck_store_sel(Worldgen.terrain(), Window.canonical(), Sim.shellfree_build_terrain())
+  back = Store.assemble_w_sel(Worldgen.terrain(), Window.canonical(), s)
+  shellfree_border_bed(back)
+
+def delta_len_go(ds: List<Sim.Delta>, acc: U32) -> U32:
+  match ds:
+    case Nil{}: acc
+    case Con{h, t}: delta_len_go(t, U32.add(acc, 1))
+
+# The genesis `(world, deltas)` of the live path: shell-free build + selector
+# checkpoint (both preserved with no tick changes).
+def t191_genesis() -> Array<U32> & List<Sim.Delta>:
+  +w = Window.canonical()
+  +s = Sim.w5_ck_store_sel(Worldgen.terrain(), w, Fixtures.spawn(Sim.shellfree_build_terrain()))
+  Sim.tick_trace_w(w, Store.assemble_w_sel(Worldgen.terrain(), w, s))
+
+def t191_check(r: Array<U32> & List<Sim.Delta>) -> U32:
+  match r:
+    case (world, ds):
+      b0 = inc_if_false(U32.is_ne(Grid.value_at(world, Grid.index(32, 3, 32)), 0), 0)
+      +recs = Serve.focus_delta_records(Window.canonical(), ds)
+      +n = U32.div(U32.from_nat(Serve.bridge2_len(recs)), 8)
+      inc_if_false(U32.is_gt(n, 1000), b0)
+
+def t191_bad() -> U32:
+  t191_check(t191_genesis())
+
+def t192_check(r: Window.Window & Store.Store & List<Sim.Delta>) -> U32:
+  match r:
+    case (w, s, ds):
+      b0 = inc_if_false(U32.is_eq(Window.base_x(w), 1), 0)
+      b1 = inc_if_false(U32.is_eq(is_none_m(Store.get(s, Chunk.key(4, 0, 0))), 1), b0)
+      inc_if_false(U32.is_eq(delta_len_go(ds, 0), 0), b1)
+
+def t192_bad() -> U32:
+  +s = Sim.w5_ck_store_sel(Worldgen.terrain(), Window.canonical(), Sim.shellfree_build_terrain())
+  t192_check(Sim.w5_trace_step_sel(Worldgen.terrain(), Window.canonical(), 1, 0, 0, 0n, s))
+
+# The old right fold, kept only as a small-list byte-order reference.
+def t193_ref_go(+w: Window.Window, ds: List<Sim.Delta>) -> List<&2, U32>:
+  match ds:
+    case Nil{}:
+      Nil{}
+    case Con{h, t}:
+      match h:
+        case Sim.Delta{x, y, z, val}:
+          +idx = Window.win_index(w, x, y, z)
+          Export.bxe_u32_le(idx, Export.bxe_u32_le(Cell.deactivate(val), t193_ref_go(w, t)))
+
+def t193_ds() -> List<Sim.Delta>:
+  Sim.Delta{1, 2, 3, 2863311530} <> (Sim.Delta{64, 5, 6, 1432778632} <>
+    (Sim.Delta{7, 8, 9, 2578103244} <> Nil{}))
+
+def t193_check() -> U32:
+  bridge2_cmp(Serve.focus_delta_records(Window.canonical(), t193_ds()), t193_ref_go(Window.canonical(), t193_ds()), 0)
+
+def t193_bad() -> U32:
+  t193_check()
 
 
 def main() -> IO(Unit):
@@ -3105,3 +3175,7 @@ def main() -> IO(Unit):
     report("T182 shell-free window has no boundary bedrock (shellfree)", t182_bad())
     report("T183 reference box boundary is bedrock, shell-free differs (shellfree)", t183_bad())
     report("T184 entering chunk regenerates from gen_terrain, not gen (shellfree)", t184_bad())
+    report("T190 shell-free genesis checkpoint assembles back shell-free (stackfix)", t190_bad())
+    report("T191 shell-free live first tick is constant-stack (stackfix)", t191_bad())
+    report("T192 w5_trace_step_sel moves the shell-free live window (stackfix)", t192_bad())
+    report("T193 focus_delta_records keeps delta byte order (stackfix)", t193_bad())
