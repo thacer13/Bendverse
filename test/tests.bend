@@ -2582,6 +2582,64 @@ def t144_bad() -> U32:
   +s0 = Store.set(Store.build_all(), k, mod_quiet(Store.chunk_list(k)))
   t144_step(Sim.w5_step(w1, 1, 0, 0, 0n, s0), Store.assemble_w(w1, s0))
 
+# T151-T155 (track `focus`, Bendview D1): the moving-window focus protocol.
+# T151 FOCUS (inbound kind 8) decodes to its chunk origin; T152 the ORIGIN reply
+# (outbound kind 9) encodes the window base chunk exactly; T153 the chunk delta
+# lands `Window.shift` on the requested origin; T154 a moved window's sparse
+# SNAPSHOT enumerates the WINDOW's resident set (a non-resident modified chunk is
+# not counted); T155 the flow carries a pending focus across a credit fold and
+# clears it on consumption.
+def focus_enc3(a: U32, b: U32, c: U32) -> List<&2, U32>:
+  Export.bxe_u32_le(a, Export.bxe_u32_le(b, Export.bxe_u32_le(c, Nil{})))
+
+def focus_decode_ok(c: Serve.Bridge2Ctrl) -> Bool:
+  match c:
+    case Serve.BFocus{cx, cy, cz}:
+      Bool.and(U32.is_eq(cx, 11), Bool.and(U32.is_eq(cy, 22), U32.is_eq(cz, 33)))
+    case _:
+      False{}
+
+def t151_bad() -> U32:
+  c = Serve.bridge2_decode_control(Serve.bridge2_frame(8, focus_enc3(11, 22, 33)))
+  is_bad(focus_decode_ok(c))
+
+def t152_bad() -> U32:
+  frame = Serve.focus_origin_frame(Window.at(1, 2, 3))
+  exp = Export.bxe_u32_le(12, Export.bxe_u32_le(9, focus_enc3(1, 2, 3)))
+  bridge2_cmp(frame, exp, 0)
+
+def t153_bad() -> U32:
+  +w = Window.canonical()
+  +wx = Window.shift(w, Serve.focus_dcx(w, 2), Serve.focus_dcy(w, 3), Serve.focus_dcz(w, 4))
+  b0 = inc_if_false(U32.is_eq(Window.base_x(wx), 2), 0)
+  b1 = inc_if_false(U32.is_eq(Window.base_y(wx), 3), b0)
+  inc_if_false(U32.is_eq(Window.base_z(wx), 4), b1)
+
+def t154_bad() -> U32:
+  +w = Window.at(1, 0, 0)
+  +k = Chunk.key(0, 0, 0)
+  +s = Store.set(Store.build_all(), k, mod_first(Store.chunk_list(k)))
+  sp = Serve.focus_snapshot_sparse(w, s, 7)
+  hdr = List.take(&2, U32, List.drop(&2, U32, sp, 8n), 32n)
+  hexp = Serve.bridge2_snap_header(0, 7, Nil{})
+  bridge2_cmp(hdr, hexp, 0)
+
+def focus_is(c: Serve.Focus, x: U32, y: U32, z: U32) -> Bool:
+  match c:
+    case Serve.FocusNone{}:
+      False{}
+    case Serve.FocusAt{cx, cy, cz}:
+      Bool.and(U32.is_eq(cx, x), Bool.and(U32.is_eq(cy, y), U32.is_eq(cz, z)))
+
+def t155_bad() -> U32:
+  f0 = Serve.bridge3_flow_new(8)
+  +f1 = Serve.bridge3_apply_ctrl(f0, Serve.BFocus{5, 6, 7})
+  b0 = inc_if_false(focus_is(Serve.focus_of_flow(f1), 5, 6, 7), 0)
+  +f2 = Serve.bridge3_credit(f1, 3)
+  b1 = inc_if_false(focus_is(Serve.focus_of_flow(f2), 5, 6, 7), b0)
+  +f3 = Serve.focus_clear(f2)
+  inc_if_false(Bool.not(focus_is(Serve.focus_of_flow(f3), 0, 0, 0)), b1)
+
 
 def main() -> IO(Unit):
   do IO<Unit>:
@@ -2716,3 +2774,8 @@ def main() -> IO(Unit):
     report("T142 move_store loads the entering slab", t142_bad())
     report("T143 move_store preserves the resident overlap", t143_bad())
     report("T144 w5_step out-and-back preserves a modified leaving chunk", t144_bad())
+    report("T151 FOCUS control decodes to its chunk origin (focus/D1)", t151_bad())
+    report("T152 ORIGIN reply encodes the window base chunk (focus/D1)", t152_bad())
+    report("T153 focus delta shifts the window to the requested origin", t153_bad())
+    report("T154 moved-window SNAPSHOT uses the window resident set", t154_bad())
+    report("T155 flow carries and clears a pending focus", t155_bad())
