@@ -4800,3 +4800,53 @@ the engine/writer thread split (`G-bridge-1` item 1) remains. `G-bridge-1` item 
   `HELLO, ORIGIN(0,0,0), SNAPSHOT, DELTA×4, ORIGIN(1,0,0), SNAPSHOT, …` (native
   binary identical). Reported by Bendview:
   `../Bendview/docs/engine-report-focus-control-reader.md`.
+
+### A.120 — shell-free live window (D5 / `G-scale-8` decision A)
+
+**Status:** integrated on `master`. **+0 laws.** Gate green, fast **153/153**,
+sim **45/45**, checker canaries **6 ok / 0 bad**. Parallel track `shellfree`.
+
+**Why.** Bendview reported (`../Bendview/docs/engine-report-live-window-shell.md`,
+D5) that `bendview --live` draws **bedrock walls**: the live link served the
+closed reference box — `runners/serve.bend` built the link world from
+`Fixtures.spawn(Sim.build())` (shelled `Worldgen.build`) and the store passed
+`Worldgen.box()` throughout. Decision A says the window / infinite mode is
+shell-free; the closed box is the reference mode only. Worse, after a move the
+absolute `{0,63}` shell can land *inside* the resident set.
+
+**What landed.** `runners/serve.bend` now builds the link world from
+`Support.pass_all(Worldgen.build_terrain())` and threads `Worldgen.terrain()`
+through the whole live/focus path (`bridge3_link_world`, `focus_initial`,
+`focus_next_state`, the FOCUS move, `focus_snapshot_sparse`, `focus_checkpoint`,
+`bridge3_live_finish`/`bridge3_live_go`, both serve entry points). `src/sim.bend`
+gains selector-threaded W5 driver variants `w5_move_sel` / `w5_step_sel` /
+`w5_trace_step_sel` / `w5_ck_store_sel` (into `Store.move_store_sel` /
+`assemble_w_sel` / `window_store_sel`), plus `shellfree_build_terrain`; the
+existing `w5_*` box wrappers are unchanged, so the reference path is
+bit-identical and every prior test stands. `runners/SERVE.md` documents the
+shell-free live mode.
+
+**Witnesses.** Fast **T182** (the shell-free canonical window has no bedrock on
+any boundary plane), **T183** (box paints bedrock at boundary cells, terrain does
+not), **T184** (a one-chunk x-move's entering chunk is loaded from `gen_terrain`,
+not the absolute `gen`). Native **T185** (the report's exact case: global `x=63`
+is interior to a one-chunk-x moved window and stays shell-free), **T186**
+(`w5_trace_step_sel` threads the selector through move/assemble/checkpoint),
+**T187** (`bridge3_link_world` has no boundary bedrock), **T188**/**T189**
+(`focus_initial` and a FOCUS-driven move stay shell-free).
+
+**Recorded follow-up (not implemented).** The report raises a *window-relative*
+shell (`src/winshell.bend` `gen_at` / `win_border`) as the simulation boundary
+instead of shell-free. Decision A chose shell-free, so the live entering-chunk
+sampler uses `gen_terrain`; if a window-local wall is wanted later, that sampler
+must use `gen_at` instead of the absolute `gen`. Recorded against `G-scale-8`.
+`G-scale-8`'s broader "live rules off the fixed `Grid` box" residue (`W6`)
+remains.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 153/153 PASS;
+  `bend test/simtests.bend` native -> 45/45 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad. Bounded live run exits 0 (HELLO -> dense SNAPSHOT -> DELTAs ->
+  checkpoint -> BYE).
+- Worker report: `../Bendverse-shellfree.report.md`. Reported by Bendview:
+  `../Bendview/docs/engine-report-live-window-shell.md`.

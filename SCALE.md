@@ -255,10 +255,12 @@ overlap state across a move), and `w5_trace_step` (same + accumulated
 `List<Sim.Delta>` with global coordinates). Fast T130–T134 (tick-free) and
 native T135–T139 (moved-window tick vs canonical, global deltas, state across a
 move). **Residual:** the fixed-window live link is landed (`runners/serve.bend`,
-A.115) but the **moving-window focus protocol** (renderer-supplied focus →
-`w5_trace_step`) is not, and `G-scale-5` closes only when the phase-fold cost is
-*measured* on a real window — not yet done. The move is now **lossless** (A.114,
-`Store.move_store`).
+A.115), the **moving-window focus protocol** (renderer-supplied focus →
+`w5_trace_step`) is landed (A.117, native witness A.118), and the live link now
+serves the **shell-free window** (A.120, `w5_*_sel` + `Worldgen.terrain()`), so
+`--live` no longer draws the absolute bedrock walls. `G-scale-5` closes only when
+the phase-fold cost is *measured* on a real window — not yet done. The move is
+now **lossless** (A.114, `Store.move_store`).
 
 ### W6 — retirement (`step 6`, `G-scale-6`)
 Once the live path no longer mentions `Grid.index`/`Grid.ix` (W1–W5), those laws
