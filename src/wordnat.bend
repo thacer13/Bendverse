@@ -8,18 +8,13 @@ import ./dirty.bend as Dirty
 import ./maskword.bend as Maskword
 
 # ============================================================================
-# wordnat (S1 / PLAN `G-scale-2` item 3) -- the `U32 <-> Nat` *index* value theory.
+# wordnat (S1 / PLAN `G-scale-2` item 3) -- the `U32 <-> Nat` *index* bridge.
 #
-# Originally this module closed the `Dirty.Mask <-> Word(64)` composition: the
-# lo/hi `Dirty.Mask` was `U32`-indexed (`U32.and(y,31)`, `U32.is_lt(y,32)`) while
-# `Dirtyn.dwin_get` is `Nat`-indexed, so the composition needed the value theory
-# of the `Word` encoding.
-#
-# S1/W3 rewire. `Dirty.is_dirty_y` now *is* `Dirtyn.dwin_get(64, mask_word m,
-# to_nat y)`, so the composition is definitional and `wnat_mask_word_get` is
-# `{==}`; the lo/hi composition lemmas inherited from A.109 are retired with the
-# `Dirty.Mask{lo, hi}` representation (see the retirement note near the end).
-# The generic value theory below is size-agnostic and kept:
+# `Dirty.is_dirty_y` is `U32`-indexed (`U32.and(y,31)`, `U32.is_lt(y,32)`) while
+# `Dirtyn.dwin_get` is `Nat`-indexed, so the last brick of the
+# `Dirty.Mask <-> Word(64)` isomorphism is the value theory of the `Word`
+# encoding: `Word.to_nat` / `Word.inc` and the `U32.to_nat` / `U32.from_nat`
+# roundtrips. This module develops exactly what the composition needs:
 #
 #   * the `Nat` order/value lemmas (`wnat_n_*`) and a `Nat.cmp` reflection;
 #   * `wnat_w_cmp`: `Word.cmp` agrees with `Nat.cmp` on `Word.to_nat` values
@@ -28,7 +23,8 @@ import ./maskword.bend as Maskword
 #     (`wnat_two_pow` is the structural `2^k`, avoiding `Nat.pow`);
 #   * `wnat_mask_step`: the masked value of the next bit (`dwin_get` supplies the
 #     bit), so `and(y,31)` / `and(y,63)` differ by bit 5;
-#   * `wnat_mask_word_get`: the headline law, now `{==}`.
+#   * `wnat_mask_word_get`: the headline law, `Dirty.is_dirty_y(m,y)` is
+#     `Dirtyn.dwin_get(64, Maskword.mask_word(m), U32.to_nat(y))` for `y < 64.
 #
 # All names are prefixed `wnat_`; the module is additive.
 # ============================================================================
@@ -601,17 +597,106 @@ def wnat_hi_dec(+b5: Bool, +A: Nat, +ty: Nat,
         Equal.sym(Bool, Nat.is_lt(A, 32n), True{}, hA), hAge)
       wnat_absurd(Nat, ty, Nat.add(32n, A), Equal.sym(Bool, True{}, False{}, hTF))
 
-# ------------------------------------------------------------------ retirement (S1/W3)
-# The `Dirty.Mask <-> Word(64)` split is now definitional, not a bridge: since
-# `src/dirty.bend` holds the `Word(64)` directly and its row operations delegate
-# to `src/dirtyn.bend`, `Dirty.is_dirty_y(m, y)` *is* `dwin_get(64, mask_word m,
-# to_nat y)`. The lo/hi composition lemmas above (`wnat_dirty_true`/`_false`,
-# `wnat_mask_get_lo`/`_hi`, `wnat_mask_word_get_z`) are therefore retired with
-# the `Dirty.Mask{lo, hi}` representation; the law below is now `{==}`.
-# The generic `wnat_*` value theory above (the `Word.cmp`/`Nat.cmp` bridge, the
-# masked-value bound, the mask split) is size-agnostic and kept.
+# ------------------------------------------------------------------ is_dirty_y reduction
+def wnat_dirty_true(+m: Dirty.Mask, +y: U32, +h: {U32.is_lt(y, 32) == True{} : Bool})
+  -> {Dirty.is_dirty_y(m, y) == U32.is_ne(U32.and(Dirty.lo_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0) : Bool}:
+  Equal.cong(Bool, Bool, c => Bool.pick(Bool, c,
+    U32.is_ne(U32.and(Dirty.lo_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0),
+    U32.is_ne(U32.and(Dirty.hi_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0)),
+    U32.is_lt(y, 32), True{}, h)
 
-# The `Dirty.Mask <-> Word(64)` index bridge, now definitional.
+def wnat_dirty_false(+m: Dirty.Mask, +y: U32, +h: {U32.is_lt(y, 32) == False{} : Bool})
+  -> {Dirty.is_dirty_y(m, y) == U32.is_ne(U32.and(Dirty.hi_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0) : Bool}:
+  Equal.cong(Bool, Bool, c => Bool.pick(Bool, c,
+    U32.is_ne(U32.and(Dirty.lo_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0),
+    U32.is_ne(U32.and(Dirty.hi_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0)),
+    U32.is_lt(y, 32), False{}, h)
+
+# ------------------------------------------------------------------ composition branches
+def wnat_mask_get_lo(m: Dirty.Mask, y: U32, +h64: {U32.is_lt(y, 64) == True{} : Bool}, +h32: {U32.is_lt(y, 32) == True{} : Bool})
+  -> {U32.is_ne(U32.and(Dirty.lo_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0)
+      == Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)) : Bool}:
+  match m:
+    case Dirty.Mask{+lo, +hi}:
+      match y:
+        case U32{+yw}:
+          +h32nat = Equal.trans(Bool, Nat.is_lt(U32.to_nat(U32{yw}), 32n), U32.is_lt(U32{yw}, 32), True{},
+            Equal.sym(Bool, U32.is_lt(U32{yw}, 32), Nat.is_lt(U32.to_nat(U32{yw}), 32n), wnat_u32_lt32(U32{yw})), h32)
+          +h_and = wnat_and_mask_eq(32n, 5n, yw, h32nat)
+          +hkU = Equal.cong(Word(32n), U32, w => U32{w}, Word.and(32n, yw, Bits.mask(32n, 5n)), yw, h_and)
+          +hk = Equal.cong(U32, Nat, U32.to_nat, U32.and(U32{yw}, 31), U32{yw}, hkU)
+          +hAn = Equal.trans(Bool, Nat.is_lt(U32.to_nat(U32.and(U32{yw}, 31)), 32n), Nat.is_lt(U32.to_nat(U32{yw}), 32n), True{},
+            Equal.cong(Nat, Bool, z => Nat.is_lt(z, 32n), U32.to_nat(U32.and(U32{yw}, 31)), U32.to_nat(U32{yw}), hk), h32nat)
+          +hub = Maskword.u32_bit(lo, U32.to_nat(U32.and(U32{yw}, 31)), hAn)
+          +hcl = Maskword.cat_get_low(32n, Maskword.u32_word(lo), Maskword.u32_word(hi), U32.to_nat(U32{yw}), h32nat)
+          +hidx = Equal.sym(Nat, U32.to_nat(U32.and(U32{yw}, 31)), U32.to_nat(U32{yw}), hk)
+          +hrhs = Equal.trans(Bool,
+            Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), U32.to_nat(U32{yw})),
+            Dirtyn.dwin_get(32n, Maskword.u32_word(lo), U32.to_nat(U32{yw})),
+            Dirtyn.dwin_get(32n, Maskword.u32_word(lo), U32.to_nat(U32.and(U32{yw}, 31))),
+            hcl,
+            Equal.cong(Nat, Bool, z => Dirtyn.dwin_get(32n, Maskword.u32_word(lo), z), U32.to_nat(U32{yw}), U32.to_nat(U32.and(U32{yw}, 31)), hidx))
+          Equal.trans(Bool,
+            U32.is_ne(U32.and(lo, U32.shln(1, U32.to_nat(U32.and(U32{yw}, 31)))), 0),
+            Dirtyn.dwin_get(32n, Maskword.u32_word(lo), U32.to_nat(U32.and(U32{yw}, 31))),
+            Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), U32.to_nat(U32{yw})),
+            hub,
+            Equal.sym(Bool, Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), U32.to_nat(U32{yw})), Dirtyn.dwin_get(32n, Maskword.u32_word(lo), U32.to_nat(U32.and(U32{yw}, 31))), hrhs))
+
+def wnat_mask_get_hi(m: Dirty.Mask, y: U32, +h64: {U32.is_lt(y, 64) == True{} : Bool}, +h32: {U32.is_lt(y, 32) == False{} : Bool})
+  -> {U32.is_ne(U32.and(Dirty.hi_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0)
+      == Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)) : Bool}:
+  match m:
+    case Dirty.Mask{+lo, +hi}:
+      match y:
+        case U32{+yw}:
+          +h64nat = Equal.trans(Bool, Nat.is_lt(U32.to_nat(U32{yw}), 64n), U32.is_lt(U32{yw}, 64), True{},
+            Equal.sym(Bool, U32.is_lt(U32{yw}, 64), Nat.is_lt(U32.to_nat(U32{yw}), 64n), wnat_u32_lt64(U32{yw})), h64)
+          +h32nat = Equal.trans(Bool, Nat.is_lt(U32.to_nat(U32{yw}), 32n), U32.is_lt(U32{yw}, 32), False{},
+            Equal.sym(Bool, U32.is_lt(U32{yw}, 32), Nat.is_lt(U32.to_nat(U32{yw}), 32n), wnat_u32_lt32(U32{yw})), h32)
+          +hA = wnat_mask_bound(32n, 5n, yw)
+          +hd = wnat_mask_decomp(yw, h64nat)
+          +hty = wnat_hi_dec(Dirtyn.dwin_get(32n, yw, 5n), Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n))), U32.to_nat(U32{yw}), hd, h32nat, hA)
+          +hub = Maskword.u32_bit(hi, Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n))), hA)
+          +hch = Maskword.cat_get_high(32n, Maskword.u32_word(lo), Maskword.u32_word(hi), Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n))))
+          +hidx = Equal.sym(Nat, U32.to_nat(U32{yw}), Nat.add(32n, Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n)))), hty)
+          +hrhs = Equal.cong(Nat, Bool, z => Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), z), Nat.add(32n, Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n)))), U32.to_nat(U32{yw}), hidx)
+          Equal.trans(Bool,
+            U32.is_ne(U32.and(hi, U32.shln(1, U32.to_nat(U32.and(U32{yw}, 31)))), 0),
+            Dirtyn.dwin_get(32n, Maskword.u32_word(hi), Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n)))),
+            Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), U32.to_nat(U32{yw})),
+            hub,
+            Equal.trans(Bool,
+              Dirtyn.dwin_get(32n, Maskword.u32_word(hi), Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n)))),
+              Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), Nat.add(32n, Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n))))),
+              Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), U32.to_nat(U32{yw})),
+              Equal.sym(Bool,
+                Dirtyn.dwin_get(64n, Maskword.mask_word(Dirty.Mask{lo, hi}), Nat.add(32n, Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n))))),
+                Dirtyn.dwin_get(32n, Maskword.u32_word(hi), Word.to_nat(32n, Word.and(32n, yw, Bits.mask(32n, 5n)))),
+                hch),
+              hrhs))
+
+# ------------------------------------------------------------------ headline law
+def wnat_mask_word_get_z(z: Bool, +m: Dirty.Mask, +y: U32,
+    +h64: {U32.is_lt(y, 64) == True{} : Bool}, +hz: {z == U32.is_lt(y, 32) : Bool})
+  -> {Dirty.is_dirty_y(m, y) == Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)) : Bool}:
+  match z:
+    case True{}:
+      +h32 = Equal.sym(Bool, True{}, U32.is_lt(y, 32), hz)
+      Equal.trans(Bool, Dirty.is_dirty_y(m, y),
+        U32.is_ne(U32.and(Dirty.lo_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0),
+        Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)),
+        wnat_dirty_true(m, y, h32),
+        wnat_mask_get_lo(m, y, h64, h32))
+    case False{}:
+      +h32 = Equal.sym(Bool, False{}, U32.is_lt(y, 32), hz)
+      Equal.trans(Bool, Dirty.is_dirty_y(m, y),
+        U32.is_ne(U32.and(Dirty.hi_of(m), U32.shln(1, U32.to_nat(U32.and(y, 31)))), 0),
+        Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)),
+        wnat_dirty_false(m, y, h32),
+        wnat_mask_get_hi(m, y, h64, h32))
+
+# The `Dirty.Mask <-> Word(64)` index bridge, completed.
 def wnat_mask_word_get(+m: Dirty.Mask, +y: U32, +h: {U32.is_lt(y, 64) == True{} : Bool})
   -> {Dirty.is_dirty_y(m, y) == Dirtyn.dwin_get(64n, Maskword.mask_word(m), U32.to_nat(y)) : Bool}:
-  {==}
+  wnat_mask_word_get_z(U32.is_lt(y, 32), m, y, h, {==})

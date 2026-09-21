@@ -4,56 +4,26 @@ import ./nat.bend as NatL
 # ============================================================================
 # Dirtyn (SCALE.md step 5 / PLAN gap G-scale-2) -- a size-parameterised row mask.
 #
-# `Dirtyn` is the `y`-row mask as a `Word(w)` bit vector, one bit per row, with
-# `w = 2^n` (`dwin_width`); the current 64-row world is the `n = 6`, `w = 64`
-# instance. S1/W3 made it the *live* representation: `Dirty.Mask` now holds this
-# `Word(64)` and delegates `is_dirty_y`/`or_y`/`mark_wake` to the `dwin_*`
-# operations here, so a window edge of `2^n` rows is the same code at width
-# `2^n`. The module also holds the `Word(64)` constructor (`cat`, `u32_word`,
-# `mask_word`) moved down from `src/maskword.bend` so `dirty.bend` can use it
-# without an import cycle; `maskword.bend` re-exports those names.
+# `Dirty.Mask` (src/dirty.bend) is exactly 64 `y` rows: two `U32` words, bit
+# `y & 31` of `lo`/`hi`. A moving window (SCALE.md step 5, PLAN `G-scale-2`)
+# needs a mask over `2^n` rows, not 64. This module is that mask, additively:
 #
+#   * the mask is a `Word(w)` bit vector, one bit per `y` row, `w = 2^n`
+#     (`dwin_width`); the current 64-row world is the `n = 6`, `w = 64` instance;
 #   * `dwin_zero`, `dwin_is_dirty`, `dwin_or_y`, `dwin_mark_if`, `dwin_mark_wake`
-#     are the row operations (the live `Dirty` ops delegate to them);
+#     are `Dirty`'s operations re-expressed for the wider word;
 #   * the `mark_wake` `y-1` / `y` / `y+1` reach invariant is stated and proven
 #     (`dwin_mark_wake_self` / `_up` / `_down`).
 #
-# `w` is an arbitrary `Nat` (the proofs are structural in the width);
-# `dwin_width_n6` pins `n = 6` to 64 and T90-T94 witness the operations plus the
-# agreement with `Dirty` on 64 rows (T156/T157 witness the W3 delegation).
+# Nothing here touches `src/dirty.bend` or the live 64-row path: the module is a
+# model. `w` is an arbitrary `Nat` here (the proofs are structural in the width),
+# and `2^n` is the width we instantiate; `dwin_width_n6` pins `n = 6` to 64 and
+# T90-T94 witness the operations plus the agreement with `Dirty` on 64 rows.
 #
 # Row indices are `Nat`; the in-range hypothesis is `{Nat.is_lt(y, w) == True}`,
 # which reduces definitionally with the width (so the recursive proofs below can
 # pass it straight through) -- no `Bool` reflection is needed.
 # ============================================================================
-
-# ------------------------------------------------------------------ Word(64) constructor
-# Moved down from `src/maskword.bend` (S1/W3): `dirty.bend` now delegates its
-# row operations to this module on the `Word(64)` the `Dirty.Mask` holds, so the
-# word constructor must sit *below* `dirty` (this module imports only `nat`).
-# `maskword.bend` re-exports these names.
-
-# `cat n lo hi`: `lo` (width n) in the low bits, `hi` (width 32) in the high bits.
-def cat(n: Nat, lo: Word(n), hi: Word(32n)) -> Word(Nat.add(32n, n)):
-  match n:
-    case 0n:
-      hi
-    case 1n+ +p:
-      match lo:
-        case WCon{h, t}:
-          WCon{h, cat(p, t, hi)}
-
-def u32_word(a: U32) -> Word(32n):
-  match a:
-    case U32{w}: w
-
-# The `Word(64)` mask constructor. With the live `Dirty.Mask` now holding the
-# `Word(64)` directly (S1/W3), the lo/hi split collapses: `mask_word` is the
-# identity on the held word. The `cat`/`u32_word` bricks above remain the
-# concrete lo/hi constructor used by the `U32 <-> Word(32)` bridge
-# (`src/maskword.bend`) and the tests.
-def mask_word(w: Word(64n)) -> Word(64n):
-  w
 
 # The mask is a `Word(w)`, one bit per row (LSB = row 0).
 
