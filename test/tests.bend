@@ -2686,7 +2686,7 @@ def t154_bad() -> U32:
   +w = Window.at(1, 0, 0)
   +k = Chunk.key(0, 0, 0)
   +s = Store.set(Store.build_all(), k, mod_first(Store.chunk_list(k)))
-  sp = Serve.focus_snapshot_sparse(w, s, 7)
+  sp = Serve.focus_snapshot_sparse(Worldgen.box(), w, s, 7)
   hdr = List.take(&2, U32, List.drop(&2, U32, sp, 8n), 32n)
   hexp = Serve.bridge2_snap_header(0, 7, Nil{})
   bridge2_cmp(hdr, hexp, 0)
@@ -2867,6 +2867,89 @@ def t175_bad() -> U32:
   maybe_absent(Store.get(Store.set(evil, k, g4_cell_list(6)), k), bad0)
 
 
+# ============================================================================
+# T182-T186 (track `shellfree`, `G-scale-8` live wiring): decision A says the
+# window / infinite mode is shell-free, so the live link world
+# (`Sim.shellfree_build_terrain`) and the selector-threaded driver (`*_sel` over
+# `Worldgen.terrain()`) must never carry the absolute reference shell. T182 the
+# shell-free canonical window has no bedrock on its boundary planes; T183 the
+# shelled reference does (control) and the shell-free world differs there; T184 a
+# moved window's entering chunk is regenerated from `gen_terrain`, not `gen`; T185
+# a shell-free genesis + terrain move has no shell at absolute x=63 even though
+# that plane is *interior* to a window moved one chunk in x (a box move paints the
+# wall there); T186 the W5 driver `*_sel` entry points thread the selector end to
+# end.
+# ============================================================================
+
+# Boundary test on the canonical 64^3 index space: any coordinate on 0/63.
+def shellfree_on_border(+i: U32) -> Bool:
+  Bool.or(
+    Bool.or(U32.is_eq(Grid.ix(i), 0), U32.is_eq(Grid.ix(i), 63)),
+    Bool.or(
+      Bool.or(U32.is_eq(Grid.iy(i), 0), U32.is_eq(Grid.iy(i), 63)),
+      Bool.or(U32.is_eq(Grid.iz(i), 0), U32.is_eq(Grid.iz(i), 63))))
+
+# Walk the world cell list (index-ascending) counting bedrock cells on the
+# boundary planes.
+def shellfree_border_bed_go(fuel: Nat, +i: U32, bad: U32, cells: List<U32>) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          +hit = Bool.and(shellfree_on_border(i), U32.is_eq(Cell.material(h), Cell.bedrock()))
+          shellfree_border_bed_go(p, U32.add(i, 1), U32.add(bad, Bool.pick(U32, hit, 1, 0)), t)
+
+def shellfree_border_bed(world: Array<U32>) -> U32:
+  shellfree_border_bed_go(U32.to_nat(262144), 0, 0, Grid.to_list(world))
+
+def t182_bad() -> U32:
+  shellfree_border_bed(Sim.shellfree_build_terrain())
+
+# The reference generator paints the box boundary; the shell-free sampler does
+# not. One `Sim.build` boundary sample ties the control to the actual reference
+# world (`Support.pass_all` preserves material).
+def t183_bad() -> U32:
+  b0 = inc_if_false(U32.is_eq(Cell.material(Worldgen.at(Worldgen.box(), 0, 10, 10, 42)), Cell.bedrock()), 0)
+  b1 = inc_if_false(U32.is_eq(Cell.material(Worldgen.at(Worldgen.box(), 10, 63, 40, 42)), Cell.bedrock()), b0)
+  b2 = inc_if_false(U32.is_eq(Cell.material(Worldgen.at(Worldgen.box(), 10, 40, 63, 42)), Cell.bedrock()), b1)
+  b3 = inc_if_false(Bool.not(U32.is_eq(Cell.material(Worldgen.at(Worldgen.terrain(), 0, 10, 10, 42)), Cell.bedrock())), b2)
+  b4 = inc_if_false(Bool.not(U32.is_eq(Cell.material(Worldgen.at(Worldgen.terrain(), 10, 63, 40, 42)), Cell.bedrock())), b3)
+  b5 = inc_if_false(Bool.not(U32.is_eq(Cell.material(Worldgen.at(Worldgen.terrain(), 10, 40, 63, 42)), Cell.bedrock())), b4)
+  inc_if_false(U32.is_eq(Cell.material(Grid.value_at(Sim.build(), Grid.index(0, 10, 10))), Cell.bedrock()), b5)
+
+def shellfree_chunk_first(m: Maybe<&2, List<&2, U32>>) -> U32:
+  match m:
+    case None{}:
+      4294967295
+    case Some{cells}:
+      match cells:
+        case Nil{}:
+          4294967295
+        case Con{h, t}:
+          h
+
+# T184: the entering chunk of a one-chunk x-move (key (4,0,0), global x 64..79)
+# is loaded from the selected generator: `gen_terrain` (no shell) vs `gen` (the
+# absolute y=0/z=0 shell). The move's first cell locates the source generator.
+def t184_bad() -> U32:
+  +w0 = Window.canonical()
+  +w1 = Window.at(1, 0, 0)
+  +k = Chunk.key(4, 0, 0)
+  +terr0 = Chunk.gen_local_sel(Worldgen.terrain(), k, 0)
+  +box0 = Chunk.gen_local_sel(Worldgen.box(), k, 0)
+  b0 = inc_if_false(U32.is_ne(terr0, box0), 0)
+  b1 = inc_if_false(Bool.not(U32.is_eq(Cell.material(terr0), Cell.bedrock())), b0)
+  b2 = inc_if_false(U32.is_eq(Cell.material(box0), Cell.bedrock()), b1)
+  b3 = inc_if_false(U32.is_eq(shellfree_chunk_first(Store.get(
+    Store.move_store_sel(Worldgen.terrain(), w0, w1, Store.build_all_sel(Worldgen.box())), k)), terr0), b2)
+  inc_if_false(U32.is_eq(shellfree_chunk_first(Store.get(
+    Store.move_store_sel(Worldgen.box(), w0, w1, Store.build_all_sel(Worldgen.box())), k)), box0), b3)
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T5 index roundtrip (2^18)", index_bad())
@@ -3019,3 +3102,6 @@ def main() -> IO(Unit):
     report("T173 other-key read unchanged after a write (g4store)", t173_bad())
     report("T174 g4_same agrees with U32.is_eq on sampled keys (g4store)", t174_bad())
     report("T175 malformed leaf: wf false, same-key get is None (g4store)", t175_bad())
+    report("T182 shell-free window has no boundary bedrock (shellfree)", t182_bad())
+    report("T183 reference box boundary is bedrock, shell-free differs (shellfree)", t183_bad())
+    report("T184 entering chunk regenerates from gen_terrain, not gen (shellfree)", t184_bad())

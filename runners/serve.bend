@@ -5,6 +5,7 @@ import ../src/chunk.bend as Chunk
 import ../src/window.bend as Window
 import ../src/store.bend as Store
 import ../src/sim.bend as Sim
+import ../src/worldgen.bend as Worldgen
 import ../scenarios/fixtures.bend as Fixtures
 import ./export.bend as Export
 
@@ -263,8 +264,8 @@ def focus_count_go(keys: List<&2, U32>, +s: Store.Store, acc: U32) -> U32:
       +add = Bool.pick(U32, bridge2_is_some(Store.get(s, k)), 1, 0)
       focus_count_go(t, s, U32.add(acc, add))
 
-def focus_snapshot_sparse(+w: Window.Window, +s: Store.Store, +ticks: U32) -> List<&2, U32>:
-  +ev = Store.evict(s)
+def focus_snapshot_sparse(+sel: Bool, +w: Window.Window, +s: Store.Store, +ticks: U32) -> List<&2, U32>:
+  +ev = Store.evict_sel(sel, s)
   +keys = Window.resident_keys(w)
   +count = focus_count_go(keys, ev, 0)
   h = bridge2_snap_header(count, ticks, Nil{})
@@ -280,8 +281,8 @@ def focus_tick_r(+w: Window.Window, +s: Store.Store, r: Array<U32> & List<Sim.De
     case (world2, ds2):
       (w, Sim.w5_ck_store_on(w, world2, s), ds2)
 
-def focus_next_state(+w: Window.Window, +s: Store.Store) -> Window.Window & Store.Store & List<Sim.Delta>:
-  focus_tick_r(w, s, Sim.tick_trace_w(w, Store.assemble_w(w, s)))
+def focus_next_state(+sel: Bool, +w: Window.Window, +s: Store.Store) -> Window.Window & Store.Store & List<Sim.Delta>:
+  focus_tick_r(w, s, Sim.tick_trace_w(w, Store.assemble_w_sel(sel, w, s)))
 
 # --------------------------------------------------------- control decoding
 # Inbound frames (CREDIT/REQUEST/STOP, plus the outbound kinds for symmetry).
@@ -901,33 +902,40 @@ def bridge3_reader(chan: Chan(Bridge2Ctrl)) -> IO(Unit):
 # window. The stream is gated by the credit window the forked reader fills from
 # CREDIT. A STOP frame (or EOF) sets the flow's sticky stop flag; the loop then
 # flushes a sparse checkpoint SNAPSHOT, a PING and a BYE.
+#
+# The live world is **shell-free** (decision A, `G-scale-8`): the window / infinite
+# mode samples `Worldgen.gen_terrain`, so the link world is `Sim.build_terrain`
+# (support-seeded, no absolute `{0,63}` bedrock) and the whole store/focus path is
+# threaded with `Worldgen.terrain()`. The shelled `Sim.build` stays the reference
+# mode (`Test/tests`/`simtests` build it directly); a moving window must not carry
+# the absolute shell, which after a shift can land inside the resident set.
 def bridge3_link_world() -> Array<U32>:
-  Fixtures.spawn(Sim.build())
+  Fixtures.spawn(Sim.shellfree_build_terrain())
 
 def bridge3_live_fuel() -> Nat:
   1073741824n
 
 # The final keyframe (windowed): a sparse SNAPSHOT of the resident window, a
 # PING, then BYE.
-def focus_checkpoint(+w: Window.Window, +s: Store.Store, +chan: Chan(Bridge2Ctrl), +tick: U32, f: Bridge3Flow) -> IO(Unit):
+def focus_checkpoint(+sel: Bool, +w: Window.Window, +s: Store.Store, +chan: Chan(Bridge2Ctrl), +tick: U32, f: Bridge3Flow) -> IO(Unit):
   do IO<Unit>:
-    f1 : Bridge3Flow <- bridge3_write_frame(f, chan, tick, focus_snapshot_sparse(w, s, tick))
+    f1 : Bridge3Flow <- bridge3_write_frame(f, chan, tick, focus_snapshot_sparse(sel, w, s, tick))
     f2 : Bridge3Flow <- bridge3_write_frame(f1, chan, tick, bridge2_ping(tick))
     bridge2_stdout(bridge2_bye())
     IO.print_err("serve: checkpoint tick=" ++ U32.show(tick) ++ ", bye\n")
 
 # The genesis `(window, store, deltas)` for tick 1: the canonical window at tick 0,
 # checkpointed after one canonical tick.
-def focus_initial() -> Window.Window & Store.Store & List<Sim.Delta>:
+def focus_initial(+sel: Bool) -> Window.Window & Store.Store & List<Sim.Delta>:
   +w0 = Window.canonical()
-  +s0 = Sim.w5_ck_store(w0, bridge3_link_world())
-  focus_next_state(w0, s0)
+  +s0 = Sim.w5_ck_store_sel(sel, w0, bridge3_link_world())
+  focus_next_state(sel, w0, s0)
 
 # Flush the terminal checkpoint at the loop's current tick.
-def bridge3_live_finish(r: Window.Window & Store.Store & List<Sim.Delta>, chan: Chan(Bridge2Ctrl), +tick: U32, f: Bridge3Flow) -> IO(Unit):
+def bridge3_live_finish(+sel: Bool, r: Window.Window & Store.Store & List<Sim.Delta>, chan: Chan(Bridge2Ctrl), +tick: U32, f: Bridge3Flow) -> IO(Unit):
   match r:
     case (w, s, ds):
-      focus_checkpoint(w, s, chan, tick, f)
+      focus_checkpoint(sel, w, s, chan, tick, f)
 
 # The continuous loop body: one self-recursive `def` with a phase selector (Bend
 # has no forward references / mutual recursion). `fuel` is `2 * ticks` because
@@ -944,12 +952,12 @@ def bridge3_live_finish(r: Window.Window & Store.Store & List<Sim.Delta>, chan: 
 # A post-STOP SNAPSHOT may supersede one unbroadcast tick -- legal, since a
 # SNAPSHOT supersedes all deltas.
 def bridge3_live_go(
-  fuel: Nat, +phase: U32, +tick: U32, +chan: Chan(Bridge2Ctrl), f: Bridge3Flow,
+  +sel: Bool, fuel: Nat, +phase: U32, +tick: U32, +chan: Chan(Bridge2Ctrl), f: Bridge3Flow,
   r: Window.Window & Store.Store & List<Sim.Delta>
 ) -> IO(Unit):
   match fuel:
     case 0n:
-      bridge3_live_finish(r, chan, tick, f)
+      bridge3_live_finish(sel, r, chan, tick, f)
     case 1n+p:
       match phase:
         case 0:
@@ -957,16 +965,16 @@ def bridge3_live_go(
             case B3Flow{window, queued, cap, coalesced, keyframe, tick0, idle, stop, focus}:
               match stop:
                 case True{}:
-                  bridge3_live_finish(r, chan, tick, f)
+                  bridge3_live_finish(sel, r, chan, tick, f)
                 case False{}:
-                  bridge3_live_go(p, 1, tick, chan, f, r)
+                  bridge3_live_go(sel, p, 1, tick, chan, f, r)
         case 1:
           match r:
             case (+w, +s, ds):
               do IO<Unit>:
                 f2 : Bridge3Flow <- bridge3_write_frame(f, chan, tick, focus_delta_frame(w, tick, ds))
                 r1 : Window.Window & Store.Store & List<Sim.Delta> = (w, s, Nil{})
-                bridge3_live_go(p, 2, tick, chan, f2, r1)
+                bridge3_live_go(sel, p, 2, tick, chan, f2, r1)
         case 2:
           match f:
             case B3Flow{window, queued, cap, coalesced, keyframe, tick0, idle, stop, focus}:
@@ -975,24 +983,24 @@ def bridge3_live_go(
                   match r:
                     case (+w, +s, _):
                       do IO<Unit>:
-                        r2 : Window.Window & Store.Store & List<Sim.Delta> = focus_next_state(w, s)
-                        bridge3_live_go(p, 0, U32.add(tick, 1), chan, f, r2)
+                        r2 : Window.Window & Store.Store & List<Sim.Delta> = focus_next_state(sel, w, s)
+                        bridge3_live_go(sel, p, 0, U32.add(tick, 1), chan, f, r2)
                 case FocusAt{cx, cy, cz}:
                   match r:
                     case (+w, +s, _):
                       do IO<Unit>:
                         fnew : Bridge3Flow = B3Flow{window, queued, cap, coalesced, keyframe, tick0, idle, stop, FocusNone{}}
                         r3 : Window.Window & Store.Store & List<Sim.Delta> =
-                          Sim.w5_trace_step(w, focus_dcx(w, cx), focus_dcy(w, cy), focus_dcz(w, cz), 1n, s)
-                        bridge3_live_go(p, 3, U32.add(tick, 1), chan, fnew, r3)
+                          Sim.w5_trace_step_sel(sel, w, focus_dcx(w, cx), focus_dcy(w, cy), focus_dcz(w, cz), 1n, s)
+                        bridge3_live_go(sel, p, 3, U32.add(tick, 1), chan, fnew, r3)
         case _:
           match r:
             case (+w2, +s2, _):
               do IO<Unit>:
                 f2 : Bridge3Flow <- bridge3_write_frame(f, chan, tick, focus_origin_frame(w2))
-                f3 : Bridge3Flow <- bridge3_write_frame(f2, chan, tick, focus_snapshot_sparse(w2, s2, tick))
-                r4 : Window.Window & Store.Store & List<Sim.Delta> = focus_next_state(w2, s2)
-                bridge3_live_go(p, 0, U32.add(tick, 1), chan, f3, r4)
+                f3 : Bridge3Flow <- bridge3_write_frame(f2, chan, tick, focus_snapshot_sparse(sel, w2, s2, tick))
+                r4 : Window.Window & Store.Store & List<Sim.Delta> = focus_next_state(sel, w2, s2)
+                bridge3_live_go(sel, p, 0, U32.add(tick, 1), chan, f3, r4)
 
 # Control path: a forked reader parses CREDIT/REQUEST/STOP/FOCUS from stdin; the
 # writer is fully credit-gated, so the loop runs until STOP/EOF.
@@ -1006,7 +1014,7 @@ def bridge3_serve_control() -> IO(Unit):
     f0 : Bridge3Flow = bridge3_flow_new(8)
     f1 : Bridge3Flow <- bridge3_write_frame(f0, chan, 0, bridge2_snapshot_dense(bridge3_link_world(), 0))
     IO.print_err("serve: dense snapshot tick=0\n")
-    bridge3_live_go(bridge3_live_fuel(), 0, 1, chan, f1, focus_initial())
+    bridge3_live_go(Worldgen.terrain(), bridge3_live_fuel(), 0, 1, chan, f1, focus_initial(Worldgen.terrain()))
 
 # No-control path: the same loop, but the window is pre-seeded so no reader is
 # needed; it runs a bounded number of ticks and then checkpoints.
@@ -1019,7 +1027,7 @@ def bridge3_serve_bounded(+ticks: Nat) -> IO(Unit):
     f0 : Bridge3Flow = bridge3_credit(bridge3_flow_new(8), 64)
     f1 : Bridge3Flow <- bridge3_write_frame(f0, chan, 0, bridge2_snapshot_dense(bridge3_link_world(), 0))
     IO.print_err("serve: dense snapshot tick=0\n")
-    bridge3_live_go(Nat.double(Nat.double(ticks)), 0, 1, chan, f1, focus_initial())
+    bridge3_live_go(Worldgen.terrain(), Nat.double(Nat.double(ticks)), 0, 1, chan, f1, focus_initial(Worldgen.terrain()))
 
 def bridge3_serve_if(control: Bool) -> IO(Unit):
   match control:

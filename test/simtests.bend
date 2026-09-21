@@ -1033,7 +1033,7 @@ def t177_check(r: Window.Window & Store.Store & List<Sim.Delta>, +tick: U32) -> 
     case (+w, +s, _):
       +ev = Store.evict(s)
       +keys = Window.resident_keys(w)
-      +frame = Serve.focus_snapshot_sparse(w, s, tick)
+      +frame = Serve.focus_snapshot_sparse(Worldgen.box(), w, s, tick)
       +ws = Serve.bridge2_dec_words(frame)
       +kind = Serve.bridge2_word1(ws)
       +len = Serve.bridge2_word0(ws)
@@ -1172,7 +1172,7 @@ def t180_check(r: Window.Window & Store.Store & List<Sim.Delta>, +tick: U32) -> 
   match r:
     case (+w, +s, ds):
       +origin = Serve.focus_origin_frame(w)
-      +snap = Serve.focus_snapshot_sparse(w, s, tick)
+      +snap = Serve.focus_snapshot_sparse(Worldgen.box(), w, s, tick)
       +delta = Serve.focus_delta_frame(w, tick, ds)
       +ping = Serve.bridge2_ping(tick)
       +bye = Serve.bridge2_bye()
@@ -1187,6 +1187,104 @@ def t180() -> U32:
   +w0 = Window.canonical()
   +s0 = focusnative_s0()
   t180_check(focusnative_trace(w0, 1, 0, 0, 1n, s0), 1)
+
+# ============================================================================
+# T185-T189 (track `shellfree`, `G-scale-8` live wiring, native): the live link's
+# world and the selector-threaded driver / focus path are shell-free end to end.
+# T185 global x=63 is *interior* to a window moved one chunk in x (local x=47): a
+# terrain genesis + terrain move leaves it shell-free, a box move paints the
+# absolute shell there (the report's wall inside the resident set). T186 the W5
+# driver `*_sel` entry point threads the selector through move/assemble/checkpoint.
+# T187 the served genesis world (`Serve.bridge3_link_world`) has no boundary
+# bedrock. T188 the live genesis after one live tick (`Serve.focus_initial` over
+# `Worldgen.terrain()`) is shell-free. T189 a FOCUS-driven move of that genesis
+# (`Sim.w5_trace_step_sel` over `Worldgen.terrain()`) leaves the moved window
+# shell-free.
+# ============================================================================
+
+def shellfree_border(+i: U32) -> Bool:
+  Bool.or(
+    Bool.or(U32.is_eq(Grid.ix(i), 0), U32.is_eq(Grid.ix(i), 63)),
+    Bool.or(
+      Bool.or(U32.is_eq(Grid.iy(i), 0), U32.is_eq(Grid.iy(i), 63)),
+      Bool.or(U32.is_eq(Grid.iz(i), 0), U32.is_eq(Grid.iz(i), 63))))
+
+def shellfree_border_bed_go(fuel: Nat, +i: U32, bad: U32, cells: List<U32>) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          +hit = Bool.and(shellfree_border(i), U32.is_eq(Cell.material(h), Cell.bedrock()))
+          shellfree_border_bed_go(p, U32.add(i, 1), U32.add(bad, Bool.pick(U32, hit, 1, 0)), t)
+
+def shellfree_all_bed_go(fuel: Nat, bad: U32, cells: List<U32>) -> U32:
+  match fuel:
+    case 0n:
+      bad
+    case 1n+p:
+      match cells:
+        case Nil{}:
+          bad
+        case Con{h, t}:
+          +hit = U32.is_eq(Cell.material(h), Cell.bedrock())
+          shellfree_all_bed_go(p, U32.add(bad, Bool.pick(U32, hit, 1, 0)), t)
+
+def t185_bad() -> U32:
+  +w0 = Window.canonical()
+  +w1 = Window.at(1, 0, 0)
+  +s_t = Store.move_store_sel(Worldgen.terrain(), w0, w1, Store.build_all_sel(Worldgen.terrain()))
+  wt = Store.assemble_w_sel(Worldgen.terrain(), w1, s_t)
+  +idx = Window.win_index(w1, 63, 30, 30)
+  b0 = inc_if_false(Bool.not(U32.is_eq(Cell.material(Grid.value_at(wt, idx)), Cell.bedrock())), 0)
+  +s_b = Store.move_store_sel(Worldgen.box(), w0, w1, Store.build_all_sel(Worldgen.box()))
+  wb = Store.assemble_w_sel(Worldgen.box(), w1, s_b)
+  inc_if_false(U32.is_eq(Cell.material(Grid.value_at(wb, idx)), Cell.bedrock()), b0)
+
+def t186_cell(r: Window.Window & Store.Store & List<Sim.Delta>, +sel: Bool) -> U32:
+  match r:
+    case (+w2, +s2, _):
+      world = Store.assemble_w_sel(sel, w2, s2)
+      Cell.material(Grid.value_at(world, Window.win_index(w2, 63, 30, 30)))
+
+def t186_bad() -> U32:
+  b0 = inc_if_false(Bool.not(U32.is_eq(
+    t186_cell(Sim.w5_trace_step_sel(Worldgen.terrain(), Window.canonical(), 1, 0, 0, 0n,
+      Store.build_all_sel(Worldgen.terrain())), Worldgen.terrain()), Cell.bedrock())), 0)
+  inc_if_false(U32.is_eq(
+    t186_cell(Sim.w5_trace_step_sel(Worldgen.box(), Window.canonical(), 1, 0, 0, 0n,
+      Store.build_all_sel(Worldgen.box())), Worldgen.box()), Cell.bedrock()), b0)
+
+def t187() -> U32:
+  shellfree_border_bed_go(U32.to_nat(262144), 0, 0, Grid.to_list(Serve.bridge3_link_world()))
+
+def t188_fin(r: Window.Window & Store.Store & List<Sim.Delta>) -> U32:
+  match r:
+    case (+w, +s, _):
+      shellfree_all_bed_go(U32.to_nat(262144), 0, Grid.to_list(Store.assemble_w_sel(Worldgen.terrain(), w, s)))
+
+def t188() -> U32:
+  t188_fin(Serve.focus_initial(Worldgen.terrain()))
+
+def shellfree_genesis_store(r: Window.Window & Store.Store & List<Sim.Delta>) -> Store.Store:
+  match r:
+    case (_, +s, _):
+      s
+
+def shellfree_genesis() -> Store.Store:
+  shellfree_genesis_store(Serve.focus_initial(Worldgen.terrain()))
+
+def t189_check(r: Window.Window & Store.Store & List<Sim.Delta>) -> U32:
+  match r:
+    case (+w2, +s2, _):
+      shellfree_all_bed_go(U32.to_nat(262144), 0, Grid.to_list(Store.assemble_w_sel(Worldgen.terrain(), w2, s2)))
+
+def t189() -> U32:
+  +w0 = Window.canonical()
+  t189_check(Sim.w5_trace_step_sel(Worldgen.terrain(), w0, 1, 0, 0, 1n, shellfree_genesis()))
 
 
 def main() -> IO(Unit):
@@ -1231,3 +1329,8 @@ def main() -> IO(Unit):
     report("T178 moved DELTA idx + ORIGIN replay the moved tick", t178())
     report("T179 fixed window unchanged (canonical ORIGIN + T145)", t179())
     report("T180 moved-window ORIGIN precedes SNAPSHOT (frame order)", t180())
+    report("T185 moved window: absolute x=63 interior shell gone (shellfree)", t185_bad())
+    report("T186 W5 *_sel driver threads the generator selector (shellfree)", t186_bad())
+    report("T187 live link world is shell-free at its boundary (shellfree)", t187())
+    report("T188 live genesis after one tick is shell-free (shellfree)", t188())
+    report("T189 focus move stays shell-free (shellfree)", t189())

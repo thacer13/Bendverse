@@ -204,3 +204,11 @@ moved-window `SNAPSHOT` (`focus_origin_frame`, `focus_snapshot_sparse`). `DELTA`
 idx is window-local (`focus_delta_frame`), identical to `Grid.index` on the
 canonical window. The wire shapes are witnessed tick-free by T151-T155; the
 native end-to-end moved-window stream is left to integration.
+
+The live world is **shell-free** (decision A, `G-scale-8`): `bridge3_link_world`
+serves `Sim.shellfree_build_terrain` and the store/focus path takes
+`Worldgen.terrain()` (`focus_initial`, `focus_next_state`, `focus_snapshot_sparse`,
+`Sim.w5_trace_step_sel`), so the window / infinite mode never carries the absolute
+`{0,63}` reference shell -- a moving window would otherwise draw a wall *inside*
+its resident set. The shelled `Sim.build` stays the reference mode (the fast and
+native suites build it directly, passing `Worldgen.box()`).
