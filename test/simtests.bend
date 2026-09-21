@@ -919,6 +919,276 @@ def t149() -> U32:
   inc_if_false(Serve.bridge3_is_stopped(f6), b5)
 
 
+# ============================================================================
+# T176-T180 (track `focusnative`): the native end-to-end witness for the
+# moving-window focus protocol (Bendview D1, `runners/serve.bend`). T145-T149
+# witness the fixed window; these mirror them on the window a FOCUS request
+# moves: the ORIGIN reply (kind 9) names the moved base chunk, the sparse
+# SNAPSHOT (kind 1) enumerates the moved window's resident set, the DELTA
+# records are window-local indices that, read through the ORIGIN, address the
+# moved tick's global cells and replay to its world, and the fixed window stays
+# byte-identical. Start from the spawned pile (as T145-T149 do), because the
+# settled `Sim.build` is a fixed point and would make the moved tick vacuous.
+# ============================================================================
+
+# The shared scene: the spawned pile checkpointed at the canonical window.
+def focusnative_s0() -> Store.Store:
+  +w0 = Window.canonical()
+  Sim.w5_ck_store(w0, Fixtures.spawn(Sim.build()))
+
+# A FOCUS-driven move: the renderer asks for base chunk `(cx,cy,cz)`, so the
+# engine shifts by `focus_dc*` -- exactly `bridge3_live_go`'s phase-2 arithmetic
+# -- and rebuilds residency losslessly (`Sim.w5_move`). Returns the moved window
+# and its store.
+def focusnative_move(+w0: Window.Window, +cx: U32, +cy: U32, +cz: U32, s: Store.Store) -> Window.Window & Store.Store:
+  Sim.w5_move(w0, Serve.focus_dcx(w0, cx), Serve.focus_dcy(w0, cy), Serve.focus_dcz(w0, cz), s)
+
+# The same move plus one moved-window tick (`Sim.w5_trace_step`) -- what the live
+# loop runs before emitting ORIGIN + SNAPSHOT.
+def focusnative_trace(+w0: Window.Window, +cx: U32, +cy: U32, +cz: U32, fuel: Nat, s: Store.Store) -> Window.Window & Store.Store & List<Sim.Delta>:
+  Sim.w5_trace_step(w0, Serve.focus_dcx(w0, cx), Serve.focus_dcy(w0, cy), Serve.focus_dcz(w0, cz), fuel, s)
+
+# The moved window's pre-tick array (the state the moved DELTA applies to).
+def focusnative_pre(m: Window.Window & Store.Store) -> Array<U32>:
+  match m:
+    case (+w, +s):
+      Store.assemble_w(w, s)
+
+# T176: a FOCUS-driven move yields an ORIGIN frame (kind 9) whose payload is the
+# window's new base chunk -- exactly the requested origin, in order (x,y,z).
+def t176_probe(m: Window.Window & Store.Store, +cx: U32, +cy: U32, +cz: U32) -> U32:
+  match m:
+    case (+w, s):
+      +frame = Serve.focus_origin_frame(w)
+      +ws = Serve.bridge2_dec_words(frame)
+      +len = Serve.bridge2_word0(ws)
+      +kind = Serve.bridge2_word1(ws)
+      +pay = List.drop(&2, U32, ws, 2n)
+      b0 = inc_if_false(U32.is_eq(kind, 9), 0)
+      b1 = inc_if_false(U32.is_eq(len, 12), b0)
+      b2 = inc_if_false(U32.is_eq(Serve.bridge2_word0(pay), cx), b1)
+      b3 = inc_if_false(U32.is_eq(Serve.bridge2_word1(pay), cy), b2)
+      b4 = inc_if_false(U32.is_eq(Serve.bridge2_word2(pay), cz), b3)
+      b5 = inc_if_false(U32.is_eq(Window.base_x(w), cx), b4)
+      b6 = inc_if_false(U32.is_eq(Window.base_y(w), cy), b5)
+      inc_if_false(U32.is_eq(Window.base_z(w), cz), b6)
+
+def t176() -> U32:
+  +w0 = Window.canonical()
+  +s0 = focusnative_s0()
+  t176_probe(focusnative_move(w0, 1, 0, 0, s0), 1, 0, 0)
+
+# T177: the moved-window sparse SNAPSHOT (kind 1) decodes to the moved window's
+# resident set. Walk `count` records, each `key u32` then 4096 cell words, and
+# collect the keys.
+def t177_keys_dec(fuel: Nat, ws: List<&2, U32>, acc: List<&2, U32>) -> List<&2, U32>:
+  match fuel:
+    case 0n:
+      acc
+    case 1n+p:
+      match ws:
+        case Nil{}:
+          acc
+        case Con{+k, r}:
+          t177_keys_dec(p, List.drop(&2, U32, r, 4096n), k <> acc)
+
+def t177_mem_go(+k: U32, keys: List<&2, U32>, hit: Bool) -> Bool:
+  match keys:
+    case Nil{}:
+      hit
+    case Con{h, t}:
+      t177_mem_go(k, t, Bool.or(hit, U32.is_eq(h, k)))
+
+def t177_mem(+k: U32, keys: List<&2, U32>) -> Bool:
+  t177_mem_go(k, keys, False{})
+
+# Every decoded key is a resident key of the moved window with a store entry.
+def t177_all_resident(decoded: List<&2, U32>, +keys: List<&2, U32>, +ev: Store.Store, bad: U32) -> U32:
+  match decoded:
+    case Nil{}:
+      bad
+    case Con{+h, t}:
+      b0 = inc_if_false(t177_mem(h, keys), bad)
+      b1 = inc_if_false(Serve.bridge2_is_some(Store.get(ev, h)), b0)
+      t177_all_resident(t, keys, ev, b1)
+
+# The record keys are distinct (a set, not a multiset).
+def t177_distinct(decoded: List<&2, U32>, bad: U32) -> U32:
+  match decoded:
+    case Nil{}:
+      bad
+    case Con{+h, +t}:
+      b0 = inc_if_false(Bool.not(t177_mem(h, t)), bad)
+      t177_distinct(t, b0)
+
+def t177_present_count(keys: List<&2, U32>, +ev: Store.Store, acc: U32) -> U32:
+  match keys:
+    case Nil{}:
+      acc
+    case Con{h, t}:
+      t177_present_count(t, ev, U32.add(acc, Bool.pick(U32, Serve.bridge2_is_some(Store.get(ev, h)), 1, 0)))
+
+def t177_check(r: Window.Window & Store.Store & List<Sim.Delta>, +tick: U32) -> U32:
+  match r:
+    case (+w, +s, _):
+      +ev = Store.evict(s)
+      +keys = Window.resident_keys(w)
+      +frame = Serve.focus_snapshot_sparse(w, s, tick)
+      +ws = Serve.bridge2_dec_words(frame)
+      +kind = Serve.bridge2_word1(ws)
+      +len = Serve.bridge2_word0(ws)
+      +hdr = List.drop(&2, U32, ws, 2n)
+      +count = Serve.bridge2_word0(List.drop(&2, U32, hdr, 7n))
+      +fticks = Serve.bridge2_word0(List.drop(&2, U32, hdr, 6n))
+      +decoded = t177_keys_dec(U32.to_nat(count), List.drop(&2, U32, ws, 10n), Nil{})
+      b0 = inc_if_false(U32.is_eq(kind, 1), 0)
+      b1 = inc_if_false(U32.is_eq(fticks, tick), b0)
+      b2 = inc_if_false(U32.is_eq(len, U32.add(32, U32.mul(count, 16388))), b1)
+      b3 = inc_if_false(U32.is_gt(count, 0), b2)
+      b4 = inc_if_false(Nat.is_eq(U32.to_nat(count), List.length(&2, U32, decoded)), b3)
+      b5 = t177_all_resident(decoded, keys, ev, b4)
+      b6 = t177_distinct(decoded, b5)
+      b7 = inc_if_false(U32.is_eq(t177_present_count(keys, ev, 0), count), b6)
+      inc_if_false(U32.is_eq(Serve.focus_count_go(keys, ev, 0), count), b7)
+
+def t177() -> U32:
+  +w0 = Window.canonical()
+  +s0 = focusnative_s0()
+  t177_check(focusnative_trace(w0, 1, 0, 0, 1n, s0), 1)
+
+# T178: the T147 relation on the moved window. Decode a served moved DELTA and
+# read each window-local `idx` through the ORIGIN (`Window.win_gx/gy/gz`): the
+# recovered global coordinate is exactly the coordinate the moved tick's delta
+# carries, its `Window.win_index` is the served `idx`, and the served word is the
+# delta's deactivated value. The served window-local record set then replays onto
+# the moved window's pre-tick array to reconstruct its post-tick array -- the
+# T145 relation on the moved window.
+def t178_one(+w: Window.Window, d: Sim.Delta, +idx: U32, +word: U32, bad: U32) -> U32:
+  match d:
+    case Sim.Delta{x, y, z, val}:
+      +gx = Window.win_gx(w, idx)
+      +gy = Window.win_gy(w, idx)
+      +gz = Window.win_gz(w, idx)
+      b0 = inc_if_false(U32.is_eq(gx, x), bad)
+      b1 = inc_if_false(U32.is_eq(gy, y), b0)
+      b2 = inc_if_false(U32.is_eq(gz, z), b1)
+      b3 = inc_if_false(U32.is_eq(word, Cell.deactivate(val)), b2)
+      inc_if_false(U32.is_eq(Window.win_index(w, gx, gy, gz), idx), b3)
+
+# Pair the decoded served `(idx, word)` records with the moved tick's own delta
+# list: the ORIGIN-decoded global coordinate and the deactivated word must match
+# the tick's `Sim.Delta`, and the window-local `win_index` of that global
+# coordinate must be the served `idx` (T147 on the moved window).
+def t178_pair(+w: Window.Window, ds: List<Sim.Delta>, ws: List<&2, U32>, bad: U32) -> U32:
+  match ds:
+    case Nil{}:
+      inc_if_false(List.is_empty(&2, U32, ws), bad)
+    case Con{h, t}:
+      match ws:
+        case Nil{}:
+          U32.add(bad, 1)
+        case Con{+idx, r1}:
+          match r1:
+            case Nil{}:
+              U32.add(bad, 1)
+            case Con{word, r2}:
+              t178_pair(w, t, r2, t178_one(w, h, idx, word, bad))
+
+def t178_ref(r: Window.Window & Store.Store & List<Sim.Delta>) -> List<Sim.Delta>:
+  match r:
+    case (_, _, ds):
+      ds
+
+def t178_check(r: Window.Window & Store.Store & List<Sim.Delta>, ref: List<Sim.Delta>, pre: Array<U32>, +tick: U32) -> U32:
+  match r:
+    case (+w, +s, ds):
+      +frame = Serve.focus_delta_frame(w, tick, ds)
+      +ws = Serve.bridge3_delta_frame_words(frame)
+      rep = serve_replay_pairs(ws, pre)
+      post = Store.assemble_w(w, s)
+      b0 = serve_same(rep, post)
+      +dec = Serve.bridge2_dec_words(frame)
+      +len = Serve.bridge2_word0(dec)
+      +kind = Serve.bridge2_word1(dec)
+      +rest = List.drop(&2, U32, dec, 2n)
+      +ftick = Serve.bridge2_word0(rest)
+      +cnt = Serve.bridge2_word1(rest)
+      b1 = inc_if_false(U32.is_eq(kind, 2), b0)
+      b2 = inc_if_false(U32.is_eq(ftick, tick), b1)
+      b3 = inc_if_false(U32.is_eq(cnt, U32.div(U32.sub(len, 8), 8)), b2)
+      b4 = inc_if_false(U32.is_eq(len, U32.add(8, U32.mul(cnt, 8))), b3)
+      b5 = inc_if_false(U32.is_gt(cnt, 0), b4)
+      t178_pair(w, ref, ws, b5)
+
+def t178() -> U32:
+  +w0 = Window.canonical()
+  +s0a = focusnative_s0()
+  +s0b = focusnative_s0()
+  pre = focusnative_pre(focusnative_move(w0, 1, 0, 0, s0a))
+  t178_check(focusnative_trace(w0, 1, 0, 0, 1n, s0b),
+    t178_ref(focusnative_trace(w0, 1, 0, 0, 1n, focusnative_s0())),
+    pre, 1)
+
+# T179: the fixed-window path is unchanged. The canonical ORIGIN is (0,0,0) and
+# the focus DELTA frame on the canonical window is byte-identical to the original
+# `bridge2` frame (`Window.win_index == Grid.index` there); T145 still replays.
+def t179_origin() -> U32:
+  +frame = Serve.focus_origin_frame(Window.canonical())
+  +ws = Serve.bridge2_dec_words(frame)
+  +kind = Serve.bridge2_word1(ws)
+  +pay = List.drop(&2, U32, ws, 2n)
+  b0 = inc_if_false(U32.is_eq(kind, 9), 0)
+  b1 = inc_if_false(U32.is_eq(Serve.bridge2_word0(pay), 0), b0)
+  b2 = inc_if_false(U32.is_eq(Serve.bridge2_word1(pay), 0), b1)
+  inc_if_false(U32.is_eq(Serve.bridge2_word2(pay), 0), b2)
+
+def t179_focus_frame(r: Array<U32> & List<Sim.Delta>) -> List<&2, U32>:
+  match r:
+    case (_, ds):
+      Serve.focus_delta_frame(Window.canonical(), 1, ds)
+
+def t179_base_frame(r: Array<U32> & List<Sim.Delta>) -> List<&2, U32>:
+  match r:
+    case (_, ds):
+      Serve.bridge2_delta_frame(1, ds)
+
+# On the canonical window `Window.win_index == Grid.index`, so the focus DELTA
+# frame is byte-identical to the original `bridge2` frame. Two independent
+# `tick_trace` runs are deterministic, so each frame is built from its own trace
+# (a linear `List<Delta>` cannot be consumed twice).
+def t179_fixed_delta() -> U32:
+  is_bad(kinds_eq(t179_focus_frame(Sim.tick_trace(Fixtures.spawn(Sim.build()))),
+                  t179_base_frame(Sim.tick_trace(Fixtures.spawn(Sim.build())))))
+
+def t179() -> U32:
+  b0 = t179_origin()
+  b1 = inc_if_false(U32.is_eq(t179_fixed_delta(), 0), b0)
+  inc_if_false(U32.is_eq(t145(), 0), b1)
+
+# T180: the moved-window stream is ordered ORIGIN (kind 9) then SNAPSHOT
+# (kind 1) then DELTA -- the renderer re-anchors before the keyframe, the moved
+# analogue of T148's fixed-window HELLO..BYE ordering.
+def t180_check(r: Window.Window & Store.Store & List<Sim.Delta>, +tick: U32) -> U32:
+  match r:
+    case (+w, +s, ds):
+      +origin = Serve.focus_origin_frame(w)
+      +snap = Serve.focus_snapshot_sparse(w, s, tick)
+      +delta = Serve.focus_delta_frame(w, tick, ds)
+      +ping = Serve.bridge2_ping(tick)
+      +bye = Serve.bridge2_bye()
+      +stream = List.append(&2, U32, origin,
+        List.append(&2, U32, snap,
+          List.append(&2, U32, delta,
+            List.append(&2, U32, ping, bye))))
+      is_bad(kinds_eq(Serve.bridge3_frame_kinds(stream),
+        9 <> (1 <> (2 <> (3 <> (4 <> Nil{}))))))
+
+def t180() -> U32:
+  +w0 = Window.canonical()
+  +s0 = focusnative_s0()
+  t180_check(focusnative_trace(w0, 1, 0, 0, 1n, s0), 1)
+
+
 def main() -> IO(Unit):
   do IO<Unit>:
     report("T1 tick determinism (10 ticks)", t1())
@@ -956,3 +1226,8 @@ def main() -> IO(Unit):
     report("T147 serve DELTA records carry global coordinates", t147())
     report("T148 fixed-window link frame ordering (HELLO..BYE)", t148())
     report("T149 STOP is sticky and grants the flush window", t149())
+    report("T176 FOCUS move -> ORIGIN names the moved base chunk", t176())
+    report("T177 moved-window sparse SNAPSHOT == moved resident set", t177())
+    report("T178 moved DELTA idx + ORIGIN replay the moved tick", t178())
+    report("T179 fixed window unchanged (canonical ORIGIN + T145)", t179())
+    report("T180 moved-window ORIGIN precedes SNAPSHOT (frame order)", t180())
