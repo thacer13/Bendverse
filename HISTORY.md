@@ -4705,3 +4705,52 @@ viewer/controls manual.
   6 ok / 0 bad.
 - Worker reports: `../Bendverse-focus.report.md`, `../Bendverse-w3.report.md`,
   `../Bendverse-g4.report.md`.
+
+### A.118 — parallel tracks: `W3` re-landed (native cliff fixed) + focus native witness + `G-scale-4` trie refinement
+
+**Status:** integrated on `master`. **+9 laws (130 → 139).** Gate green, fast
+**149/149**, sim **40/40**, checker canaries **6 ok / 0 bad**. Three tracks from
+`74c026b` (and branch `w3`); all three merged.
+
+**`w3fix` — the live dirty-set rewire re-landed (S1 step 5 item 1).** The A.117
+`w3` rewire (live `Dirty.Mask` → `Dirtyn`'s `Word(64)`) is back, with the
+native-suite "hang" root-caused as a **performance cliff, not a logic bug**:
+`Dirty.active_mask`'s per-cell `mark_if` forced a 64-step `Word.or` for every
+scanned cell (262144/tick, ~838M `Word` nodes over a 50-tick settle), so native
+T4b never finished (one `settle(50)` measured >4 min vs 1.5 s baseline). The fix
+has `active_mask` accumulate the canonical two-`U32` limbs natively during the
+prime scan and materialise the `Word(64)` **once** (`Dirtyn.cat(32n, u32_word lo,
+u32_word hi)`); the live `Mask` still holds the word, so `mask_word_get` stays
+definitional and canonical behaviour is bit-identical (same settled hash). Native
+`settle(50)+tick` back to ~2 s; sim **40/40 in ~13 s**. Only `src/dirty.bend`
+and `test/tests.bend` changed (+T166). **`G-scale-2` item 1 closed.** §4.1 gains
+the W3 retirement note: the `wordnat` lo/hi composition lemmas stated about
+`Dirty.Mask{lo, hi}` are retired with the record (kept, no longer evidence),
+`mask_word_get` is `{==}`, and `u32_word_bit` stays live.
+
+**`focusnative` — the native end-to-end focus witness (Bendview D1).** The A.117
+focus protocol had only tick-free witnesses; this adds native T176–T180:
+T176 `ORIGIN` (kind 9) encodes the moved base chunk; T177 the moved sparse
+`SNAPSHOT` decodes to exactly the moved window's resident set
+(`32 + count*16388`); T178 the moved `DELTA` records replay the moved tick and
+satisfy `win_gx/gy/gz(w, idx) == (x,y,z)` — the T145/T147 relation on the moved
+window; T179 the canonical path is byte-unchanged; T180 the moved stream order
+`ORIGIN → SNAPSHOT → DELTA/PING/BYE`. Tests only; sim **40/40**.
+
+**`g4store` — the `G-scale-4` store-level trie refinement (closed).** `src/g4.bend`
+gains `g4_wf` (leaf-depth well-formedness: every `SLeaf` reachable at a partial
+depth is absent), `g4_set_preserves_wf`, and on a well-formed store
+`g4_get_set_same` (`get(set(s,k,v),k) == Some{v}`) plus `g4_get_set_other`
+(other-key invisibility, needing no WF), with full-depth wrappers; and the
+per-key fold steps `g4_assemble_cells_same`/`_other`, `g4_keep_cells_drop`/`keep`.
+Nine laws, fast T171–T175. **Still open:** the full 64-key `evict`/`assemble`
+fold — blocked by Bend's quantity discipline on a reusable Type-valued hypothesis
+function through the `assemble_go_sel` recursion, and by the checker's >45 s
+normalisation of `chunk_list_sel`'s 4096-leaf array (`G-scale-4` updated).
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 149/149 PASS;
+  `bend test/simtests.bend` native -> 40/40 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+- Worker reports: `../Bendverse-w3fix.report.md`,
+  `../Bendverse-focusnative.report.md`, `../Bendverse-g4store.report.md`.

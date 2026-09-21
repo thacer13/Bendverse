@@ -160,8 +160,8 @@ to `Grid`, so every proof/test stands). What remains is the **rule migration**:
 moving the live tick pipeline off the fixed `Grid` torus onto a window. §7 stays
 binding — it is a coordinate + residency change, not a semantics change.
 
-**State (verify with `bend_status` / `bend_audit` first).** Gate green, 130 laws,
-fast 141/141, sim 35/35, gaps 6 open / 13 closed. Relevant landed API:
+**State (verify with `bend_status` / `bend_audit` first).** Gate green, 139 laws,
+fast 149/149, sim 40/40, gaps 6 open / 13 closed. Relevant landed API:
 `src/window.bend` (`Window`, `win_index`, `win_lx/ly/lz`, `win_gx/gy/gz`,
 `shift`, `entering`/`leaving`), `src/store.bend` (`assemble_w`, `window_store`),
 `src/winshell.bend` (`win_border`/`gen_at`), `src/maskword.bend` + `src/wordnat.bend`
@@ -207,7 +207,7 @@ bit-identical to `Grid.step_inside`). **Residual:** the driver's chunk margin
 exhaustively witnessed, not a law.
 *Files:* `Rules`, `Support`, `WGrid`.
 
-### W3 — live dirty-set rewire (step 5 item 1, `G-scale-2`) — **attempted, reverted (A.117)**
+### W3 — live dirty-set rewire (step 5 item 1, `G-scale-2`) — **landed (A.118)**
 Replace the two-`U32` `Dirty.Mask` with `Dirtyn` at the window's row count. For
 the 64-row canonical window this is an equivalence: `mask_word_get` (A.109) is
 exactly the bridge, and the `mark_wake` wrap range is `nat_mod_lt`/`dwin_up_lt`
@@ -215,15 +215,15 @@ exactly the bridge, and the `mark_wake` wrap range is `nat_mod_lt`/`dwin_up_lt`
 `src/dirty.bend`, `src/sim.bend`. *Evidence:* fast/sim unchanged; transparency by
 `mask_word_get`.
 
-**Status (A.117).** The rewire was implemented on branch `w3`: `Dirty.Mask`
-became `Mask{w: Word(64n)}`, the operations delegated to `Dirtyn`, the `Word(64)`
-constructor moved below `dirty`, and `mask_word_get` became definitional. It
-passed `bend PROOF.bend` and the fast suite (133/133) but **hangs the native sim
-suite** at T4b — a settled-world `Sim.tick` that does not terminate
-(`settled_hash(True)`; `settled_hash(False)` completes). The cause is not yet
-pinned: a settled world has no wakes, so it is not wake volume, and
-`active_mask`/`dirty_todo` alone complete. Reverted from `master`; branch `w3`
-kept for reference. **Do not re-land without a native T4b run.**
+**Status (A.118).** Landed. `Dirty.Mask` holds `Mask{w: Word(64n)}`, the row ops
+delegate to `Dirtyn`, the `Word(64)` constructor sits below `dirty` (in
+`src/dirtyn.bend`), and `mask_word_get` is definitional. The first attempt (A.117)
+hung the native sim at T4b; the cause was a **performance cliff**, not a logic
+bug — `active_mask`'s per-cell `mark_if` forced a 64-step `Word.or` for every
+scanned cell (262144/tick, ~838M nodes over `settle(50)`). The fix accumulates
+the canonical two-`U32` limbs natively during the prime scan and materialises the
+`Word(64)` once. Canonical behaviour is bit-identical; native sim 40/40 in ~13 s;
+fast T156/T157/T166. `G-scale-2` item 1 closed.
 
 **Implementation note (A.111 — the blocker to plan around).** The rewire is not
 purely local: `src/maskword.bend` imports `src/dirty.bend` (it is *about*
