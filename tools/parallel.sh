@@ -20,6 +20,8 @@
 #   tools/parallel.sh dispatch <track> "task" # run a worker in that worktree
 #   tools/parallel.sh list                    # worktrees
 #   tools/parallel.sh rm <track>              # remove worktree (keeps unmerged branch)
+#   tools/parallel.sh reap [<track>...]       # close leaked worker panes (no args: idle
+#                                             # workers whose worktree is gone)
 #
 # Env knobs:
 #   BENDVERSE_SPLIT=right|down   Herdr pane split direction (default right; use
@@ -39,6 +41,18 @@ WT="$PARENT/$BASE-"      # worktree prefix
 LOG="$PARENT/$BASE-"     # log/report prefix
 SPLIT=${BENDVERSE_SPLIT:-right}
 TIMEOUT_MS=${BENDVERSE_TIMEOUT_MS:-3600000}
+
+# A dispatch that is killed (e.g. the supervisor's tool timeout) must not leak its
+# Herdr pane: `dispatch_herdr` records the pane here and the EXIT/INT/TERM trap
+# closes it. On the normal path the pane is closed and ACTIVE_PANE cleared, so the
+# trap is a no-op. BENDVERSE_KEEP_PANES=1 disables both.
+ACTIVE_PANE=""
+cleanup_pane() {
+  if [ -n "$ACTIVE_PANE" ] && [ "${BENDVERSE_KEEP_PANES:-}" != 1 ]; then
+    herdr pane close "$ACTIVE_PANE" >/dev/null 2>&1 || true
+  fi
+}
+trap cleanup_pane EXIT INT TERM
 
 usage() { sed -n '2,30p' "$0"; }
 
@@ -64,6 +78,7 @@ dispatch_herdr() { # track worktree task log
   if [ -z "$pane" ] || [ "$pane" = "null" ]; then
     echo "herdr pane split returned no pane id" >&2; return 1
   fi
+  ACTIVE_PANE="$pane"
   # Launch interactive pi with the worker role, then submit the task and wait.
   herdr agent start "$t" --kind pi --pane "$pane" --timeout 60000 -- \
     --approve --append-system-prompt "$ROOT/tools/worker-prompt.md" >/dev/null
@@ -73,6 +88,7 @@ dispatch_herdr() { # track worktree task log
   if [ "${BENDVERSE_KEEP_PANES:-}" != 1 ]; then
     herdr pane close "$pane" >/dev/null 2>&1 || true
   fi
+  ACTIVE_PANE=""
   cat "$l"
 }
 
@@ -92,6 +108,31 @@ case "$cmd" in
     ;;
   list)
     git -C "$ROOT" worktree list
+    ;;
+  reap)
+    command -v herdr >/dev/null || { echo "herdr not on PATH" >&2; exit 1; }
+    command -v jq >/dev/null || { echo "jq not on PATH" >&2; exit 1; }
+    if [ "$#" -gt 0 ]; then
+      for t in "$@"; do
+        pane=$(herdr agent list | jq -r --arg n "$t" '.result.agents[] | select(.name==$n) | .pane_id' | head -1)
+        if [ -n "$pane" ] && [ "$pane" != null ]; then
+          echo "closing $t ($pane)"; herdr pane close "$pane" >/dev/null 2>&1 || true
+        else
+          echo "no pane for $t" >&2
+        fi
+      done
+    else
+      herdr agent list | jq -r '.result.agents[] | select(.name != null) | [.name,.pane_id,.cwd] | @tsv' |
+      while IFS=$'\t' read -r name pane cwd; do
+        case "$cwd" in
+          *Bendverse-*)
+            if [ ! -d "$cwd" ]; then
+              echo "closing leaked pane $pane ($name; worktree gone)"
+              herdr pane close "$pane" >/dev/null 2>&1 || true
+            fi ;;
+        esac
+      done
+    fi
     ;;
   dispatch)
     t=${1:?usage: parallel.sh dispatch <track> "<task>"}; shift

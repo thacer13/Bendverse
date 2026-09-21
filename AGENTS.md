@@ -118,6 +118,9 @@ talking to a single session; this protocol is the session's job, not the human's
   the gate and the fast suite; only the supervisor runs the native simulation
   suite, once, at integration. Cap concurrent tracks at ~3.
 - **Lifecycle.** `tools/parallel.sh new|rm|list`; remove a worktree once its
-  branch is merged. The per-cwd scratch files and the per-basename native cache
-  are isolated by construction when worktrees are named distinctly (the script
-  uses `../Bendverse-<track>`).
+  branch is merged. `tools/parallel.sh reap [<track>...]` closes leaked worker
+  panes (no args: idle workers whose worktree is gone); a dispatch killed
+  mid-wait closes its own pane via an EXIT/INT/TERM trap, so the supervisor
+  should also run `reap` after a stint that was interrupted. The per-cwd scratch
+  files and the per-basename native cache are isolated by construction when
+  worktrees are named distinctly (the script uses `../Bendverse-<track>`).
