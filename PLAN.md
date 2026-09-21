@@ -796,6 +796,31 @@ index).
 
 #### Deferred
 
+- [ ] **L1** Runtime generation language — layered terrain recipes · deferred (the
+  recorded next big frontier, deliberately after Bendview advances) · deps: `S1`,
+  `W4`/`W6` · serves: scale, terrain
+  — **The next big frontier.** Today worldgen is one compiled pure function
+  (`Worldgen.gen_terrain`: a single heightfield, `height = 8 + floor(noise·24)`
+  on 16-cell features) chosen by a one-bit `Bool` (`Worldgen.box()`/`terrain()`).
+  `L1` makes generation **data-driven**: an interactive authoring front-end
+  designs **layers** (base height, noise octaves, material strata, filters) and
+  emits a **recipe**, and the engine **interprets** the recipe at runtime as a
+  pure function of `(recipe, x, y, z, seed)`. This is the engine side of
+  Bendview's `D3` (terrain richness). **Engine work:** replace the `Bool` selector
+  with a recipe type + a pure interpreter, kept total so the worldgen laws still
+  apply, and extend the oracle plumbing (`.bvg`/`.bgt` reference vectors,
+  `runners/export.bend`) so every recipe is pinned and a renderer port can be
+  validated against it. **The renderer port is the real cost:** Bendview's WGSL
+  `gen` is a bit-exact port of the current heightfield; a recipe language means
+  the GPU must interpret the recipe too (or the engine precomputes a
+  heightmap/mipmap). Terrain cost ladder: amplitude cheap, octaves/feature-size
+  moderate (breaks the far-march assumptions → mipmap), non-heightfield/3D major
+  (invalidates the far march). **Front-end:** the authoring tool (seed search,
+  layer editing, preview, export) starts as a **Bendview mode** (it already ports
+  `gen` and previews the horizon) and splits into a **third sibling** once the
+  recipe format is worth owning — *Bendview plays the world, the authoring
+  project designs it, Bendverse states its laws*.
+
 - [ ] **P1** Publish a proven slice to BendHub · deferred · deps: — · serves: —
   — **deferred** until the engine is more complete; §5.4 records what a publish
   must contain, the guardrails, and why it is not done yet.
@@ -811,9 +836,12 @@ index).
 | `F1` | open (frontend) | — | — |
 | `M7d` | optional | `V3c` (landed A.90) | — |
 | `M7b`/`M7e` | blocked | — | — |
+| `L1` | deferred | `S1`, `W4`/`W6` | Bendview `D3` / authoring |
 | `P1` | deferred | — | — |
 
-**Order note.** The frontier is `S1` (`B1`/`B2` landed in A.94); the optional
+**Order note.** The frontier is `S1` (`B1`/`B2` landed in A.94); **after `S1`,
+`L1` (the runtime generation language) is the recorded next big frontier** —
+Bendview will advance independently until then. The optional
 parallel track is independent of it. `M8a–M8d` and `M9` have landed. M7 and V2b are independent; V2b
 may proceed first if the GPU path stalls. Dropping M7/M8 costs nothing above the
 scale track; dropping V2 costs the settling guarantee.
