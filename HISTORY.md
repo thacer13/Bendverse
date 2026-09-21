@@ -4643,3 +4643,65 @@ engine/writer split residual is unchanged.
   6 ok / 0 bad.
 - `bend runners/serve.bend` reproduces the full 1758768-byte stream (above).
   Reported by Bendview: `../Bendview/docs/engine-report-serve-frame-length.md`.
+
+### A.117 — parallel tracks: moving-window focus (D1) + `G-scale-4` bricks; `W3` reverted
+
+**Status:** integrated on `master`. **+4 laws (126 → 130).** Gate green, fast
+**141/141**, sim **35/35**, checker canaries **6 ok / 0 bad**. Three tracks ran in
+worktrees from `84694f8` (the classic `tools/parallel.sh` dispatch); `focus` and
+`g4` merged, `w3` was reverted after the native suite caught a regression the gate
+and fast suite could not see.
+
+**Why this slice.** Bendview's roadmap (`../Bendview/docs/roadmap.md`) reports the
+frontier is engine-side `S1`: D1 (moving-window focus protocol) is their main
+blocker, D2 is scale completion (`W3`/`W4`/`W6`). That is exactly `PLAN.md` §5.2
+`S1`'s next slices, so the split was: `focus` (D1), `w3` (S1 step 5 item 1), and
+`g4` (the `G-scale-4` residual, a listed safe proof track).
+
+**`focus` — the moving-window focus protocol (Bendview D1).** `runners/serve.bend`
+now has an inbound `FOCUS` control (kind 8, payload `cx cy cz` = the target base
+chunk origin) and an outbound `ORIGIN` frame (kind 9, the window's base chunk,
+emitted after `HELLO` and before every moved `SNAPSHOT`). The live loop carries
+`(Window, Store, deltas)`; a pending focus at a frame boundary drives
+`Sim.w5_trace_step`, so the window shifts and one moved-window tick runs, then a
+sparse moved-window `SNAPSHOT` supersedes the prior deltas. `DELTA` indices are
+window-local (`Window.win_index`), byte-identical to `Grid.index` on the
+canonical window, so the fixed path is unchanged. `HELLO`/`SNAPSHOT` byte shapes
+are untouched (T62/T63/T64 stand); `runners/SERVE.md` documents the protocol. IO
+only, `src/` untouched, +0 laws. Fast T151–T155. The native end-to-end moved
+stream is left to the supervisor.
+
+**`g4` — the `G-scale-4` roundtrip bricks.** New `src/g4.bend` proves the
+proof-relevant `U32.is_eq` reflection the gap named as a blocker
+(`g4_gen_eq_cells_reflect`, carrying the exact `fuel == List.length` side
+conditions that exclude the over-budget trivially-`True` case) and the per-chunk
+`Array` regen identity (`g4_assemble_chunk_regen`/`_chunk`,
+`g4_assemble_cells_present`): a stored chunk that passes `gen_eq_cells` assembles
+exactly as its pure-gen replacement. The `Array` update-identity turned out to be
+*congruence* — both assemblies perform the same write sequence — so no
+`Array.set` commutativity is needed. 4 laws, fast T161–T165. The store-level
+`get`/`set` trie refinement and the 64-key fold remain open (`G-scale-4`).
+
+**`w3` — attempted, reverted.** The live `Dirty` rewire to `Dirtyn`'s `Word(64)`
+(SCALE §8 W3) was implemented: `Dirty.Mask` became `Mask{w: Word(64n)}`, the row
+ops delegate to `Dirtyn`, the `Word(64)` constructor moved below `dirty` to break
+the `maskword` import cycle, and `mask_word_get` became definitional. It passed
+the gate and the fast suite (133/133) but **hangs the native sim suite** at T4b:
+`settled_hash(True)` (`settle(50)` then one more `Sim.tick`) does not terminate
+while `settled_hash(False)` completes, and the `w3` branch alone reproduces it.
+The observation is a settled-world tick that does not terminate — not wake
+volume (a settled world has no wakes) — and the cause is not yet pinned
+(`active_mask`/`dirty_todo` alone complete). Per the downgrade protocol the merge
+was reverted from `master` (branch `w3` kept), `Dirty` stays the two-`U32` mask,
+and the finding is recorded in `PLAN.md` §5.3 `G-scale-2` and `SCALE.md` §8 W3.
+
+**Also.** `README.md` was rewritten for the engine/frontend split: it is now the
+engine description + verification commands + a pointer to Bendview, not a
+viewer/controls manual.
+
+**Verification**
+- `bend PROOF.bend` -> `All terms check.`; `bend test/tests.bend` -> 141/141 PASS;
+  `bend test/simtests.bend` native -> 35/35 PASS; `tools/checker-canary.sh` ->
+  6 ok / 0 bad.
+- Worker reports: `../Bendverse-focus.report.md`, `../Bendverse-w3.report.md`,
+  `../Bendverse-g4.report.md`.

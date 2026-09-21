@@ -1,48 +1,35 @@
 # Bendverse
 
 Bendverse is a machine-checked reference engine for scalable falling-sand
-cellular simulation; every scaling property is stated in `LAWS.bend` and checked
-by `PROOF.bend`.
+cellular simulation. The engine is `src/` (pure, zero IO); the properties that
+make scaling sound — determinism, conservation, settling — are stated in
+`LAWS.bend` and checked by `PROOF.bend`.
 
-## Build
+The render frontend is the sister project **Bendview** (`../Bendview`). It
+consumes the engine through `runners/export.bend` (the `.bvs`/`.bvg`/`.bgt`
+binary oracles) and the `runners/serve.bend` sidecar link (`runners/SERVE.md`).
 
-    mkdir -p bin
-    bend runners/view3d.bend -o bin/view3d
+## Verify
 
-Build the native binary. The JS interpreter is too slow for the tick loop.
+    bend PROOF.bend          # the gate: must print "All terms check."
+    bend test/tests.bend     # fast, tick-free suite
 
-## Run
+    bend test/simtests.bend -o bin/simtests && ./bin/simtests   # native sim suite
 
-    ./bin/view3d
+The native sim suite is the one that exercises ticks; run it natively, not in JS.
 
-Opens a 1920×1080 window.
+## Layout
 
-## Controls
+- `src/` — the pure engine (zero IO): `cell`, `grid`, `worldgen`, `rules`,
+  `support`, `ops`, `sim`, `dirty`, `chunk`/`store`, plus the verification
+  layers (`settle`/`parity`/`mod`/`priority`/`order`/`fall`/`bits`/`nat`/`list`).
+- `runners/` — thin front-ends for visibility only, not part of the engine:
+  `ascii.bend` (headless cross-section), `window.bend` (2D `App.run` sandbox),
+  `view3d.bend` (native voxel viewer), `export.bend` (binary oracles),
+  `serve.bend` (the Bendview sidecar).
+- `test/` — verification witnesses (`tests.bend` fast, `simtests.bend` native).
+- `PROOF.bend` / `LAWS.bend` — the machine-checked claims.
+- `coreidea.md` (contract), `PLAN.md` (plan, gaps), `SCALE.md` (window
+  migration), `HISTORY.md` (milestones).
 
-| Input | Action |
-|---|---|
-| `W` / `S` | fly forward / backward |
-| `A` / `D` | strafe left / right |
-| `Q` / `E`, `←` / `→` | turn left / right |
-| `↑` / `↓` | pitch up / down |
-| `R` / `F` | rise / sink |
-| mouse drag | look |
-| `space` | pause / resume |
-| `-` / `=`, `[` / `]` | simulation speed down / up |
-| `,` / `.` | render depth down / up |
-| close window | quit |
-
-Render depth is the quality/speed dial, range 5–8. Lower is faster and chunkier.
-
-## 2D sandbox
-
-    bend runners/window.bend -o bin/window
-    ./bin/window
-
-| Input | Action |
-|---|---|
-| left mouse | paint sand at cursor |
-| right mouse | paint rock at cursor |
-| `E` | erase at cursor |
-| `space` | pause / resume |
-| close window | quit |
+The runners are development conveniences; the supported renderer is Bendview.
